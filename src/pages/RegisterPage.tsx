@@ -1,14 +1,20 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { UserPlus, ArrowLeft } from 'lucide-react';
+import { UserPlus, ArrowLeft, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { db } from '@/db/database';
 
 const RegisterPage = () => {
   const navigate = useNavigate();
   const { register, isLoading, error, clearError } = useAuthStore();
+  const [isFirstUser, setIsFirstUser] = useState(false);
+
+  useEffect(() => {
+    db.users.count().then(count => setIsFirstUser(count === 0));
+  }, []);
 
   const [form, setForm] = useState({
     name: '',
@@ -79,15 +85,31 @@ const RegisterPage = () => {
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4 dark:from-gray-900 dark:to-gray-800">
         <Card className="w-full max-w-md p-8">
           <div className="text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-green-600">
-              <UserPlus className="h-8 w-8" />
-            </div>
-            <h2 className="mb-2 text-xl font-bold">가입 신청 완료</h2>
-            <p className="mb-6 text-sm text-muted-foreground">
-              관리자의 승인 후 로그인할 수 있습니다.
-              <br />
-              승인이 완료되면 입력하신 아이디로 로그인하세요.
-            </p>
+            {isFirstUser ? (
+              <>
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <ShieldCheck className="h-8 w-8" />
+                </div>
+                <h2 className="mb-2 text-xl font-bold">관리자 계정 생성 완료!</h2>
+                <p className="mb-6 text-sm text-muted-foreground">
+                  첫 번째 가입자로 관리자 권한이 자동 부여되었습니다.
+                  <br />
+                  바로 로그인하실 수 있습니다.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-green-600">
+                  <UserPlus className="h-8 w-8" />
+                </div>
+                <h2 className="mb-2 text-xl font-bold">가입 신청 완료</h2>
+                <p className="mb-6 text-sm text-muted-foreground">
+                  관리자의 승인 후 로그인할 수 있습니다.
+                  <br />
+                  승인이 완료되면 입력하신 아이디로 로그인하세요.
+                </p>
+              </>
+            )}
             <Button onClick={() => navigate('/login')} className="w-full">
               로그인 페이지로 돌아가기
             </Button>
@@ -107,8 +129,19 @@ const RegisterPage = () => {
             </div>
           </div>
           <h1 className="mb-1 text-2xl font-bold">WardFlow 회원가입</h1>
-          <p className="text-sm text-muted-foreground">가입 후 관리자 승인이 필요합니다</p>
+          <p className="text-sm text-muted-foreground">
+            {isFirstUser ? '첫 가입자는 관리자로 자동 승인됩니다' : '가입 후 관리자 승인이 필요합니다'}
+          </p>
         </div>
+
+        {isFirstUser && (
+          <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm text-primary">
+            <div className="flex items-center gap-2 font-medium">
+              <ShieldCheck className="h-4 w-4" />
+              첫 번째 사용자 — 관리자 계정으로 생성됩니다
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

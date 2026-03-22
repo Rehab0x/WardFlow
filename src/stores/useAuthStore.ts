@@ -106,14 +106,18 @@ export const useAuthStore = create<AuthStore>()(
           const now = new Date();
           const userId = crypto.randomUUID();
 
+          // 첫 번째 가입자는 자동으로 admin + approved 처리
+          const userCount = await db.users.count();
+          const isFirstUser = userCount === 0;
+
           const newUser: User = {
             id: userId,
             username: input.username,
             name: input.name,
-            role: 'doctor', // 기본값, 관리자가 승인 시 변경 가능
+            role: isFirstUser ? 'admin' : 'doctor',
             department: input.department,
-            status: 'pending',
-            modules: [],
+            status: isFirstUser ? 'approved' : 'pending',
+            modules: isFirstUser ? ['wardflow'] : [],
             createdAt: now,
             updatedAt: now,
           };
