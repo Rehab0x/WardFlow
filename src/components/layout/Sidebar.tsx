@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { X, ChevronDown, ChevronRight, Pill, Search, Stethoscope, Heart, UserCog, ShieldCheck, UserPlus, Bell, AlertTriangle } from 'lucide-react';
+import { X, ChevronDown, ChevronRight, Pill, Search, Stethoscope, Heart, UserCog, ShieldCheck, UserPlus, Bell, AlertTriangle, Calendar } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -211,14 +211,24 @@ const Sidebar = ({ isOpen = true, onClose, onOpen }: SidebarProps) => {
 
         {/* Add Patient Button */}
         <div className="border-b p-3">
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={() => setShowAddPatient(true)}
-          >
-            <UserPlus className="h-4 w-4 mr-2" />
-            새 환자 추가
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setShowAddPatient(true)}
+            >
+              <UserPlus className="h-4 w-4 mr-2" />
+              새 환자
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => { navigate('/calendar'); onClose?.(); }}
+              title="일정 캘린더"
+            >
+              <Calendar className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         {/* Patient Categories */}

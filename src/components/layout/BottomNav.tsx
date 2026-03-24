@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { StickyNote, Settings, Users } from 'lucide-react';
+import { StickyNote, Settings, Users, Calendar } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
 interface BottomNavProps {
@@ -38,6 +38,25 @@ const BottomNav = ({ onOpenSidebar, onCloseSidebar }: BottomNavProps) => {
           <Users className="h-6 w-6" />
           <span>환자</span>
         </button>
+
+        {/* 캘린더 */}
+        <NavLink
+          to="/calendar"
+          onClick={onCloseSidebar}
+          className={({ isActive }) =>
+            cn(
+              'flex flex-1 flex-col items-center justify-center space-y-1 py-3 text-xs font-medium transition-colors',
+              isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+            )
+          }
+        >
+          {({ isActive }) => (
+            <>
+              <Calendar className={cn('h-6 w-6', isActive && 'text-primary')} />
+              <span>캘린더</span>
+            </>
+          )}
+        </NavLink>
 
         {/* 설정 */}
         <NavLink

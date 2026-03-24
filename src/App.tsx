@@ -13,6 +13,7 @@ const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 const HomePage = lazy(() => import('./pages/HomePage'));
 const PatientDetailPage = lazy(() => import('./pages/PatientDetailPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const SchedulePage = lazy(() => import('./pages/SchedulePage'));
 
 // Loading fallback component
 const LoadingFallback = () => (
@@ -69,6 +70,7 @@ function App() {
             <Route path="/patients" element={<Navigate to="/" replace />} />
             <Route path="/patients/:patientId" element={<PatientDetailPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/calendar" element={<SchedulePage />} />
           </Route>
 
           {/* Catch all */}

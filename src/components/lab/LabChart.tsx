@@ -24,12 +24,15 @@ export function LabChart({ trendData, height = 300 }: LabChartProps) {
   const { itemName, unit, referenceMin, referenceMax, dataPoints } = trendData;
 
   // Convert data points for Recharts
-  const chartData = dataPoints.map((point) => ({
-    date: point.date,
-    value: typeof point.value === 'number' ? point.value : null,
-    isAbnormal: point.isAbnormal,
-    hlFlag: point.hlFlag,
-  }));
+  const chartData = dataPoints.map((point) => {
+    const numVal = typeof point.value === 'number' ? point.value : parseFloat(String(point.value));
+    return {
+      date: point.date,
+      value: isNaN(numVal) ? null : numVal,
+      isAbnormal: point.isAbnormal,
+      hlFlag: point.hlFlag,
+    };
+  });
 
   // Find min/max for Y-axis domain
   const values = chartData

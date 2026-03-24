@@ -25,6 +25,8 @@ import { useMedicationStore } from '@/stores/useMedicationStore';
 import { useNoteStore } from '@/stores/useNoteStore';
 import { calculateAge, calculateDetailedAge, calculateOnsetDuration, parseLocalDate, getLocalToday } from '@/utils/dateUtils';
 import { cn } from '@/utils/cn';
+import { db } from '@/db/database';
+import { formatDate } from '@/utils/dateUtils';
 
 const PatientDetailPage = () => {
   const { patientId } = useParams<{ patientId: string }>();
@@ -378,6 +380,46 @@ const PatientDetailPage = () => {
     }
   };
 
+  // 날짜별 Lab 전체 삭제
+  const handleDeleteDate = async (dateStr: string) => {
+    if (!patientId) return;
+    if (!window.confirm(`${dateStr} 날짜의 모든 Lab 결과를 삭제하시겠습니까?`)) return;
+    try {
+      const patientLabs = await db.labResults
+        .where('patientId')
+        .equals(patientId)
+        .toArray();
+      const toDelete = patientLabs.filter((lab) => {
+        const labDate = formatDate(lab.testDate);
+        return labDate === dateStr;
+      });
+      await db.labResults.bulkDelete(toDelete.map((l) => l.id));
+      await fetchLabsByPatient(patientId);
+    } catch (error) {
+      console.error('Failed to delete date labs:', error);
+      alert('Lab 결과 삭제에 실패했습니다.');
+    }
+  };
+
+  // 새 날짜 추가 (빈 Lab 레코드 생성)
+  const handleAddDate = async (dateStr: string) => {
+    if (!patientId) return;
+    try {
+      const testDate = parseLocalDate(dateStr);
+      // 빈 Lab 레코드를 하나 생성 (수동 입력의 시작점)
+      await addLabResult(patientId, 'Manual', [{
+        name: '-',
+        value: '',
+        unit: '',
+        isAbnormal: false,
+      }], testDate, 'manual');
+      await fetchLabsByPatient(patientId);
+    } catch (error) {
+      console.error('Failed to add date:', error);
+      alert('날짜 추가에 실패했습니다.');
+    }
+  };
+
   const handleSaveCulture = async () => {
     if (!cultureModal || !patientId) return;
     const { mode, resultId, date, name, text } = cultureModal;
@@ -643,13 +685,16 @@ const PatientDetailPage = () => {
                   {patient.tags && patient.tags.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
                       {patient.tags.map((tag, index) => (
-                        <Badge key={index} variant="secondary" className="text-sm">
+                        <Badge
+                          key={index}
+                          className="text-sm px-3 py-1 bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700 font-medium"
+                        >
                           {tag}
                           {showTagEditor && (
                             <button
                               type="button"
                               onClick={() => handleRemoveTag(tag)}
-                              className="ml-1 hover:text-destructive"
+                              className="ml-1.5 hover:text-destructive"
                             >
                               <X className="h-3 w-3" />
                             </button>
@@ -875,6 +920,8 @@ const PatientDetailPage = () => {
                     const trend = await getLabTrendData(patientId, itemCode, itemName);
                     if (trend) {
                       setSelectedTrend(trend);
+                    } else {
+                      alert(`"${itemName}" 항목의 추이 데이터가 없습니다.`);
                     }
                   }}
                   onCellClick={(date, itemName, currentValue) => {
@@ -883,6 +930,8 @@ const PatientDetailPage = () => {
                   onAddCulture={handleAddCulture}
                   onEditCulture={handleEditCulture}
                   onDeleteCulture={handleDeleteCulture}
+                  onDeleteDate={handleDeleteDate}
+                  onAddDate={handleAddDate}
                 />
 
                 {/* Lab Trend Chart Modal */}

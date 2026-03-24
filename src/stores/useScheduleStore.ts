@@ -6,6 +6,7 @@ interface ScheduleStore {
   schedules: Schedule[];
   isLoading: boolean;
 
+  fetchAll: () => Promise<void>;
   fetchByPatient: (patientId: string) => Promise<void>;
   addSchedule: (schedule: Omit<Schedule, 'id' | 'createdAt'>) => Promise<void>;
   updateSchedule: (id: string, updates: Partial<Schedule>) => Promise<void>;
@@ -16,6 +17,16 @@ interface ScheduleStore {
 export const useScheduleStore = create<ScheduleStore>((set, get) => ({
   schedules: [],
   isLoading: false,
+
+  fetchAll: async () => {
+    set({ isLoading: true });
+    try {
+      const schedules = await db.schedules.orderBy('scheduledDate').toArray();
+      set({ schedules, isLoading: false });
+    } catch {
+      set({ isLoading: false });
+    }
+  },
 
   fetchByPatient: async (patientId: string) => {
     set({ isLoading: true });

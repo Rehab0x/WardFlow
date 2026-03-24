@@ -107,7 +107,7 @@ export const useLabStore = create<LabStore>((set) => ({
 
       for (const lab of allLabs) {
         const item = lab.items.find(
-          (i) => i.code === itemCode || i.name === itemName
+          (i) => (itemCode && i.code === itemCode) || i.name === itemName
         );
 
         if (item) {

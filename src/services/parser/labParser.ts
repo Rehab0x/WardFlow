@@ -302,9 +302,6 @@ function extractGroupsFromRows(rows: string[][]): XlsPatientGroup[] {
 
     const group = groupMap.get(key)!;
 
-    // Culture: textResult에 전체 균/감수성 결과가 있음. numResult는 비어있음.
-    const isCulture = !numResult && !!textResult;
-
     if (!numResult && !textResult) continue;
 
     const code = labCode.toUpperCase();
@@ -313,12 +310,30 @@ function extractGroupsFromRows(rows: string[][]): XlsPatientGroup[] {
       hlFlag.toUpperCase() === 'H' ? 'H' : hlFlag.toUpperCase() === 'L' ? 'L' : '';
     const ref = parseReferenceRange(refRaw);
 
-    const resolvedCategory = isCulture ? 'Culture' : (info?.category ?? inferCategory(labCode, labName));
+    // 카테고리 판별
+    const categoryFromMap = info?.category ?? inferCategory(labCode, labName);
 
-    // Culture는 전체 텍스트를 value에 저장 (\r\n → \n 정규화)
-    const resolvedValue = isCulture
-      ? textResult.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
-      : numResult;
+    // Culture 판별:
+    // 1) labCodeMap/inferCategory에서 'Culture'로 판별됨
+    // 2) numResult 없고 textResult만 있되, 이름에 culture/배양/cre- 포함
+    const isCulture = categoryFromMap === 'Culture'
+      || (!numResult && !!textResult && /culture|배양|^cre-|^cre /i.test(labName));
+
+    // textResult만 있고 Culture가 아닌 경우 (예: HbA1c) → 첫 번째 숫자 추출
+    let resolvedValue: string;
+    let resolvedCategory: string;
+    if (isCulture) {
+      resolvedCategory = 'Culture';
+      resolvedValue = (textResult || numResult).replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+    } else if (!numResult && textResult) {
+      // textResult에서 첫 번째 숫자값 추출 (예: "HbA1c-NGSP   : 7.5\nHbA1c-IFCC   : 59" → "7.5")
+      const firstNumMatch = textResult.match(/:?\s*([\d.]+)/);
+      resolvedValue = firstNumMatch ? firstNumMatch[1]! : textResult.trim();
+      resolvedCategory = categoryFromMap;
+    } else {
+      resolvedValue = numResult;
+      resolvedCategory = categoryFromMap;
+    }
 
     group.items.push({
       code,
@@ -342,8 +357,9 @@ function inferCategory(code: string, name: string): string {
   if (lower.includes('cbc') || lower.includes('혈액검사') || lower.includes('백혈구') || lower.includes('적혈구')) return 'CBC';
   if (lower.includes('전해질') || code.startsWith('B279') || code.startsWith('B280') || code.startsWith('B281')) return 'Electrolyte';
   if (lower.includes('crp') || lower.includes('반응성단백') || lower.includes('esr')) return 'Inflammatory';
+  if (lower.includes('hba1c') || lower.includes('당화혈색소')) return 'Chemistry';
   if (lower.includes('소변') || lower.includes('urine') || code.startsWith('B003')) return 'UA';
-  if (lower.includes('culture') || lower.includes('배양') || lower.includes('cre')) return 'Culture';
+  if (lower.includes('culture') || lower.includes('배양') || lower.startsWith('cre-') || lower.startsWith('cre ')) return 'Culture';
   if (lower.includes('갑상') || lower.includes('thyroid') || lower.includes('tsh')) return 'Thyroid';
   return 'Chemistry';
 }

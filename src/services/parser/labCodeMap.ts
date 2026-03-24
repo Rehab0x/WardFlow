@@ -95,6 +95,10 @@ export const LAB_CODE_MAP: Record<string, LabCodeInfo> = {
   'B00414':  { name: 'Bacteria',    category: 'UA Micro', unit: '' },
   'B00415':  { name: 'Cast',        category: 'UA Micro', unit: '' },
 
+  // HbA1c
+  'B1270':   { name: 'HbA1c',  category: 'Chemistry', unit: '%' },
+  'D0127000': { name: 'HbA1c', category: 'Chemistry', unit: '%' },
+
   // Culture
   'b4114B': { name: 'CRE-Blood Culture', category: 'Culture', unit: '' },
 

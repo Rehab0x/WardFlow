@@ -195,12 +195,25 @@ const HomePage = () => {
                       {abx.drugName} {abx.dosage && abx.frequency ? `${abx.dosage} ${abx.frequency}` : ''}
                     </p>
                   </div>
-                  <Badge
-                    variant={abx.isLongTerm ? 'destructive' : 'secondary'}
-                    className={cn('ml-2 shrink-0', !abx.isLongTerm && abx.dDay >= 10 && 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200')}
-                  >
-                    D+{abx.dDay}
-                  </Badge>
+                  <div className="flex flex-col items-end gap-1 ml-2 shrink-0">
+                    <Badge
+                      variant={abx.isLongTerm ? 'destructive' : 'secondary'}
+                      className={cn(!abx.isLongTerm && abx.dDay >= 10 && 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200')}
+                    >
+                      D+{abx.dDay}
+                    </Badge>
+                    {abx.endDate && (() => {
+                      const end = new Date(abx.endDate);
+                      const now = new Date();
+                      const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+                      const tmr = new Date(now); tmr.setDate(tmr.getDate()+1);
+                      const tmrStr = `${tmr.getFullYear()}-${String(tmr.getMonth()+1).padStart(2,'0')}-${String(tmr.getDate()).padStart(2,'0')}`;
+                      const endStr = `${end.getFullYear()}-${String(end.getMonth()+1).padStart(2,'0')}-${String(end.getDate()).padStart(2,'0')}`;
+                      if (endStr === todayStr) return <Badge className="text-[10px] bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300 border-red-300">오늘 종료</Badge>;
+                      if (endStr === tmrStr) return <Badge className="text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300 border-orange-300">내일 종료</Badge>;
+                      return null;
+                    })()}
+                  </div>
                 </div>
               ))}
             </div>
@@ -234,12 +247,25 @@ const HomePage = () => {
                         {abx.dosage && abx.frequency ? `${abx.dosage} ${abx.frequency}` : '-'}
                       </td>
                       <td className="py-2 text-center">
-                        <Badge
-                          variant={abx.isLongTerm ? 'destructive' : 'secondary'}
-                          className={abx.isLongTerm ? '' : abx.dDay >= 10 ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200' : ''}
-                        >
-                          D+{abx.dDay}
-                        </Badge>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <Badge
+                            variant={abx.isLongTerm ? 'destructive' : 'secondary'}
+                            className={abx.isLongTerm ? '' : abx.dDay >= 10 ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200' : ''}
+                          >
+                            D+{abx.dDay}
+                          </Badge>
+                          {abx.endDate && (() => {
+                            const end = new Date(abx.endDate);
+                            const now = new Date();
+                            const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+                            const tmr = new Date(now); tmr.setDate(tmr.getDate()+1);
+                            const tmrStr = `${tmr.getFullYear()}-${String(tmr.getMonth()+1).padStart(2,'0')}-${String(tmr.getDate()).padStart(2,'0')}`;
+                            const endStr = `${end.getFullYear()}-${String(end.getMonth()+1).padStart(2,'0')}-${String(end.getDate()).padStart(2,'0')}`;
+                            if (endStr === todayStr) return <Badge className="text-[10px] bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300 border-red-300">오늘 종료</Badge>;
+                            if (endStr === tmrStr) return <Badge className="text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300 border-orange-300">내일 종료</Badge>;
+                            return null;
+                          })()}
+                        </div>
                       </td>
                     </tr>
                   ))}

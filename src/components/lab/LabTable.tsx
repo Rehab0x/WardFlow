@@ -3,7 +3,8 @@ import { cn } from '@/utils/cn';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, CalendarPlus } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import type { LabResult, LabItem } from '@/types/lab';
 import { formatDate } from '@/utils/dateUtils';
 import { labCategoryService } from '@/services/labCategoryService';
@@ -17,6 +18,8 @@ interface LabTableProps {
   onAddCulture?: () => void;
   onEditCulture?: (resultId: string, date: string, name: string, value: string) => void;
   onDeleteCulture?: (resultId: string) => void;
+  onDeleteDate?: (date: string) => void;
+  onAddDate?: (date: string) => void;
 }
 
 interface LabItemWithDates {
@@ -30,7 +33,10 @@ interface LabItemWithDates {
   category: string;
 }
 
-export function LabTable({ results, categories: categoriesProp, onItemClick, onCellClick, onAddCulture, onEditCulture, onDeleteCulture }: LabTableProps) {
+export function LabTable({ results, categories: categoriesProp, onItemClick, onCellClick, onAddCulture, onEditCulture, onDeleteCulture, onDeleteDate, onAddDate }: LabTableProps) {
+  const [showAddDate, setShowAddDate] = useState(false);
+  const [newDate, setNewDate] = useState('');
+  const [deletingDate, setDeletingDate] = useState<string | null>(null);
   const [categories, setCategories] = useState<LabDisplayCategory[]>(categoriesProp ?? []);
 
   useEffect(() => {
@@ -113,8 +119,8 @@ export function LabTable({ results, categories: categoriesProp, onItemClick, onC
   };
 
   const handleItemClick = (itemCode: string | undefined, itemName: string) => {
-    if (onItemClick && itemCode) {
-      onItemClick(itemCode, itemName);
+    if (onItemClick) {
+      onItemClick(itemCode ?? '', itemName);
     }
   };
 
@@ -132,6 +138,55 @@ export function LabTable({ results, categories: categoriesProp, onItemClick, onC
 
   return (
     <div className="space-y-4">
+      {/* Date management */}
+      {onAddDate && (
+        <div className="flex items-center gap-2">
+          {showAddDate ? (
+            <div className="flex items-center gap-2">
+              <Input
+                type="date"
+                value={newDate}
+                onChange={(e) => setNewDate(e.target.value)}
+                className="w-40 h-8 text-sm"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
+                disabled={!newDate}
+                onClick={() => {
+                  if (newDate) {
+                    onAddDate(newDate);
+                    setNewDate('');
+                    setShowAddDate(false);
+                  }
+                }}
+              >
+                추가
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 text-xs"
+                onClick={() => { setShowAddDate(false); setNewDate(''); }}
+              >
+                취소
+              </Button>
+            </div>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs gap-1"
+              onClick={() => setShowAddDate(true)}
+            >
+              <CalendarPlus className="h-3.5 w-3.5" />
+              날짜 추가
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Main Lab Table */}
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
@@ -144,9 +199,37 @@ export function LabTable({ results, categories: categoriesProp, onItemClick, onC
                 {allDates.map((date) => (
                   <th
                     key={date}
-                    className="border-r px-3 py-2 text-center font-medium whitespace-nowrap min-w-[100px]"
+                    className="border-r px-2 py-2 text-center font-medium whitespace-nowrap min-w-[100px] group/date"
                   >
-                    {formatDate(new Date(date))}
+                    <div className="flex items-center justify-center gap-1">
+                      <span>{formatDate(new Date(date))}</span>
+                      {onDeleteDate && (
+                        deletingDate === date ? (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => { onDeleteDate(date); setDeletingDate(null); }}
+                              className="text-[10px] text-red-600 font-bold hover:underline"
+                            >
+                              삭제
+                            </button>
+                            <button
+                              onClick={() => setDeletingDate(null)}
+                              className="text-[10px] text-muted-foreground hover:underline"
+                            >
+                              취소
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setDeletingDate(date)}
+                            className="opacity-0 group-hover/date:opacity-100 text-muted-foreground hover:text-red-500 transition-opacity"
+                            title="이 날짜 Lab 삭제"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )
+                      )}
+                    </div>
                   </th>
                 ))}
                 <th className="bg-background px-3 py-2 text-left font-medium sticky right-0 z-10 min-w-[100px]">

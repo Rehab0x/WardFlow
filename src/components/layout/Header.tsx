@@ -44,8 +44,8 @@ const Header = ({ onMenuClick, onCloseSidebar }: HeaderProps) => {
           <Button
             variant="ghost"
             size="icon"
-            className="mr-2 lg:hidden text-primary-foreground/80 hover:text-primary-foreground hover:bg-white/15"
-            onClick={onMenuClick}
+            className="mr-2 lg:hidden text-primary-foreground/80 hover:text-primary-foreground hover:bg-white/15 min-w-[44px] min-h-[44px]"
+            onClick={(e) => { e.stopPropagation(); onMenuClick?.(); }}
             aria-label="메뉴 열기"
           >
             <Menu className="h-5 w-5" />
