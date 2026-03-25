@@ -6,11 +6,18 @@ import BottomNav from './BottomNav';
 import { shouldShowBackupPrompt, markBackupPrompted } from '@/services/backupService';
 import { Button } from '@/components/ui/button';
 import { HardDrive, X } from 'lucide-react';
+import { usePatientStore } from '@/stores/usePatientStore';
 
 const AppShell = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showBackupPrompt, setShowBackupPrompt] = useState(false);
   const navigate = useNavigate();
+  const { fetchPatients } = usePatientStore();
+
+  // 앱 진입 시 환자 목록 즉시 로드 (Sidebar, DetailPage 등에서 중복 호출 방지)
+  useEffect(() => {
+    fetchPatients();
+  }, [fetchPatients]);
 
   useEffect(() => {
     // 약간의 딜레이 후 체크 (앱 로드 완료 후)

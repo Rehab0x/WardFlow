@@ -2,8 +2,10 @@
  * 암호화 백업/복원 서비스
  * Web Crypto API + AES-256-GCM
  * 파일 확장자: .wardflow
+ * 서버 동기화: Supabase
  */
 import { db } from '@/db/database';
+import { supabase } from './supabaseClient';
 
 // --- Daily backup reminder ---
 
@@ -274,4 +276,101 @@ async function restoreFromBackup(backup: BackupData): Promise<void> {
       t.labCategories?.length ? db.labCategories.bulkAdd(restoreDates(t.labCategories) as never[]) : Promise.resolve(),
     ]);
   });
+}
+
+// --- Server backup/restore (Supabase) ---
+
+export async function uploadBackupToServer(password: string, userKey: string): Promise<{ success: boolean; updatedAt: string }> {
+  // 1. Collect all data
+  const [users, authCredentials, patients, labResults, medications, notes, schedules, labCategories] =
+    await Promise.all([
+      db.users.toArray(),
+      db.authCredentials.toArray(),
+      db.patients.toArray(),
+      db.labResults.toArray(),
+      db.medications.toArray(),
+      db.notes.toArray(),
+      db.schedules.toArray(),
+      db.labCategories.toArray(),
+    ]);
+
+  const backup: BackupData = {
+    version: 6,
+    createdAt: new Date().toISOString(),
+    app: 'wardflow',
+    tables: { users, authCredentials, patients, labResults, medications, notes, schedules, labCategories },
+  };
+
+  // 2. Encrypt
+  const json = JSON.stringify(backup);
+  const encryptedBuffer = await encrypt(json, password);
+
+  // 3. Convert to Base64 for text storage
+  const bytes = new Uint8Array(encryptedBuffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]!);
+  }
+  const encryptedText = btoa(binary);
+
+  // 4. Upsert to Supabase
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from('backups')
+    .upsert(
+      { user_key: userKey, encrypted_data: encryptedText, updated_at: now },
+      { onConflict: 'user_key' }
+    );
+
+  if (error) {
+    throw new Error(`서버 업로드 실패: ${error.message}`);
+  }
+
+  return { success: true, updatedAt: now };
+}
+
+export async function downloadBackupFromServer(password: string, userKey: string): Promise<{ patientCount: number; noteCount: number; updatedAt: string }> {
+  // 1. Fetch from Supabase
+  const { data, error } = await supabase
+    .from('backups')
+    .select('encrypted_data, updated_at')
+    .eq('user_key', userKey)
+    .single();
+
+  if (error || !data) {
+    throw new Error('서버에 저장된 백업 데이터가 없습니다.');
+  }
+
+  // 2. Base64 → ArrayBuffer
+  const base64 = data.encrypted_data;
+  let buffer: ArrayBuffer;
+  try {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    buffer = bytes.buffer;
+  } catch {
+    throw new Error('서버 데이터 형식이 올바르지 않습니다.');
+  }
+
+  // 3. Decrypt and restore
+  const result = await importBackupFromBuffer(buffer, password);
+
+  return { ...result, updatedAt: data.updated_at };
+}
+
+export async function getServerBackupInfo(userKey: string): Promise<{ exists: boolean; updatedAt?: string }> {
+  const { data, error } = await supabase
+    .from('backups')
+    .select('updated_at')
+    .eq('user_key', userKey)
+    .single();
+
+  if (error || !data) {
+    return { exists: false };
+  }
+
+  return { exists: true, updatedAt: data.updated_at };
 }

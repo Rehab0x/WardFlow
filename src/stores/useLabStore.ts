@@ -18,6 +18,7 @@ interface LabStore {
     source?: 'manual' | 'parsed' | 'csv' | 'xls'
   ) => Promise<string>;
   deleteLabResult: (id: string) => Promise<void>;
+  updateLabItemValue: (patientId: string, date: string, itemName: string, newValue: string | number) => Promise<void>;
   getLabTrendData: (patientId: string, itemCode: string, itemName: string) => Promise<LabTrendData | null>;
 }
 
@@ -86,6 +87,107 @@ export const useLabStore = create<LabStore>((set) => ({
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : 'Failed to delete lab result',
+      });
+      throw error;
+    }
+  },
+
+  updateLabItemValue: async (patientId: string, date: string, itemName: string, newValue: string | number) => {
+    try {
+      // Find the lab result matching patient + date + item
+      const allLabs = await db.labResults
+        .where('patientId')
+        .equals(patientId)
+        .toArray();
+
+      const numVal = typeof newValue === 'string' ? parseFloat(newValue) : newValue;
+      const isNumeric = !isNaN(numVal as number);
+
+      // Find labs matching date
+      let targetLab: LabResult | undefined;
+      let itemIndex = -1;
+
+      for (const lab of allLabs) {
+        const labDateKey = `${lab.testDate.getFullYear()}-${String(lab.testDate.getMonth() + 1).padStart(2, '0')}-${String(lab.testDate.getDate()).padStart(2, '0')}`;
+        if (labDateKey !== date) continue;
+
+        const idx = lab.items.findIndex((i) => i.name === itemName);
+        if (idx !== -1) {
+          targetLab = lab;
+          itemIndex = idx;
+          break;
+        }
+        // Remember first non-Culture lab on that date as fallback for adding new item
+        if (!targetLab && lab.category !== 'Culture') targetLab = lab;
+      }
+
+      if (targetLab && itemIndex !== -1) {
+        // Update existing item
+        const updatedItems = [...targetLab.items];
+        updatedItems[itemIndex] = {
+          ...updatedItems[itemIndex]!,
+          value: isNumeric ? numVal as number : newValue,
+          isAbnormal: isNumeric
+            ? (updatedItems[itemIndex]!.referenceMin !== undefined && (numVal as number) < updatedItems[itemIndex]!.referenceMin!) ||
+              (updatedItems[itemIndex]!.referenceMax !== undefined && (numVal as number) > updatedItems[itemIndex]!.referenceMax!)
+            : false,
+          hlFlag: isNumeric
+            ? (updatedItems[itemIndex]!.referenceMax !== undefined && (numVal as number) > updatedItems[itemIndex]!.referenceMax! ? 'H'
+              : updatedItems[itemIndex]!.referenceMin !== undefined && (numVal as number) < updatedItems[itemIndex]!.referenceMin! ? 'L'
+              : undefined)
+            : undefined,
+        };
+
+        await db.labResults.update(targetLab.id, { items: updatedItems });
+
+        set((state) => ({
+          labs: state.labs.map((l) =>
+            l.id === targetLab!.id ? { ...l, items: updatedItems } : l
+          ),
+        }));
+      } else if (targetLab) {
+        // Add new item to existing non-Culture lab result on that date
+        const newItem: LabItem = {
+          name: itemName,
+          value: isNumeric ? numVal as number : newValue,
+          unit: '',
+          isAbnormal: false,
+        };
+        const updatedItems = [...targetLab.items, newItem];
+        await db.labResults.update(targetLab.id, { items: updatedItems });
+        set((state) => ({
+          labs: state.labs.map((l) =>
+            l.id === targetLab!.id ? { ...l, items: updatedItems } : l
+          ),
+        }));
+      } else {
+        // No non-Culture lab result on that date — create a new one
+        const [y, m, d] = date.split('-').map(Number);
+        const testDate = new Date(y ?? 0, (m ?? 1) - 1, d ?? 1);
+        const newId = `lab${Date.now()}`;
+        const newItem: LabItem = {
+          name: itemName,
+          value: isNumeric ? numVal as number : newValue,
+          unit: '',
+          isAbnormal: false,
+        };
+        const newLab: LabResult = {
+          id: newId,
+          patientId,
+          testDate,
+          category: 'Other',
+          items: [newItem],
+          source: 'manual',
+          createdAt: new Date(),
+        };
+        await db.labResults.add(newLab);
+        set((state) => ({
+          labs: [...state.labs, newLab],
+        }));
+      }
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : 'Failed to update lab item',
       });
       throw error;
     }

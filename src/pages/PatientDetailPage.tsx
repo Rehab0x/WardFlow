@@ -33,7 +33,7 @@ const PatientDetailPage = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { patients, isLoading: patientsLoading, fetchPatients, getPatientById, updatePatient } = usePatientStore();
-  const { labs, fetchLabsByPatient, addLabResult, deleteLabResult, getLabTrendData } = useLabStore();
+  const { labs, fetchLabsByPatient, addLabResult, deleteLabResult, updateLabItemValue, getLabTrendData } = useLabStore();
   const { medications, fetchMedicationsByPatient, addMedication, updateMedication, deleteMedication } = useMedicationStore();
   const { notes, fetchNotesByPatient } = useNoteStore();
   const [isEditMode, setIsEditMode] = useState(false);
@@ -962,13 +962,19 @@ const PatientDetailPage = () => {
                           <div>
                             <label className="text-sm font-medium">결과값</label>
                             <Input
+                              id="lab-edit-input"
                               type="text"
                               defaultValue={editingCell.currentValue}
                               className="mt-1"
                               autoFocus
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  // TODO: Save the value
+                              onKeyDown={async (e) => {
+                                if (e.key === 'Enter' && patientId) {
+                                  const input = e.currentTarget;
+                                  const newVal = input.value.trim();
+                                  if (newVal !== String(editingCell.currentValue)) {
+                                    await updateLabItemValue(patientId, editingCell.date, editingCell.itemName, newVal);
+                                    await fetchLabsByPatient(patientId);
+                                  }
                                   setEditingCell(null);
                                 } else if (e.key === 'Escape') {
                                   setEditingCell(null);
@@ -984,8 +990,14 @@ const PatientDetailPage = () => {
                           <Button variant="outline" onClick={() => setEditingCell(null)}>
                             취소
                           </Button>
-                          <Button onClick={() => {
-                            // TODO: Save the value
+                          <Button onClick={async () => {
+                            if (!patientId) return;
+                            const input = document.getElementById('lab-edit-input') as HTMLInputElement;
+                            const newVal = input?.value.trim() ?? '';
+                            if (newVal !== String(editingCell.currentValue)) {
+                              await updateLabItemValue(patientId, editingCell.date, editingCell.itemName, newVal);
+                              await fetchLabsByPatient(patientId);
+                            }
                             setEditingCell(null);
                           }}>
                             저장

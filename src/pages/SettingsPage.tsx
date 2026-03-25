@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Trash2, GripVertical, ChevronDown, ChevronRight, RotateCcw, Save, UserCheck, UserX, Shield, Lock, Unlock, Stethoscope, FlaskConical, FileText, Calendar, Download, Upload, Eye, EyeOff, HardDrive, Bell } from 'lucide-react';
+import { Plus, Trash2, GripVertical, ChevronDown, ChevronRight, RotateCcw, Save, UserCheck, UserX, Shield, Lock, Unlock, Stethoscope, FlaskConical, FileText, Calendar, Download, Upload, Eye, EyeOff, HardDrive, Bell, Cloud, CloudUpload, CloudDownload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -14,7 +14,7 @@ import { useScheduleCategoryStore, COLOR_OPTIONS } from '@/stores/useScheduleCat
 import { db } from '@/db/database';
 import type { LabDisplayCategory, Patient } from '@/db/database';
 import type { User, UserRole, WardLinkModule } from '@/types/user';
-import { exportBackup, downloadBlob, importBackup, isDailyBackupEnabled, setDailyBackupEnabled, exportBackupAsText, importBackupFromText } from '@/services/backupService';
+import { exportBackup, downloadBlob, importBackup, isDailyBackupEnabled, setDailyBackupEnabled, exportBackupAsText, importBackupFromText, uploadBackupToServer, downloadBackupFromServer, getServerBackupInfo } from '@/services/backupService';
 
 const AVAILABLE_ROLES: { value: UserRole; label: string }[] = [
   { value: 'doctor', label: '의사' },
@@ -64,6 +64,71 @@ const SettingsPage = () => {
   const [textImportShowPw, setTextImportShowPw] = useState(false);
   const [textImportLoading, setTextImportLoading] = useState(false);
   const [textImportData, setTextImportData] = useState('');
+
+  // Server sync
+  const [serverPw, setServerPw] = useState('');
+  const [serverShowPw, setServerShowPw] = useState(false);
+  const [serverKey, setServerKey] = useState('');
+  const [serverLoading, setServerLoading] = useState(false);
+  const [serverInfo, setServerInfo] = useState<{ exists: boolean; updatedAt?: string } | null>(null);
+
+  const handleServerUpload = async () => {
+    if (!serverPw || serverPw.length < 4) {
+      toast({ title: '비밀번호는 4자 이상이어야 합니다.', variant: 'destructive' });
+      return;
+    }
+    if (!serverKey.trim()) {
+      toast({ title: '동기화 키를 입력해주세요.', variant: 'destructive' });
+      return;
+    }
+    setServerLoading(true);
+    try {
+      const result = await uploadBackupToServer(serverPw, serverKey.trim());
+      toast({ title: '서버 업로드 완료', description: `업로드 시간: ${new Date(result.updatedAt).toLocaleString()}` });
+      setServerInfo({ exists: true, updatedAt: result.updatedAt });
+    } catch (err) {
+      toast({ title: '업로드 실패', description: err instanceof Error ? err.message : '알 수 없는 오류', variant: 'destructive' });
+    } finally {
+      setServerLoading(false);
+    }
+  };
+
+  const handleServerDownload = async () => {
+    if (!serverPw) {
+      toast({ title: '비밀번호를 입력해주세요.', variant: 'destructive' });
+      return;
+    }
+    if (!serverKey.trim()) {
+      toast({ title: '동기화 키를 입력해주세요.', variant: 'destructive' });
+      return;
+    }
+    if (!confirm('서버 데이터로 현재 모든 데이터가 교체됩니다. 계속하시겠습니까?')) return;
+    setServerLoading(true);
+    try {
+      const result = await downloadBackupFromServer(serverPw, serverKey.trim());
+      toast({ title: '서버 복원 완료', description: `환자 ${result.patientCount}명, 메모 ${result.noteCount}건 복원됨` });
+    } catch (err) {
+      toast({ title: '복원 실패', description: err instanceof Error ? err.message : '알 수 없는 오류', variant: 'destructive' });
+    } finally {
+      setServerLoading(false);
+    }
+  };
+
+  const handleCheckServerInfo = async () => {
+    if (!serverKey.trim()) {
+      toast({ title: '동기화 키를 입력해주세요.', variant: 'destructive' });
+      return;
+    }
+    try {
+      const info = await getServerBackupInfo(serverKey.trim());
+      setServerInfo(info);
+      if (!info.exists) {
+        toast({ title: '서버에 저장된 데이터가 없습니다.' });
+      }
+    } catch {
+      toast({ title: '서버 확인 실패', variant: 'destructive' });
+    }
+  };
 
   const handleTextExport = async () => {
     if (!textExportPw || textExportPw.length < 4) {
@@ -1333,6 +1398,105 @@ const SettingsPage = () => {
                 <>
                   <Upload className="h-4 w-4 mr-1" />
                   복원
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div className="relative py-2">
+          <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+          <div className="relative flex justify-center text-xs">
+            <span className="bg-card px-2 text-muted-foreground">또는 서버 동기화</span>
+          </div>
+        </div>
+
+        {/* Server Sync */}
+        <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
+          <div className="flex items-center gap-2">
+            <Cloud className="h-4 w-4 text-primary" />
+            <h3 className="font-medium text-sm">서버 동기화 (Supabase)</h3>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            암호화된 데이터를 서버에 업로드/다운로드하여 기기 간 동기화할 수 있습니다.
+            동일한 동기화 키와 비밀번호를 사용해야 합니다.
+          </p>
+          <div className="space-y-2">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">동기화 키 (아이디 또는 고유 키)</label>
+              <Input
+                type="text"
+                placeholder="예: myward, doctor-kim"
+                value={serverKey}
+                onChange={(e) => setServerKey(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">암호화 비밀번호 (4자 이상)</label>
+              <div className="relative mt-1">
+                <Input
+                  type={serverShowPw ? 'text' : 'password'}
+                  placeholder="암호화 비밀번호"
+                  value={serverPw}
+                  onChange={(e) => setServerPw(e.target.value)}
+                  className="pr-9"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                  onClick={() => setServerShowPw(!serverShowPw)}
+                >
+                  {serverShowPw ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {serverInfo && serverInfo.exists && (
+            <div className="rounded-md bg-green-50 dark:bg-green-950/20 p-2 text-xs text-green-700 dark:text-green-400">
+              마지막 업로드: {new Date(serverInfo.updatedAt!).toLocaleString()}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleCheckServerInfo}
+              disabled={serverLoading || !serverKey}
+            >
+              <Cloud className="h-3.5 w-3.5 mr-1" />
+              확인
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleServerUpload}
+              disabled={serverLoading || !serverKey || !serverPw}
+            >
+              {serverLoading ? (
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              ) : (
+                <>
+                  <CloudUpload className="h-3.5 w-3.5 mr-1" />
+                  서버 업로드
+                </>
+              )}
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={handleServerDownload}
+              disabled={serverLoading || !serverKey || !serverPw}
+            >
+              {serverLoading ? (
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              ) : (
+                <>
+                  <CloudDownload className="h-3.5 w-3.5 mr-1" />
+                  서버 다운로드
                 </>
               )}
             </Button>
