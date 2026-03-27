@@ -48,7 +48,7 @@ export const DEFAULT_LAB_CATEGORIES: LabDisplayCategory[] = [
     id: 'default-micro',
     name: 'Urine Sediment',
     order: 6,
-    items: ['RBC (Micro)', 'WBC (Micro)', 'Epithelial cell', 'Bacteria'],
+    items: ['RBC (Micro)', 'WBC (Micro)', 'Epithelial cell', 'Bacteria', 'Cast', 'Crystal'],
   },
   {
     id: 'default-hbs',

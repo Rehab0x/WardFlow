@@ -158,7 +158,7 @@ function inferCategoryFromName(name: string): string {
   if (['na', 'k', 'cl'].includes(lower)) return 'Electrolyte';
   if (lower === 'crp' || lower === 'esr' || lower === 'pct') return 'Inflammatory';
   if (['color', 'leukocyte', 'occult blood', 'bilirubin', 'urobilinogen', 'ketone', 'protein', 'nitrite', 'ph', 's.g'].includes(lower)) return 'UA';
-  if (lower.includes('micro') || lower.includes('epithelial') || lower.includes('bacteria')) return 'UA Micro';
+  if (lower.includes('micro') || lower.includes('epithelial') || lower.includes('bacteria') || lower.includes('cast') || lower.includes('crystal')) return 'Urine Sediment';
   return 'LFT';
 }
 
@@ -326,9 +326,15 @@ function extractGroupsFromRows(rows: string[][]): XlsPatientGroup[] {
       resolvedCategory = 'Culture';
       resolvedValue = (textResult || numResult).replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
     } else if (!numResult && textResult) {
-      // textResult에서 첫 번째 숫자값 추출 (예: "HbA1c-NGSP   : 7.5\nHbA1c-IFCC   : 59" → "7.5")
-      const firstNumMatch = textResult.match(/:?\s*([\d.]+)/);
-      resolvedValue = firstNumMatch ? firstNumMatch[1]! : textResult.trim();
+      // HbA1c 특별 처리: NGSP 라인의 값만 추출
+      const ngspMatch = textResult.match(/NGSP\s*:?\s*([\d.]+)/i);
+      if (ngspMatch) {
+        resolvedValue = ngspMatch[1]!;
+      } else {
+        // 일반 textResult: 첫 번째 숫자값 추출
+        const firstNumMatch = textResult.match(/:?\s*([\d.]+)/);
+        resolvedValue = firstNumMatch ? firstNumMatch[1]! : textResult.trim();
+      }
       resolvedCategory = categoryFromMap;
     } else {
       resolvedValue = numResult;
@@ -358,7 +364,8 @@ function inferCategory(code: string, name: string): string {
   if (lower.includes('전해질') || code.startsWith('B279') || code.startsWith('B280') || code.startsWith('B281')) return 'Electrolyte';
   if (lower.includes('crp') || lower.includes('반응성단백') || lower.includes('esr')) return 'Inflammatory';
   if (lower.includes('hba1c') || lower.includes('당화혈색소')) return 'Chemistry';
-  if (lower.includes('소변') || lower.includes('urine') || code.startsWith('B003')) return 'UA';
+  if (code.startsWith('B004') || code.startsWith('D004') || lower.includes('micro') || lower.includes('sediment')) return 'Urine Sediment';
+  if (lower.includes('소변') || lower.includes('urine') || code.startsWith('B003') || code.startsWith('D003')) return 'UA';
   if (lower.includes('culture') || lower.includes('배양') || lower.startsWith('cre-') || lower.startsWith('cre ')) return 'Culture';
   if (lower.includes('갑상') || lower.includes('thyroid') || lower.includes('tsh')) return 'Thyroid';
   return 'Chemistry';

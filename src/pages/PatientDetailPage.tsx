@@ -34,7 +34,7 @@ const PatientDetailPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { patients, isLoading: patientsLoading, fetchPatients, getPatientById, updatePatient } = usePatientStore();
   const { labs, fetchLabsByPatient, addLabResult, deleteLabResult, updateLabItemValue, getLabTrendData } = useLabStore();
-  const { medications, fetchMedicationsByPatient, addMedication, updateMedication, deleteMedication } = useMedicationStore();
+  const { medications, fetchMedicationsByPatient, addMedication, updateMedication, deleteMedication, toggleMedicationActive } = useMedicationStore();
   const { notes, fetchNotesByPatient } = useNoteStore();
   const [isEditMode, setIsEditMode] = useState(false);
   const [showAddLabDropdown, setShowAddLabDropdown] = useState(false);
@@ -1050,6 +1050,7 @@ const PatientDetailPage = () => {
                 onEdit={handleEditMedication}
                 onDelete={handleDeleteMedication}
                 onDeleteAll={handleDeleteAllMedications}
+                onToggleActive={toggleMedicationActive}
               />
             </TabsContent>
 
@@ -1072,6 +1073,7 @@ const PatientDetailPage = () => {
                       ? patient.problemList
                       : undefined,
                     plan: patient.plan,
+                    guardianExplanation: patient.guardianExplanation,
                     etc: patient.etc,
                   }}
                   onSave={async (data) => {

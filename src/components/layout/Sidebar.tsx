@@ -30,7 +30,7 @@ const Sidebar = ({ isOpen = true, onClose, onOpen }: SidebarProps) => {
   const touchStartX = useRef<number>(0);
   const touchCurrentX = useRef<number>(0);
 
-  const [expandedCategory, setExpandedCategory] = useState<PatientCategory>('admitted');
+  const [openCategories, setOpenCategories] = useState<Set<PatientCategory>>(new Set(['admitted']));
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddPatient, setShowAddPatient] = useState(false);
 
@@ -96,7 +96,15 @@ const Sidebar = ({ isOpen = true, onClose, onOpen }: SidebarProps) => {
   };
 
   const toggleCategory = (category: PatientCategory) => {
-    setExpandedCategory(expandedCategory === category ? 'admitted' : category);
+    setOpenCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
   };
 
   // Filter patients by search query (room/bed number or name)
@@ -235,7 +243,7 @@ const Sidebar = ({ isOpen = true, onClose, onOpen }: SidebarProps) => {
         <div className="flex flex-col overflow-hidden h-[calc(100vh-14rem)] lg:h-[calc(100vh-10.5rem)]">
           <div className="flex-1 overflow-y-auto">
             {categories.map((category) => {
-              const isExpanded = expandedCategory === category.id;
+              const isExpanded = openCategories.has(category.id);
               const Icon = isExpanded ? ChevronDown : ChevronRight;
 
               return (
@@ -285,10 +293,15 @@ const Sidebar = ({ isOpen = true, onClose, onOpen }: SidebarProps) => {
                               }).replace(/\. /g, '-').replace('.', '')
                             : '';
 
+                          const tagTooltip = patient.tags && patient.tags.length > 0
+                            ? patient.tags.join(', ')
+                            : undefined;
+
                           return (
                             <button
                               key={patient.id}
                               onClick={() => handlePatientClick(patient.id)}
+                              title={tagTooltip}
                               className={cn(
                                 'group relative w-full rounded-lg border px-3 py-2.5 text-left transition-all',
                                 isActive

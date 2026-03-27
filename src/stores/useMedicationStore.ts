@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { db } from '@/db/database';
 import type { Medication } from '@/db/database';
+import { refreshSidebarFlags } from '@/hooks/useSidebarFlags';
 
 interface MedicationStore {
   medications: Medication[];
@@ -29,6 +30,21 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
         .reverse() // Most recent first
         .sortBy('startDate');
 
+      // Auto-deactivate antibiotics whose endDate has passed
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const toDeactivate = medications.filter(
+        (m) => m.isActive && m.endDate && new Date(m.endDate) < today
+      );
+      if (toDeactivate.length > 0) {
+        await db.transaction('rw', db.medications, async () => {
+          for (const m of toDeactivate) {
+            await db.medications.update(m.id, { isActive: false, updatedAt: new Date() });
+            m.isActive = false;
+          }
+        });
+      }
+
       set({ medications: medications.reverse(), isLoading: false });
     } catch (error) {
       set({
@@ -56,6 +72,7 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
       set((state) => ({
         medications: [newMedication, ...state.medications],
       }));
+      refreshSidebarFlags();
 
       return id;
     } catch (error) {
@@ -81,6 +98,7 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
             : med
         ),
       }));
+      refreshSidebarFlags();
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : 'Failed to update medication',
@@ -97,6 +115,7 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
       set((state) => ({
         medications: state.medications.filter((med) => med.id !== id),
       }));
+      refreshSidebarFlags();
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : 'Failed to delete medication',
@@ -125,6 +144,7 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
             : med
         ),
       }));
+      refreshSidebarFlags();
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : 'Failed to toggle medication status',

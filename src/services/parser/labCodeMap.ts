@@ -28,8 +28,8 @@ export const LAB_CODE_MAP: Record<string, LabCodeInfo> = {
   'B2830':  { name: 'Calcium',         category: 'Chemistry',    unit: 'mg/dL' },
   'B2840':  { name: 'Phosphorus',      category: 'Chemistry',    unit: 'mg/dL' },
   'B2850':  { name: 'Magnesium',       category: 'Chemistry',    unit: 'mg/dL' },
-  'B3120':  { name: 'HbA1c',          category: 'Special',      unit: '%' },
-  'b3120':  { name: 'HbA1c',          category: 'Special',      unit: '%' },
+  'B3120':  { name: 'HbA1c',          category: 'Chemistry',    unit: '%' },
+  'b3120':  { name: 'HbA1c',          category: 'Chemistry',    unit: '%' },
 
   // Lipid
   'B2561':  { name: 'Total Cholesterol', category: 'Lipid',     unit: 'mg/dL' },
@@ -78,22 +78,43 @@ export const LAB_CODE_MAP: Record<string, LabCodeInfo> = {
   'B4120':  { name: 'Free T4', category: 'Thyroid', unit: 'ng/dL' },
   'B4130':  { name: 'T3',   category: 'Thyroid', unit: 'ng/dL' },
 
-  // UA
+  // UA (B-codes)
   'B00301':  { name: 'Color',       category: 'UA',       unit: '' },
-  'B00303':  { name: 'Bilirubin',   category: 'UA',       unit: '' },
-  'B00305':  { name: 'Ketone',      category: 'UA',       unit: '' },
-  'B003010': { name: 'S.G',         category: 'UA',       unit: '' },
+  'B003011': { name: 'Leukocyte',   category: 'UA',       unit: '' },
   'B00302':  { name: 'Occult Blood', category: 'UA',      unit: '' },
-  'B00309':  { name: 'pH (UA)',     category: 'UA',       unit: '' },
-  'B00306':  { name: 'Protein',     category: 'UA',       unit: '' },
+  'B00303':  { name: 'Bilirubin',   category: 'UA',       unit: '' },
   'B00304':  { name: 'Urobilinogen', category: 'UA',      unit: '' },
+  'B00305':  { name: 'Ketone',      category: 'UA',       unit: '' },
+  'B00306':  { name: 'Protein',     category: 'UA',       unit: '' },
   'B00307':  { name: 'Nitrite',     category: 'UA',       unit: '' },
   'B00308':  { name: 'Glucose (UA)', category: 'UA',      unit: '' },
-  'B00411':  { name: 'RBC (Micro)', category: 'UA Micro', unit: '/HPF' },
-  'B00412':  { name: 'WBC (Micro)', category: 'UA Micro', unit: '/HPF' },
-  'B00413':  { name: 'Epithelial cell', category: 'UA Micro', unit: '' },
-  'B00414':  { name: 'Bacteria',    category: 'UA Micro', unit: '' },
-  'B00415':  { name: 'Cast',        category: 'UA Micro', unit: '' },
+  'B00309':  { name: 'pH (UA)',     category: 'UA',       unit: '' },
+  'B003010': { name: 'S.G',         category: 'UA',       unit: '' },
+  // UA (D-codes)
+  'D0030100': { name: 'Color',       category: 'UA',       unit: '' },
+  'D0030111': { name: 'Leukocyte',   category: 'UA',       unit: '' },
+  'D0030200': { name: 'Occult Blood', category: 'UA',      unit: '' },
+  'D0030300': { name: 'Bilirubin',   category: 'UA',       unit: '' },
+  'D0030400': { name: 'Urobilinogen', category: 'UA',      unit: '' },
+  'D0030500': { name: 'Ketone',      category: 'UA',       unit: '' },
+  'D0030600': { name: 'Protein',     category: 'UA',       unit: '' },
+  'D0030700': { name: 'Nitrite',     category: 'UA',       unit: '' },
+  'D0030800': { name: 'Glucose (UA)', category: 'UA',      unit: '' },
+  'D0030900': { name: 'pH (UA)',     category: 'UA',       unit: '' },
+  'D0031000': { name: 'S.G',         category: 'UA',       unit: '' },
+  // Urine Sediment (Micro)
+  'B00411':  { name: 'RBC (Micro)',       category: 'Urine Sediment', unit: '/HPF' },
+  'B00412':  { name: 'WBC (Micro)',       category: 'Urine Sediment', unit: '/HPF' },
+  'B00413':  { name: 'Epithelial cell',   category: 'Urine Sediment', unit: '' },
+  'B00414':  { name: 'Bacteria',          category: 'Urine Sediment', unit: '' },
+  'B00415':  { name: 'Cast',              category: 'Urine Sediment', unit: '' },
+  'B00416':  { name: 'Crystal',           category: 'Urine Sediment', unit: '' },
+  'D0041100': { name: 'RBC (Micro)',      category: 'Urine Sediment', unit: '/HPF' },
+  'D0041200': { name: 'WBC (Micro)',      category: 'Urine Sediment', unit: '/HPF' },
+  'D0041300': { name: 'Epithelial cell',  category: 'Urine Sediment', unit: '' },
+  'D0041400': { name: 'Bacteria',         category: 'Urine Sediment', unit: '' },
+  'D0041500': { name: 'Cast',             category: 'Urine Sediment', unit: '' },
+  'D0041600': { name: 'Crystal',          category: 'Urine Sediment', unit: '' },
 
   // HbA1c
   'B1270':   { name: 'HbA1c',  category: 'Chemistry', unit: '%' },
@@ -172,6 +193,18 @@ const NAME_ALIASES: Record<string, string> = {
   'Cr': 'Creatinine',
   'GGT': 'γ-GTP',
   'GGTP': 'γ-GTP',
+  // UA Micro/Sediment — "Micro RBC" → "RBC (Micro)" etc.
+  'Micro RBC': 'RBC (Micro)',
+  'Micro WBC': 'WBC (Micro)',
+  'Micro Epithelial cell': 'Epithelial cell',
+  'Micro Epithelial': 'Epithelial cell',
+  'Micro Bacteria': 'Bacteria',
+  'Micro Cast': 'Cast',
+  'Micro Crystal': 'Crystal',
+  // UA strip items that may come with different names
+  'Leukocyte esterase': 'Leukocyte',
+  'Blood': 'Occult Blood',
+  'Occult blood': 'Occult Blood',
 };
 
 /**

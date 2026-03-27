@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ExternalLink, AlertTriangle, Plus, Clipboard, Pencil, Trash2 } from 'lucide-react';
+import { ExternalLink, AlertTriangle, Plus, Clipboard, Pencil, Trash2, CircleOff, RotateCcw } from 'lucide-react';
 import type { Medication } from '@/db/database';
 import { formatDate, getLocalToday } from '@/utils/dateUtils';
 
@@ -15,6 +15,7 @@ interface MedicationListProps {
   onEdit?: (medication: Medication) => void;
   onDelete?: (medicationId: string) => void;
   onDeleteAll?: (category: 'antibiotic' | 'hospital' | 'personal') => void;
+  onToggleActive?: (medicationId: string) => void;
 }
 
 /**
@@ -35,6 +36,7 @@ export function MedicationList({
   onEdit,
   onDelete,
   onDeleteAll,
+  onToggleActive,
 }: MedicationListProps) {
   const [showAllHistory, setShowAllHistory] = useState(false);
 
@@ -47,6 +49,13 @@ export function MedicationList({
       hospital: active.filter((med) => med.category === 'hospital'),
       personal: active.filter((med) => med.category === 'personal'),
     };
+  }, [medications]);
+
+  // Get inactive personal medications (종료된 지참약)
+  const personalHistory = useMemo(() => {
+    return medications
+      .filter((med) => med.category === 'personal' && !med.isActive)
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
   }, [medications]);
 
   // Get antibiotic history (inactive antibiotics only)
@@ -414,9 +423,20 @@ export function MedicationList({
                           {med.schedule}
                           {med.timing && <span className="text-xs ml-1">({med.timing})</span>}
                         </td>
-                        {(onEdit || onDelete) && (
+                        {(onEdit || onDelete || onToggleActive) && (
                           <td className="p-3">
                             <div className="flex items-center justify-end gap-1">
+                              {onToggleActive && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0 text-muted-foreground"
+                                  title="종료 처리"
+                                  onClick={() => onToggleActive(med.id)}
+                                >
+                                  <CircleOff className="h-3 w-3" />
+                                </Button>
+                              )}
                               {onEdit && (
                                 <Button
                                   size="sm"
@@ -449,6 +469,32 @@ export function MedicationList({
           </Card>
         ) : (
           <p className="text-sm text-muted-foreground px-1">현재 지참약이 없습니다.</p>
+        )}
+
+        {/* 종료된 지참약 */}
+        {personalHistory.length > 0 && (
+          <div className="mt-3">
+            <h4 className="text-xs font-medium text-muted-foreground mb-2 px-1">종료된 지참약</h4>
+            <Card className="opacity-60">
+              <div className="divide-y">
+                {personalHistory.map((med) => (
+                  <div key={med.id} className="flex items-center gap-2 px-3 py-2 text-sm">
+                    <span className="flex-1 line-through text-muted-foreground">{med.drugName}</span>
+                    {onToggleActive && (
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="다시 활성화" onClick={() => onToggleActive(med.id)}>
+                        <RotateCcw className="h-3 w-3" />
+                      </Button>
+                    )}
+                    {onDelete && (
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-destructive" onClick={() => onDelete(med.id)}>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
         )}
       </div>
 

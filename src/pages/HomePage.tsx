@@ -7,12 +7,13 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/utils/cn';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Bell, Pill, FlaskConical, AlertTriangle, ChevronRight, Calendar, Check, Search, FileText, X } from 'lucide-react';
+import { Bell, Pill, FlaskConical, AlertTriangle, ChevronRight, Calendar, Check, Search, FileText, X, ClipboardList, Plus, Pencil, Trash2, Megaphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useScheduleCategoryStore } from '@/stores/useScheduleCategoryStore';
 import { db } from '@/db/database';
 import type { Note } from '@/db/database';
 import { usePatientStore } from '@/stores/usePatientStore';
+import { useGlobalAlertStore } from '@/stores/useGlobalAlertStore';
 
 const HomePage = () => {
   const navigate = useNavigate();
@@ -21,6 +22,13 @@ const HomePage = () => {
   const { patients } = usePatientStore();
   const [data, setData] = useState<BriefingData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // 범용 알림
+  const { getActiveAlerts, addAlert, updateAlert, deleteAlert } = useGlobalAlertStore();
+  const activeGlobalAlerts = getActiveAlerts();
+  const [showAlertForm, setShowAlertForm] = useState(false);
+  const [alertFormData, setAlertFormData] = useState({ content: '', startDate: '', endDate: '' });
+  const [editingAlertId, setEditingAlertId] = useState<string | null>(null);
 
   // 메모 검색
   const [searchQuery, setSearchQuery] = useState('');
@@ -106,7 +114,8 @@ const HomePage = () => {
     );
   }
 
-  const hasReminders = data.reminders.length > 0;
+  const totalAlerts = data.reminders.length + activeGlobalAlerts.length;
+  const hasReminders = totalAlerts > 0;
   const hasLongTermAbx = data.antibiotics.some(a => a.isLongTerm);
 
   return (
@@ -125,13 +134,70 @@ const HomePage = () => {
             오늘의 알림
             {hasReminders && (
               <Badge variant="secondary" className="bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
-                {data.reminders.length}
+                {totalAlerts}
               </Badge>
             )}
+            <Button variant="ghost" size="icon" className="h-7 w-7 ml-auto" onClick={() => { setEditingAlertId(null); setAlertFormData({ content: '', startDate: '', endDate: '' }); setShowAlertForm(true); }}>
+              <Plus className="h-4 w-4" />
+            </Button>
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          {data.reminders.length === 0 ? (
+        <CardContent className="space-y-3">
+          {/* 범용 알림 */}
+          {activeGlobalAlerts.map((ga) => (
+            <div key={ga.id} className="flex items-center gap-2 rounded-md border border-violet-200 bg-violet-50/50 p-2.5 dark:border-violet-800 dark:bg-violet-950/20">
+              <Megaphone className="h-4 w-4 text-violet-500 shrink-0" />
+              <span className="flex-1 text-sm truncate">{ga.content}</span>
+              {ga.endDate && <span className="text-[10px] text-muted-foreground shrink-0">~{ga.endDate}</span>}
+              <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => {
+                setEditingAlertId(ga.id);
+                setAlertFormData({ content: ga.content, startDate: ga.startDate || '', endDate: ga.endDate || '' });
+                setShowAlertForm(true);
+              }}>
+                <Pencil className="h-3 w-3" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 text-destructive" onClick={() => deleteAlert(ga.id)}>
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+          ))}
+
+          {/* 범용 알림 추가/수정 폼 */}
+          {showAlertForm && (
+            <div className="rounded-md border border-dashed border-violet-300 bg-violet-50/30 p-3 space-y-2 dark:border-violet-700 dark:bg-violet-950/10">
+              <Input
+                value={alertFormData.content}
+                onChange={(e) => setAlertFormData((p) => ({ ...p, content: e.target.value }))}
+                placeholder="알림 내용..."
+                className="text-sm"
+              />
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="text-xs text-muted-foreground shrink-0">기간:</label>
+                <Input type="date" value={alertFormData.startDate} onChange={(e) => setAlertFormData((p) => ({ ...p, startDate: e.target.value }))} className="text-xs h-8 w-auto flex-1 min-w-[120px]" />
+                <span className="text-xs">~</span>
+                <Input type="date" value={alertFormData.endDate} onChange={(e) => setAlertFormData((p) => ({ ...p, endDate: e.target.value }))} className="text-xs h-8 w-auto flex-1 min-w-[120px]" />
+              </div>
+              <p className="text-[10px] text-muted-foreground">비워두면 항상 표시됩니다.</p>
+              <div className="flex gap-2">
+                <Button size="sm" className="h-7 text-xs" onClick={() => {
+                  if (!alertFormData.content.trim()) return;
+                  if (editingAlertId) {
+                    updateAlert(editingAlertId, { content: alertFormData.content.trim(), startDate: alertFormData.startDate || undefined, endDate: alertFormData.endDate || undefined });
+                  } else {
+                    addAlert(alertFormData.content.trim(), alertFormData.startDate || undefined, alertFormData.endDate || undefined);
+                  }
+                  setShowAlertForm(false);
+                  setAlertFormData({ content: '', startDate: '', endDate: '' });
+                }}>
+                  {editingAlertId ? '수정' : '추가'}
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShowAlertForm(false)}>취소</Button>
+              </div>
+            </div>
+          )}
+
+          {/* 환자별 알림 */}
+          {data.reminders.length === 0 && activeGlobalAlerts.length === 0 && !showAlertForm ? (
             <p className="text-sm text-muted-foreground">오늘 알림이 없습니다.</p>
           ) : (
             <div className="space-y-2">
@@ -146,7 +212,7 @@ const HomePage = () => {
                       <Badge variant="outline" className="text-xs shrink-0">{r.roomBed}</Badge>
                       <span className="font-medium text-sm">{r.patientName}</span>
                     </div>
-                    <p className="text-sm text-muted-foreground line-clamp-2">{r.content}</p>
+                    <p className="text-sm text-muted-foreground truncate">{r.content}</p>
                   </div>
                   <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
                 </div>
@@ -184,7 +250,7 @@ const HomePage = () => {
                 <div
                   key={abx.medicationId}
                   className="flex items-center justify-between rounded-md border p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                  onClick={() => goToPatient(abx.patientId, 'medications')}
+                  onClick={() => goToPatient(abx.patientId, 'medication')}
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-1">
@@ -234,7 +300,7 @@ const HomePage = () => {
                     <tr
                       key={abx.medicationId}
                       className="border-b last:border-0 cursor-pointer hover:bg-muted/50 transition-colors"
-                      onClick={() => goToPatient(abx.patientId, 'medications')}
+                      onClick={() => goToPatient(abx.patientId, 'medication')}
                     >
                       <td className="py-2 pr-3">
                         <div className="flex items-center gap-2">
@@ -276,6 +342,39 @@ const HomePage = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* 오늘의 회진 (경과기록) */}
+      {data.progressNotes.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <ClipboardList className="h-5 w-5 text-teal-500" />
+              오늘의 회진
+              <Badge variant="secondary">{data.progressNotes.length}</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1">
+              {data.progressNotes.map((p) => (
+                <div
+                  key={p.noteId}
+                  className="flex items-center gap-3 rounded-md border p-2.5 cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => goToPatient(p.patientId, 'notes')}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs shrink-0">{p.roomBed}</Badge>
+                      <span className="font-medium text-sm shrink-0">{p.patientName}</span>
+                      <span className="text-sm text-muted-foreground truncate">{p.content}</span>
+                    </div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 최근 Lab 결과 */}
       <Card>

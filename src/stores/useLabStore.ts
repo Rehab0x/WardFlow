@@ -122,18 +122,33 @@ export const useLabStore = create<LabStore>((set) => ({
       }
 
       if (targetLab && itemIndex !== -1) {
-        // Update existing item
+        // If value is empty, remove the item
+        if (String(newValue).trim() === '') {
+          const updatedItems = targetLab.items.filter((_, i) => i !== itemIndex);
+          await db.labResults.update(targetLab.id, { items: updatedItems });
+          set((state) => ({
+            labs: state.labs.map((l) =>
+              l.id === targetLab!.id ? { ...l, items: updatedItems } : l
+            ),
+          }));
+          return;
+        }
+
+        // Update existing item with recalculated abnormal flags
         const updatedItems = [...targetLab.items];
+        const existingItem = updatedItems[itemIndex]!;
+        const refMin = existingItem.referenceMin;
+        const refMax = existingItem.referenceMax;
         updatedItems[itemIndex] = {
-          ...updatedItems[itemIndex]!,
+          ...existingItem,
           value: isNumeric ? numVal as number : newValue,
           isAbnormal: isNumeric
-            ? (updatedItems[itemIndex]!.referenceMin !== undefined && (numVal as number) < updatedItems[itemIndex]!.referenceMin!) ||
-              (updatedItems[itemIndex]!.referenceMax !== undefined && (numVal as number) > updatedItems[itemIndex]!.referenceMax!)
+            ? (refMin !== undefined && (numVal as number) < refMin) ||
+              (refMax !== undefined && (numVal as number) > refMax)
             : false,
           hlFlag: isNumeric
-            ? (updatedItems[itemIndex]!.referenceMax !== undefined && (numVal as number) > updatedItems[itemIndex]!.referenceMax! ? 'H'
-              : updatedItems[itemIndex]!.referenceMin !== undefined && (numVal as number) < updatedItems[itemIndex]!.referenceMin! ? 'L'
+            ? (refMax !== undefined && (numVal as number) > refMax ? 'H'
+              : refMin !== undefined && (numVal as number) < refMin ? 'L'
               : undefined)
             : undefined,
         };
@@ -224,8 +239,11 @@ export const useLabStore = create<LabStore>((set) => ({
             referenceMax = item.referenceMax;
           }
 
+          // Use local date to avoid timezone shift (toISOString uses UTC)
+          const td = lab.testDate;
+          const localDate = `${td.getFullYear()}-${String(td.getMonth() + 1).padStart(2, '0')}-${String(td.getDate()).padStart(2, '0')}`;
           dataPoints.push({
-            date: lab.testDate.toISOString().split('T')[0] ?? '',
+            date: localDate,
             value: item.value,
             isAbnormal: item.isAbnormal,
             hlFlag: item.hlFlag,

@@ -12,8 +12,11 @@ const LoginPage = () => {
   const navigate = useNavigate();
   const { login, isAuthenticated, isLoading, error, clearError } = useAuthStore();
 
-  const [username, setUsername] = useState('');
+  const savedUsername = localStorage.getItem('wardflow-remember-username') || '';
+  const savedRemember = localStorage.getItem('wardflow-remember-me') === 'true';
+  const [username, setUsername] = useState(savedUsername);
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(savedRemember);
   const [isCheckingDb, setIsCheckingDb] = useState(true);
   const [isReseeding, setIsReseeding] = useState(false);
   const [reseedMessage, setReseedMessage] = useState('');
@@ -57,6 +60,14 @@ const LoginPage = () => {
 
     try {
       await login(username, password);
+      // 아이디 기억하기
+      if (rememberMe) {
+        localStorage.setItem('wardflow-remember-username', username);
+        localStorage.setItem('wardflow-remember-me', 'true');
+      } else {
+        localStorage.removeItem('wardflow-remember-username');
+        localStorage.removeItem('wardflow-remember-me');
+      }
       // Navigation will be handled by the useEffect above
     } catch (error) {
       // Error is already set in the store
@@ -112,7 +123,7 @@ const LoginPage = () => {
               onChange={(e) => setUsername(e.target.value)}
               disabled={isLoading}
               autoComplete="username"
-              autoFocus
+              autoFocus={!savedUsername}
             />
           </div>
 
@@ -128,8 +139,19 @@ const LoginPage = () => {
               onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading}
               autoComplete="current-password"
+              autoFocus={!!savedUsername}
             />
           </div>
+
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            <span className="text-sm text-muted-foreground">아이디 기억하기</span>
+          </label>
 
           {error && (
             <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">

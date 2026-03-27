@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Plus, List, AlignLeft } from 'lucide-react';
+import { X, Plus, List, AlignLeft, Pencil, ArrowUp, ArrowDown, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ResizableTextArea } from './ResizableTextArea';
@@ -38,6 +38,8 @@ export const ProblemListEditor = ({
 }: ProblemListEditorProps) => {
   const [localMode, setLocalMode] = useState<ProblemListMode>('list');
   const [newProblem, setNewProblem] = useState('');
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState('');
 
   const mode = controlledMode ?? localMode;
 
@@ -70,6 +72,32 @@ export const ProblemListEditor = ({
 
   const handleRemoveProblem = (index: number) => {
     onChange(value.filter((_, i) => i !== index));
+  };
+
+  const handleMoveProblem = (index: number, direction: 'up' | 'down') => {
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= value.length) return;
+    const newList = [...value];
+    [newList[index], newList[newIndex]] = [newList[newIndex]!, newList[index]!];
+    onChange(newList);
+  };
+
+  const handleStartEdit = (index: number) => {
+    setEditingIndex(index);
+    setEditingText(value[index] ?? '');
+  };
+
+  const handleFinishEdit = () => {
+    if (editingIndex === null) return;
+    if (editingText.trim() === '') {
+      handleRemoveProblem(editingIndex);
+    } else {
+      const newList = [...value];
+      newList[editingIndex] = editingText.trim();
+      onChange(newList);
+    }
+    setEditingIndex(null);
+    setEditingText('');
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -114,21 +142,41 @@ export const ProblemListEditor = ({
               {value.map((problem, index) => (
                 <div
                   key={index}
-                  className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2"
+                  className="flex items-center gap-1.5 rounded-md border bg-muted/30 px-2 py-1.5"
                 >
-                  <span className="text-sm font-medium text-muted-foreground">
+                  <span className="text-sm font-medium text-muted-foreground w-5 text-center shrink-0">
                     {index + 1}.
                   </span>
-                  <span className="flex-1 text-sm">{problem}</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 flex-shrink-0"
-                    onClick={() => handleRemoveProblem(index)}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
+                  {editingIndex === index ? (
+                    <>
+                      <Input
+                        value={editingText}
+                        onChange={(e) => setEditingText(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleFinishEdit(); } }}
+                        className="flex-1 h-7 text-sm"
+                        autoFocus
+                      />
+                      <Button type="button" variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={handleFinishEdit}>
+                        <Check className="h-3.5 w-3.5 text-green-600" />
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex-1 text-sm">{problem}</span>
+                      <Button type="button" variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => handleMoveProblem(index, 'up')} disabled={index === 0}>
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => handleMoveProblem(index, 'down')} disabled={index === value.length - 1}>
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => handleStartEdit(index)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => handleRemoveProblem(index)}>
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </>
+                  )}
                 </div>
               ))}
             </div>

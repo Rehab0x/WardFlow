@@ -47,9 +47,19 @@ export interface ScheduleItem {
   isCompleted: boolean;
 }
 
+export interface ProgressItem {
+  patientId: string;
+  patientName: string;
+  roomBed: string;
+  noteId: string;
+  content: string;
+}
+
 export interface BriefingData {
   // 오늘의 알림 (reminder 메모)
   reminders: ReminderItem[];
+  // 오늘의 회진 (progress 메모)
+  progressNotes: ProgressItem[];
   // 항생제 현황 (활성 항생제, D-day 순)
   antibiotics: AntibioticItem[];
   // 최근 Lab 결과 (오늘/어제)
@@ -78,8 +88,9 @@ export async function fetchBriefingData(userId: string, userRole: string): Promi
   const patientIds = activePatients.map(p => p.id);
 
   // 2. 병렬로 데이터 조회
-  const [reminders, antibiotics, recentLabs, todaySchedules] = await Promise.all([
+  const [reminders, progressNotes, antibiotics, recentLabs, todaySchedules] = await Promise.all([
     fetchTodayReminders(patientIds, patientMap),
+    fetchTodayProgressNotes(patientIds, patientMap),
     fetchActiveAntibiotics(patientIds, patientMap),
     fetchRecentLabs(patientIds, patientMap),
     fetchTodaySchedules(patientIds, patientMap),
@@ -87,6 +98,7 @@ export async function fetchBriefingData(userId: string, userRole: string): Promi
 
   return {
     reminders,
+    progressNotes,
     antibiotics,
     recentLabs,
     todaySchedules,
@@ -147,6 +159,38 @@ async function fetchTodayReminders(
   return reminders;
 }
 
+async function fetchTodayProgressNotes(
+  _patientIds: string[],
+  patientMap: Map<string, Patient>,
+): Promise<ProgressItem[]> {
+  const progressNotes: ProgressItem[] = [];
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
+
+  // 오늘 작성된 경과기록 메모 조회
+  const allNotes = await db.notes
+    .where('createdAt')
+    .between(todayStart, todayEnd)
+    .toArray();
+
+  for (const note of allNotes) {
+    const patient = patientMap.get(note.patientId);
+    if (!patient) continue;
+    if (note.type !== 'progress') continue;
+
+    progressNotes.push({
+      patientId: note.patientId,
+      patientName: patient.name,
+      roomBed: patient.roomBed,
+      noteId: note.id,
+      content: note.content,
+    });
+  }
+
+  return progressNotes;
+}
+
 async function fetchActiveAntibiotics(
   _patientIds: string[],
   patientMap: Map<string, Patient>,
@@ -154,12 +198,20 @@ async function fetchActiveAntibiotics(
   const today = new Date();
   const antibiotics: AntibioticItem[] = [];
 
-  // 전체 투약에서 활성 항생제 필터링
+  // 전체 투약에서 활성 항생제 필터링 + endDate 지난 건 자동 비활성화
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const allAntibiotics = await db.medications
     .filter(med => med.category === 'antibiotic' && med.isActive)
     .toArray();
 
-  for (const med of allAntibiotics) {
+  // Auto-deactivate past endDate
+  const expired = allAntibiotics.filter(m => m.endDate && new Date(m.endDate) < todayStart);
+  for (const m of expired) {
+    await db.medications.update(m.id, { isActive: false, updatedAt: new Date() });
+  }
+  const activeAntibiotics = allAntibiotics.filter(m => !expired.includes(m));
+
+  for (const med of activeAntibiotics) {
     const patient = patientMap.get(med.patientId);
     if (!patient) continue;
 

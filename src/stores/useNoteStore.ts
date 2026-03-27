@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { db } from '@/db/database';
 import type { Note } from '@/db/database';
 import { parseLocalDate } from '@/utils/dateUtils';
+import { refreshSidebarFlags } from '@/hooks/useSidebarFlags';
 
 // Extended type for adding/updating notes (accepts string dates from forms)
 type NoteInput = Omit<Note, 'id' | 'createdAt' | 'updatedAt' | 'alertDate'> & {
@@ -80,6 +81,7 @@ export const useNoteStore = create<NoteStore>((set) => ({
       set((state) => ({
         notes: [note, ...state.notes], // Add to beginning (most recent first)
       }));
+      refreshSidebarFlags();
 
       return id;
     } catch (error) {
@@ -116,6 +118,7 @@ export const useNoteStore = create<NoteStore>((set) => ({
       set((state) => ({
         notes: state.notes.map((n) => (n.id === id ? { ...n, ...updatedData } : n)),
       }));
+      refreshSidebarFlags();
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : 'Failed to update note',
@@ -132,6 +135,7 @@ export const useNoteStore = create<NoteStore>((set) => ({
       set((state) => ({
         notes: state.notes.filter((n) => n.id !== id),
       }));
+      refreshSidebarFlags();
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : 'Failed to delete note',

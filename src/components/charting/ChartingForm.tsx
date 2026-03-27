@@ -61,6 +61,7 @@ export const ChartingForm = ({
 
   const [problemListMode, setProblemListMode] = useState<ProblemListMode>('list');
   const [onsetInputMode, setOnsetInputMode] = useState<'date' | 'text'>('text');
+  const [onsetDuration, setOnsetDuration] = useState<string>('');
   const [copied, setCopied] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -109,9 +110,9 @@ export const ChartingForm = ({
     if (days > 0 || durationParts.length === 0) durationParts.push(`${days}일`);
 
     const durationText = durationParts.join(' ') + ' 전';
-    const formattedOnset = `${dateString} (${durationText})`;
+    setOnsetDuration(durationText);
 
-    handleChange('onset', formattedOnset);
+    handleChange('onset', dateString);
   };
 
   const handleCopy = async () => {
@@ -346,9 +347,9 @@ export const ChartingForm = ({
           )}
 
           {/* 미리보기 (날짜 모드일 때만) */}
-          {onsetInputMode === 'date' && formData.onset && (
+          {onsetInputMode === 'date' && formData.onset && onsetDuration && (
             <p className="text-sm text-muted-foreground">
-              {formData.onset}
+              {formData.onset} ({onsetDuration})
             </p>
           )}
         </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { db } from '@/db/database';
 
 export interface PatientFlags {
@@ -7,17 +7,32 @@ export interface PatientFlags {
   hasAttention: boolean; // from patient.attention field directly
 }
 
+// Global refresh trigger — call refreshSidebarFlags() from anywhere to reload
+let _refreshCounter = 0;
+let _listeners: Array<() => void> = [];
+
+export function refreshSidebarFlags() {
+  _refreshCounter++;
+  _listeners.forEach((fn) => fn());
+}
+
 /**
  * 사이드바 플래그 데이터를 전체 환자 대상으로 한번에 조회
  * 환자별 조회가 아닌 bulk 쿼리로 성능 최적화
  */
 export function useSidebarFlags(patientIds: string[]) {
   const [flags, setFlags] = useState<Map<string, PatientFlags>>(new Map());
+  const [, setRefresh] = useState(0);
 
+  // Subscribe to global refresh trigger
   useEffect(() => {
-    if (patientIds.length === 0) return;
+    const handler = () => setRefresh((c) => c + 1);
+    _listeners.push(handler);
+    return () => { _listeners = _listeners.filter((fn) => fn !== handler); };
+  }, []);
 
-    const load = async () => {
+  const load = useCallback(async () => {
+    if (patientIds.length === 0) return;
       const map = new Map<string, PatientFlags>();
 
       // 초기화
@@ -52,10 +67,11 @@ export function useSidebarFlags(patientIds: string[]) {
       }
 
       setFlags(new Map(map));
-    };
+  }, [patientIds]);
 
+  useEffect(() => {
     load();
-  }, [patientIds.join(',')]); // re-run when patient list changes
+  }, [load, _refreshCounter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return flags;
 }
