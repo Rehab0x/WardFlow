@@ -11,6 +11,7 @@ interface MedicationStore {
   // Actions
   fetchMedicationsByPatient: (patientId: string) => Promise<void>;
   addMedication: (medication: Omit<Medication, 'id' | 'createdAt' | 'updatedAt'>) => Promise<string>;
+  bulkAddMedications: (medications: Omit<Medication, 'id' | 'createdAt' | 'updatedAt'>[]) => Promise<void>;
   updateMedication: (id: string, updates: Partial<Medication>) => Promise<void>;
   deleteMedication: (id: string) => Promise<void>;
   toggleMedicationActive: (id: string) => Promise<void>;
@@ -78,6 +79,36 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : 'Failed to add medication',
+      });
+      throw error;
+    }
+  },
+
+  bulkAddMedications: async (medications) => {
+    try {
+      const now = new Date();
+      const newMedications: Medication[] = medications.map((med, i) => ({
+        id: `med${Date.now()}_${i}`,
+        ...med,
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      // Single transaction for all inserts
+      await db.transaction('rw', db.medications, async () => {
+        await db.medications.bulkAdd(newMedications);
+      });
+
+      // Single state update
+      set((state) => ({
+        medications: [...newMedications, ...state.medications],
+      }));
+
+      // Single sidebar refresh
+      refreshSidebarFlags();
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : 'Failed to add medications',
       });
       throw error;
     }

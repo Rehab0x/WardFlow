@@ -34,7 +34,7 @@ const PatientDetailPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { patients, isLoading: patientsLoading, fetchPatients, getPatientById, updatePatient } = usePatientStore();
   const { labs, fetchLabsByPatient, addLabResult, deleteLabResult, updateLabItemValue, getLabTrendData } = useLabStore();
-  const { medications, fetchMedicationsByPatient, addMedication, updateMedication, deleteMedication, toggleMedicationActive } = useMedicationStore();
+  const { medications, fetchMedicationsByPatient, addMedication, bulkAddMedications, updateMedication, deleteMedication, toggleMedicationActive } = useMedicationStore();
   const { notes, fetchNotesByPatient } = useNoteStore();
   const [isEditMode, setIsEditMode] = useState(false);
   const [showAddLabDropdown, setShowAddLabDropdown] = useState(false);
@@ -222,22 +222,20 @@ const PatientDetailPage = () => {
     try {
       const now = new Date();
 
-      // 모든 약물 일괄 추가
-      for (const med of parsedMeds) {
-        await addMedication({
-          patientId,
-          category: medicationCategory,
-          drugName: med.drugName,
-          drugBaseName: med.drugBaseName,
-          singleDose: med.singleDose,
-          schedule: med.schedule,
-          timing: med.timing,
-          daysRemaining: med.daysRemaining,
-          startDate: now, // 현재 시작
-          isAntibiotic: false,
-          isActive: true,
-        });
-      }
+      // 일괄 추가 (단일 트랜잭션)
+      await bulkAddMedications(parsedMeds.map((med) => ({
+        patientId,
+        category: medicationCategory,
+        drugName: med.drugName,
+        drugBaseName: med.drugBaseName,
+        singleDose: med.singleDose,
+        schedule: med.schedule,
+        timing: med.timing,
+        daysRemaining: med.daysRemaining,
+        startDate: now,
+        isAntibiotic: false,
+        isActive: true,
+      })));
 
       setShowPasteMedicationModal(false);
 
