@@ -1,31 +1,34 @@
 import { useState, useEffect } from 'react';
 import { LabImportInbox } from '@/components/lab/LabImportInbox';
+import { StorageLabInbox } from '@/components/lab/StorageLabInbox';
 import { uploadBackupToServer, downloadBackupFromServer } from '@/services/backupService';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { CloudDownload, CloudUpload, Check, Loader2, Database, Eye, EyeOff } from 'lucide-react';
+import { CloudDownload, Loader2, Database, Eye, EyeOff, Cloud, FolderOpen } from 'lucide-react';
 import { db } from '@/db/database';
 import { useToast } from '@/hooks/use-toast';
+
+type ImportMode = 'storage' | 'local';
 
 /**
  * Standalone Lab Import page — /lab-import
  *
- * 오픈클로 자동화용: 계정 생성/로그인 없이
- * 동기화 키+비밀번호만으로 환자 데이터 가져오기 + Lab 자동 등록
+ * 두 가지 모드 지원:
+ * 1. Storage 모드 (기본): Supabase Storage에서 XLS 가져오기 — 터미널 환경
+ * 2. Local 모드: File System Access API로 로컬 폴더 — GUI 환경
  */
 const LabImportPage = () => {
   const { toast } = useToast();
 
-  // 서버 동기화 설정 (localStorage persist)
   const [serverKey, setServerKey] = useState(() => localStorage.getItem('wardflow-server-key') || '');
   const [serverPw, setServerPw] = useState(() => localStorage.getItem('wardflow-server-pw') || '');
   const [showPw, setShowPw] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [patientCount, setPatientCount] = useState<number | null>(null);
   const [setupDone, setSetupDone] = useState(false);
+  const [mode, setMode] = useState<ImportMode>('storage');
 
-  // 환자 수 확인
   useEffect(() => {
     db.patients.count().then((c) => {
       setPatientCount(c);
@@ -38,7 +41,6 @@ const LabImportPage = () => {
     localStorage.setItem('wardflow-server-pw', serverPw);
   };
 
-  // 서버에서 백업 다운로드 (환자 데이터 가져오기)
   const handleDownloadData = async () => {
     if (!serverKey.trim() || !serverPw) {
       toast({ title: '동기화 키와 비밀번호를 입력해주세요.', variant: 'destructive' });
@@ -73,31 +75,31 @@ const LabImportPage = () => {
         <div>
           <h1 className="text-2xl font-bold text-primary">Lab Auto Import</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            폴더의 XLS 파일을 자동으로 파싱하여 환자에게 등록합니다.
+            XLS 파일을 자동으로 파싱하여 환자에게 등록합니다.
           </p>
         </div>
 
-        {/* Step 1: Server sync setup */}
+        {/* Step 1: Server connection + data download */}
         <Card className="p-5 space-y-4">
           <div className="flex items-center gap-2">
             <Database className="h-5 w-5 text-primary" />
             <h2 className="font-semibold">서버 연결</h2>
             {patientCount !== null && (
               <span className="text-xs text-muted-foreground ml-auto">
-                현재 환자: {patientCount}명
+                환자: {patientCount}명
               </span>
             )}
           </div>
 
-          {!setupDone ? (
-            <p className="text-sm text-muted-foreground">
-              WardFlow 본 계정의 동기화 키와 비밀번호를 입력하고 데이터를 가져오세요.
-            </p>
-          ) : (
+          {setupDone ? (
             <div className="flex items-center gap-2 text-sm text-green-600">
-              <Check className="h-4 w-4" />
+              <Database className="h-4 w-4" />
               환자 데이터 준비 완료 ({patientCount}명)
             </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              동기화 키와 비밀번호를 입력하고 환자 데이터를 가져오세요.
+            </p>
           )}
 
           <div className="space-y-2">
@@ -127,33 +129,57 @@ const LabImportPage = () => {
             </div>
           </div>
 
-          <div className="flex gap-2 flex-wrap">
-            <Button size="sm" onClick={handleDownloadData} disabled={syncing || !serverKey || !serverPw}>
-              {syncing ? (
-                <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />가져오는 중...</>
-              ) : (
-                <><CloudDownload className="h-3.5 w-3.5 mr-1" />서버에서 데이터 가져오기</>
-              )}
-            </Button>
-            {setupDone && handleServerSync && (
-              <Button size="sm" variant="outline" onClick={async () => {
-                setSyncing(true);
-                try { await handleServerSync(); toast({ title: '서버 업로드 완료' }); }
-                catch { toast({ title: '업로드 실패', variant: 'destructive' }); }
-                finally { setSyncing(false); }
-              }} disabled={syncing}>
-                <CloudUpload className="h-3.5 w-3.5 mr-1" />업로드
-              </Button>
+          <Button size="sm" onClick={handleDownloadData} disabled={syncing || !serverKey || !serverPw}>
+            {syncing ? (
+              <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />가져오는 중...</>
+            ) : (
+              <><CloudDownload className="h-3.5 w-3.5 mr-1" />서버에서 데이터 가져오기</>
             )}
-          </div>
+          </Button>
         </Card>
 
-        {/* Step 2: Import Inbox */}
+        {/* Step 2: Import mode selector + inbox */}
         {setupDone && (
-          <LabImportInbox
-            onServerSync={handleServerSync}
-            autoRun={true}
-          />
+          <>
+            {/* Mode toggle */}
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant={mode === 'storage' ? 'default' : 'outline'}
+                className="h-8 text-xs"
+                onClick={() => setMode('storage')}
+              >
+                <Cloud className="h-3.5 w-3.5 mr-1" />
+                Storage (원격)
+              </Button>
+              <Button
+                size="sm"
+                variant={mode === 'local' ? 'default' : 'outline'}
+                className="h-8 text-xs"
+                onClick={() => setMode('local')}
+              >
+                <FolderOpen className="h-3.5 w-3.5 mr-1" />
+                로컬 폴더
+              </Button>
+            </div>
+
+            {/* Storage mode */}
+            {mode === 'storage' && serverKey && (
+              <StorageLabInbox
+                syncKey={serverKey.trim()}
+                onServerSync={handleServerSync}
+                autoRun={true}
+              />
+            )}
+
+            {/* Local folder mode */}
+            {mode === 'local' && (
+              <LabImportInbox
+                onServerSync={handleServerSync}
+                autoRun={false}
+              />
+            )}
+          </>
         )}
 
         {!setupDone && (
@@ -163,9 +189,16 @@ const LabImportPage = () => {
         )}
 
         {/* Footer */}
-        <p className="text-xs text-muted-foreground text-center">
-          WardFlow Lab Import — 계정 생성 불필요, 동기화 키만 있으면 됩니다.
-        </p>
+        <div className="text-center space-y-1">
+          <p className="text-xs text-muted-foreground">
+            WardFlow Lab Import — 계정 생성 불필요, 동기화 키만 있으면 됩니다.
+          </p>
+          {mode === 'storage' && serverKey && (
+            <p className="text-[10px] text-muted-foreground font-mono">
+              curl 업로드 경로: lab-inbox/{serverKey.trim()}/filename.xls
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );
