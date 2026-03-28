@@ -15,6 +15,7 @@ import { db } from '@/db/database';
 import type { LabDisplayCategory, Patient } from '@/db/database';
 import type { User, UserRole, WardLinkModule } from '@/types/user';
 import { exportBackup, downloadBlob, importBackup, isDailyBackupEnabled, setDailyBackupEnabled, exportBackupAsText, importBackupFromText, uploadBackupToServer, downloadBackupFromServer, getServerBackupInfo } from '@/services/backupService';
+import { LabImportInbox } from '@/components/lab/LabImportInbox';
 
 const AVAILABLE_ROLES: { value: UserRole; label: string }[] = [
   { value: 'doctor', label: '의사' },
@@ -65,10 +66,13 @@ const SettingsPage = () => {
   const [textImportLoading, setTextImportLoading] = useState(false);
   const [textImportData, setTextImportData] = useState('');
 
-  // Server sync
-  const [serverPw, setServerPw] = useState('');
+  // Server sync (persist to localStorage for lab-import page)
+  const [serverPw, setServerPwState] = useState(() => localStorage.getItem('wardflow-server-pw') || '');
   const [serverShowPw, setServerShowPw] = useState(false);
-  const [serverKey, setServerKey] = useState('');
+  const [serverKey, setServerKeyState] = useState(() => localStorage.getItem('wardflow-server-key') || '');
+
+  const setServerPw = (v: string) => { setServerPwState(v); localStorage.setItem('wardflow-server-pw', v); };
+  const setServerKey = (v: string) => { setServerKeyState(v); localStorage.setItem('wardflow-server-key', v); };
   const [serverLoading, setServerLoading] = useState(false);
   const [serverInfo, setServerInfo] = useState<{ exists: boolean; updatedAt?: string } | null>(null);
 
@@ -1174,6 +1178,22 @@ const SettingsPage = () => {
           </Button>
         </div>
       </Card>
+      {/* Lab Import Inbox */}
+      <Card className="p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <FlaskConical className="h-5 w-5 text-primary" />
+          <h2 className="text-lg font-semibold">Lab Import Inbox</h2>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          오픈클로가 XLS를 저장하는 폴더를 연결하면 Lab 결과를 자동으로 파싱하여 환자와 매칭, 저장합니다.
+        </p>
+        <LabImportInbox
+          onServerSync={serverKey && serverPw ? async () => {
+            await uploadBackupToServer(serverPw, serverKey.trim());
+          } : undefined}
+        />
+      </Card>
+
       {/* Backup & Restore */}
       <Card ref={backupSectionRef} className="p-6 space-y-5">
         <div className="flex items-center gap-2">

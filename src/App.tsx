@@ -14,6 +14,7 @@ const HomePage = lazy(() => import('./pages/HomePage'));
 const PatientDetailPage = lazy(() => import('./pages/PatientDetailPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const SchedulePage = lazy(() => import('./pages/SchedulePage'));
+const LabImportPage = lazy(() => import('./pages/LabImportPage'));
 
 // Loading fallback component
 const LoadingFallback = () => (
@@ -49,6 +50,21 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
+// Auth-only route (no PIN lock) — for automation pages
+const AuthOnlyRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isAuthenticated, checkAuth } = useAuthStore();
+
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+};
+
 function App() {
   return (
     <BrowserRouter>
@@ -72,6 +88,13 @@ function App() {
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/calendar" element={<SchedulePage />} />
           </Route>
+
+          {/* Lab Import - auth required, PIN bypassed */}
+          <Route path="/lab-import" element={
+            <AuthOnlyRoute>
+              <LabImportPage />
+            </AuthOnlyRoute>
+          } />
 
           {/* Catch all */}
           <Route path="*" element={<Navigate to="/" replace />} />
