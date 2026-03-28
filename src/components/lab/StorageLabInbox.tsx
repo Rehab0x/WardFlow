@@ -28,6 +28,7 @@ export function StorageLabInbox({ syncKey, onServerSync, autoRun }: StorageLabIn
   const [autoStatus, setAutoStatus] = useState<string | null>(null);
   const [summary, setSummary] = useState<StorageImportSummary | null>(null);
   const [initialized, setInitialized] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   const unprocessedCount = files.filter((f) => !f.isProcessed).length;
 
@@ -36,11 +37,14 @@ export function StorageLabInbox({ syncKey, onServerSync, autoRun }: StorageLabIn
   const doScan = useCallback(async () => {
     if (!syncKey) return;
     setScanning(true);
+    setScanError(null);
     try {
       const result = await listInboxFiles(syncKey);
       setFiles(result);
     } catch (err) {
-      toast({ title: 'Storage 스캔 실패', description: (err as Error).message, variant: 'destructive' });
+      const msg = (err as Error).message;
+      setScanError(msg);
+      toast({ title: 'Storage 스캔 실패', description: msg, variant: 'destructive' });
     } finally {
       setScanning(false);
       setInitialized(true);
@@ -271,6 +275,23 @@ export function StorageLabInbox({ syncKey, onServerSync, autoRun }: StorageLabIn
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           <span className="ml-2 text-sm text-muted-foreground">Storage 스캔 중...</span>
         </div>
+      )}
+
+      {/* Error */}
+      {scanError && (
+        <Card className="p-4 border-destructive/30 bg-destructive/5">
+          <div className="flex items-start gap-2">
+            <XCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-destructive">Storage 조회 오류</p>
+              <p className="text-xs text-muted-foreground mt-1">{scanError}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                버킷 이름: <code className="bg-muted px-1 rounded">lab-inbox</code> /
+                경로: <code className="bg-muted px-1 rounded">{syncKey}/</code>
+              </p>
+            </div>
+          </div>
+        </Card>
       )}
 
       {/* Empty */}

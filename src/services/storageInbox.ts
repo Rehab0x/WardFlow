@@ -97,22 +97,30 @@ export function clearStorageProcessedHistory() {
  * List XLS files in the sync key's inbox folder.
  */
 export async function listInboxFiles(syncKey: string): Promise<StorageFile[]> {
+  console.log('[StorageInbox] Listing files in:', BUCKET, '/', syncKey);
+
   const { data, error } = await supabase.storage
     .from(BUCKET)
-    .list(syncKey, { sortBy: { column: 'updated_at', order: 'desc' } });
+    .list(syncKey);
 
   if (error) {
+    console.error('[StorageInbox] List error:', error);
     throw new Error(`Storage 조회 실패: ${error.message}`);
   }
 
+  console.log('[StorageInbox] Raw response:', JSON.stringify(data, null, 2));
+
   if (!data || data.length === 0) return [];
 
-  return data
-    .filter((f) => f.name.match(/\.xls$/i))
+  // Filter XLS files (case-insensitive, allow .xls and .xlsx)
+  const xlsFiles = data.filter((f) => f.name && /\.xlsx?$/i.test(f.name));
+  console.log('[StorageInbox] XLS files after filter:', xlsFiles.length);
+
+  return xlsFiles
     .map((f) => {
       const fullPath = `${syncKey}/${f.name}`;
-      const updatedAt = f.updated_at || f.created_at || '';
-      const size = f.metadata?.size ?? 0;
+      const updatedAt = (f as any).updated_at || (f as any).created_at || '';
+      const size = (f.metadata as any)?.size ?? (f as any).size ?? 0;
       const record = findProcessedRecord(fullPath, size, updatedAt);
 
       return {
