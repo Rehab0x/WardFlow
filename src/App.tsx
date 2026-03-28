@@ -50,21 +50,6 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-// Auth-only route (no PIN lock) — for automation pages
-const AuthOnlyRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, checkAuth } = useAuthStore();
-
-  useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return <>{children}</>;
-};
-
 function App() {
   return (
     <BrowserRouter>
@@ -89,12 +74,8 @@ function App() {
             <Route path="/calendar" element={<SchedulePage />} />
           </Route>
 
-          {/* Lab Import - auth required, PIN bypassed */}
-          <Route path="/lab-import" element={
-            <AuthOnlyRoute>
-              <LabImportPage />
-            </AuthOnlyRoute>
-          } />
+          {/* Lab Import - public, no auth/PIN (local IndexedDB only) */}
+          <Route path="/lab-import" element={<LabImportPage />} />
 
           {/* Catch all */}
           <Route path="*" element={<Navigate to="/" replace />} />
