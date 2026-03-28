@@ -56,16 +56,23 @@ export function StorageLabInbox({ syncKey, onServerSync, autoRun }: StorageLabIn
     if (syncKey) doScan();
   }, [syncKey, doScan]);
 
-  // ── Auto-run ───
+  // ── Auto-run (once) ───
+
+  const [autoRan, setAutoRan] = useState(false);
 
   useEffect(() => {
-    if (!autoRun || !initialized || !syncKey) return;
+    if (!autoRun || !initialized || !syncKey || autoRan) return;
+    if (batchProcessing) return; // already running
 
     const unprocessed = files.filter((f) => !f.isProcessed);
+    console.log('[StorageLabInbox] autoRun check — initialized:', initialized, 'files:', files.length, 'unprocessed:', unprocessed.length);
+
     if (unprocessed.length === 0) {
       setAutoStatus(files.length === 0 ? 'Storage에 파일 없음' : '새 파일 없음 — 모든 파일 처리 완료');
       return;
     }
+
+    setAutoRan(true);
 
     const run = async () => {
       setBatchProcessing(true);
@@ -92,7 +99,7 @@ export function StorageLabInbox({ syncKey, onServerSync, autoRun }: StorageLabIn
     };
 
     run();
-  }, [autoRun, initialized, syncKey, files.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [autoRun, initialized, syncKey, autoRan, batchProcessing, files]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Process single ───
 

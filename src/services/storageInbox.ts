@@ -143,24 +143,41 @@ export async function listInboxFiles(syncKey: string): Promise<StorageFile[]> {
  * Download an XLS file from Storage and return as ArrayBuffer.
  */
 export async function downloadInboxFile(fullPath: string): Promise<ArrayBuffer> {
+  console.log('[StorageInbox] Downloading:', fullPath);
   const { data, error } = await supabase.storage
     .from(BUCKET)
     .download(fullPath);
 
   if (error || !data) {
+    console.error('[StorageInbox] Download error:', error);
     throw new Error(`파일 다운로드 실패: ${error?.message || 'No data'}`);
   }
 
-  return data.arrayBuffer();
+  const buffer = await data.arrayBuffer();
+  console.log('[StorageInbox] Downloaded:', fullPath, 'size:', buffer.byteLength);
+  return buffer;
 }
 
 /**
  * Process a single Storage file: download → parse → match → save.
  */
 export async function processStorageFile(file: StorageFile): Promise<BulkImportResult> {
+  console.log('[StorageInbox] Processing:', file.name);
   const buffer = await downloadInboxFile(file.fullPath);
+
+  console.log('[StorageInbox] Parsing XLS...');
   const preview = await bulkLabImport.processFile(buffer);
+  console.log('[StorageInbox] Parse result — matched:', preview.matched.length, 'unmatched:', preview.unmatched.length, 'total groups:', preview.totalGroups);
+
+  if (preview.matched.length === 0) {
+    console.warn('[StorageInbox] No patients matched! Check registration numbers.');
+    console.log('[StorageInbox] Unmatched registration numbers:', preview.unmatched.map(g => g.registrationNumber));
+  } else {
+    console.log('[StorageInbox] Matched patients:', preview.matched.map(m => `${m.patient.name}(${m.patient.registrationNumber})`));
+  }
+
   const result = await bulkLabImport.saveAll(preview);
+  console.log('[StorageInbox] Save result — saved:', result.savedPatients, 'patients,', result.savedItems, 'items, failed:', result.failedPatients);
   markProcessed(file, result);
   return result;
 }
