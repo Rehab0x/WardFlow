@@ -45,7 +45,34 @@ interface BackupData {
     notes: unknown[];
     schedules: unknown[];
     labCategories: unknown[];
+    templates?: unknown[];
   };
+  // localStorage settings (Zustand persist stores + app settings)
+  settings?: Record<string, string>;
+}
+
+// --- Settings keys to backup ---
+const SETTINGS_KEYS = [
+  'wardflow-charting-settings',
+  'wardflow-schedule-categories',
+  'wardflow-global-alerts',
+  'wardflow-calendar-colors',
+  'wardflow-auth',
+];
+
+function collectSettings(): Record<string, string> {
+  const settings: Record<string, string> = {};
+  for (const key of SETTINGS_KEYS) {
+    const val = localStorage.getItem(key);
+    if (val) settings[key] = val;
+  }
+  return settings;
+}
+
+function restoreSettings(settings: Record<string, string>) {
+  for (const [key, val] of Object.entries(settings)) {
+    localStorage.setItem(key, val);
+  }
 }
 
 // --- Crypto helpers (AES-256-GCM) ---
@@ -109,7 +136,7 @@ async function decrypt(buffer: ArrayBuffer, password: string): Promise<string> {
 // --- Export ---
 
 export async function exportBackup(password: string): Promise<Blob> {
-  const [users, authCredentials, patients, labResults, medications, notes, schedules, labCategories] =
+  const [users, authCredentials, patients, labResults, medications, notes, schedules, labCategories, templates] =
     await Promise.all([
       db.users.toArray(),
       db.authCredentials.toArray(),
@@ -119,13 +146,15 @@ export async function exportBackup(password: string): Promise<Blob> {
       db.notes.toArray(),
       db.schedules.toArray(),
       db.labCategories.toArray(),
+      db.templates.toArray(),
     ]);
 
   const backup: BackupData = {
-    version: 6,
+    version: 7,
     createdAt: new Date().toISOString(),
     app: 'wardflow',
-    tables: { users, authCredentials, patients, labResults, medications, notes, schedules, labCategories },
+    tables: { users, authCredentials, patients, labResults, medications, notes, schedules, labCategories, templates },
+    settings: collectSettings(),
   };
 
   const json = JSON.stringify(backup);
@@ -136,7 +165,7 @@ export async function exportBackup(password: string): Promise<Blob> {
 // --- Text export/import (clipboard transfer) ---
 
 export async function exportBackupAsText(password: string): Promise<string> {
-  const [users, authCredentials, patients, labResults, medications, notes, schedules, labCategories] =
+  const [users, authCredentials, patients, labResults, medications, notes, schedules, labCategories, templates] =
     await Promise.all([
       db.users.toArray(),
       db.authCredentials.toArray(),
@@ -146,13 +175,15 @@ export async function exportBackupAsText(password: string): Promise<string> {
       db.notes.toArray(),
       db.schedules.toArray(),
       db.labCategories.toArray(),
+      db.templates.toArray(),
     ]);
 
   const backup: BackupData = {
-    version: 6,
+    version: 7,
     createdAt: new Date().toISOString(),
     app: 'wardflow',
-    tables: { users, authCredentials, patients, labResults, medications, notes, schedules, labCategories },
+    tables: { users, authCredentials, patients, labResults, medications, notes, schedules, labCategories, templates },
+    settings: collectSettings(),
   };
 
   const json = JSON.stringify(backup);
@@ -251,7 +282,7 @@ function restoreDates(records: unknown[]): unknown[] {
 }
 
 async function restoreFromBackup(backup: BackupData): Promise<void> {
-  const tables = [db.users, db.authCredentials, db.patients, db.labResults, db.medications, db.notes, db.schedules, db.labCategories];
+  const tables = [db.users, db.authCredentials, db.patients, db.labResults, db.medications, db.notes, db.schedules, db.labCategories, db.templates];
   await db.transaction('rw', tables, async () => {
     await Promise.all([
       db.users.clear(),
@@ -262,6 +293,7 @@ async function restoreFromBackup(backup: BackupData): Promise<void> {
       db.notes.clear(),
       db.schedules.clear(),
       db.labCategories.clear(),
+      db.templates.clear(),
     ]);
 
     const t = backup.tables;
@@ -274,15 +306,21 @@ async function restoreFromBackup(backup: BackupData): Promise<void> {
       t.notes?.length ? db.notes.bulkAdd(restoreDates(t.notes) as never[]) : Promise.resolve(),
       t.schedules?.length ? db.schedules.bulkAdd(restoreDates(t.schedules) as never[]) : Promise.resolve(),
       t.labCategories?.length ? db.labCategories.bulkAdd(restoreDates(t.labCategories) as never[]) : Promise.resolve(),
+      t.templates?.length ? db.templates.bulkAdd(restoreDates(t.templates) as never[]) : Promise.resolve(),
     ]);
   });
+
+  // Restore localStorage settings
+  if (backup.settings) {
+    restoreSettings(backup.settings);
+  }
 }
 
 // --- Server backup/restore (Supabase) ---
 
 export async function uploadBackupToServer(password: string, userKey: string): Promise<{ success: boolean; updatedAt: string }> {
   // 1. Collect all data
-  const [users, authCredentials, patients, labResults, medications, notes, schedules, labCategories] =
+  const [users, authCredentials, patients, labResults, medications, notes, schedules, labCategories, templates] =
     await Promise.all([
       db.users.toArray(),
       db.authCredentials.toArray(),
@@ -292,13 +330,15 @@ export async function uploadBackupToServer(password: string, userKey: string): P
       db.notes.toArray(),
       db.schedules.toArray(),
       db.labCategories.toArray(),
+      db.templates.toArray(),
     ]);
 
   const backup: BackupData = {
-    version: 6,
+    version: 7,
     createdAt: new Date().toISOString(),
     app: 'wardflow',
-    tables: { users, authCredentials, patients, labResults, medications, notes, schedules, labCategories },
+    tables: { users, authCredentials, patients, labResults, medications, notes, schedules, labCategories, templates },
+    settings: collectSettings(),
   };
 
   // 2. Encrypt

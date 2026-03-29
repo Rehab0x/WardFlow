@@ -24,10 +24,13 @@ const HomePage = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   // 범용 알림
-  const { getActiveAlerts, addAlert, updateAlert, deleteAlert } = useGlobalAlertStore();
+  const globalAlertStore = useGlobalAlertStore();
+  const { getActiveAlerts, addAlert, updateAlert, deleteAlert } = globalAlertStore;
+  const allGlobalAlerts = globalAlertStore.alerts;
   const activeGlobalAlerts = getActiveAlerts();
   const [showAlertForm, setShowAlertForm] = useState(false);
   const [alertFormData, setAlertFormData] = useState({ content: '', startDate: '', endDate: '' });
+  const [showAlertManager, setShowAlertManager] = useState(false);
   const [editingAlertId, setEditingAlertId] = useState<string | null>(null);
 
   // 메모 검색
@@ -102,6 +105,21 @@ const HomePage = () => {
     navigate(`/patients/${patientId}${query}`);
   };
 
+  // Group antibiotics by patient (must be before early return for hooks order)
+  const abxByPatient = useMemo(() => {
+    if (!data) return [];
+    const grouped: Array<{ patientId: string; patientName: string; roomBed: string; meds: typeof data.antibiotics }> = [];
+    const map = new Map<string, typeof data.antibiotics>();
+    for (const abx of data.antibiotics) {
+      if (!map.has(abx.patientId)) map.set(abx.patientId, []);
+      map.get(abx.patientId)!.push(abx);
+    }
+    for (const [patientId, meds] of map) {
+      grouped.push({ patientId, patientName: meds[0]!.patientName, roomBed: meds[0]!.roomBed, meds });
+    }
+    return grouped;
+  }, [data?.antibiotics]);
+
   if (isLoading || !data) {
     return (
       <div className="container mx-auto p-3 sm:p-6">
@@ -137,9 +155,16 @@ const HomePage = () => {
                 {totalAlerts}
               </Badge>
             )}
-            <Button variant="ghost" size="icon" className="h-7 w-7 ml-auto" onClick={() => { setEditingAlertId(null); setAlertFormData({ content: '', startDate: '', endDate: '' }); setShowAlertForm(true); }}>
-              <Plus className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-1 ml-auto">
+              {allGlobalAlerts.length > 0 && (
+                <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={() => setShowAlertManager(true)}>
+                  관리 ({allGlobalAlerts.length})
+                </Button>
+              )}
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingAlertId(null); setAlertFormData({ content: '', startDate: '', endDate: '' }); setShowAlertForm(true); }}>
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -244,42 +269,44 @@ const HomePage = () => {
             <p className="text-sm text-muted-foreground">항생제 사용 중인 환자가 없습니다.</p>
           ) : (
             <>
-            {/* 모바일: 카드 리스트 */}
+            {/* 모바일: 환자별 그룹화 */}
             <div className="space-y-2 sm:hidden">
-              {data.antibiotics.map((abx) => (
+              {abxByPatient.map((group) => (
                 <div
-                  key={abx.medicationId}
-                  className="flex items-center justify-between rounded-md border p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                  onClick={() => goToPatient(abx.patientId, 'medication')}
+                  key={group.patientId}
+                  className="rounded-md border p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => goToPatient(group.patientId, 'medication')}
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Badge variant="outline" className="text-xs shrink-0">{abx.roomBed}</Badge>
-                      <span className="font-medium text-sm">{abx.patientName}</span>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge variant="outline" className="text-xs shrink-0">{group.roomBed}</Badge>
+                    <span className="font-medium text-sm">{group.patientName}</span>
+                  </div>
+                  {group.meds.map((abx) => (
+                    <div key={abx.medicationId} className="flex items-center justify-between ml-1 py-0.5">
+                      <p className="text-xs text-muted-foreground truncate flex-1">
+                        {abx.drugName} {abx.dosage && abx.frequency ? `${abx.dosage} ${abx.frequency}` : ''}
+                      </p>
+                      <div className="flex items-center gap-1 ml-2 shrink-0">
+                        <Badge
+                          variant={abx.isLongTerm ? 'destructive' : 'secondary'}
+                          className={cn('text-[10px]', !abx.isLongTerm && abx.dDay >= 10 && 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200')}
+                        >
+                          D+{abx.dDay}
+                        </Badge>
+                        {abx.endDate && (() => {
+                          const end = new Date(abx.endDate);
+                          const now = new Date();
+                          const todayStr2 = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+                          const tmr = new Date(now); tmr.setDate(tmr.getDate()+1);
+                          const tmrStr = `${tmr.getFullYear()}-${String(tmr.getMonth()+1).padStart(2,'0')}-${String(tmr.getDate()).padStart(2,'0')}`;
+                          const endStr = `${end.getFullYear()}-${String(end.getMonth()+1).padStart(2,'0')}-${String(end.getDate()).padStart(2,'0')}`;
+                          if (endStr === todayStr2) return <Badge className="text-[10px] bg-red-100 text-red-700 border-red-300">종료</Badge>;
+                          if (endStr === tmrStr) return <Badge className="text-[10px] bg-orange-100 text-orange-700 border-orange-300">내일</Badge>;
+                          return null;
+                        })()}
+                      </div>
                     </div>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {abx.drugName} {abx.dosage && abx.frequency ? `${abx.dosage} ${abx.frequency}` : ''}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1 ml-2 shrink-0">
-                    <Badge
-                      variant={abx.isLongTerm ? 'destructive' : 'secondary'}
-                      className={cn(!abx.isLongTerm && abx.dDay >= 10 && 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200')}
-                    >
-                      D+{abx.dDay}
-                    </Badge>
-                    {abx.endDate && (() => {
-                      const end = new Date(abx.endDate);
-                      const now = new Date();
-                      const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-                      const tmr = new Date(now); tmr.setDate(tmr.getDate()+1);
-                      const tmrStr = `${tmr.getFullYear()}-${String(tmr.getMonth()+1).padStart(2,'0')}-${String(tmr.getDate()).padStart(2,'0')}`;
-                      const endStr = `${end.getFullYear()}-${String(end.getMonth()+1).padStart(2,'0')}-${String(end.getDate()).padStart(2,'0')}`;
-                      if (endStr === todayStr) return <Badge className="text-[10px] bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300 border-red-300">오늘 종료</Badge>;
-                      if (endStr === tmrStr) return <Badge className="text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300 border-orange-300">내일 종료</Badge>;
-                      return null;
-                    })()}
-                  </div>
+                  ))}
                 </div>
               ))}
             </div>
@@ -296,45 +323,49 @@ const HomePage = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.antibiotics.map((abx) => (
-                    <tr
-                      key={abx.medicationId}
-                      className="border-b last:border-0 cursor-pointer hover:bg-muted/50 transition-colors"
-                      onClick={() => goToPatient(abx.patientId, 'medication')}
-                    >
-                      <td className="py-2 pr-3">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-xs shrink-0">{abx.roomBed}</Badge>
-                          <span className="font-medium">{abx.patientName}</span>
-                        </div>
-                      </td>
-                      <td className="py-2 pr-3">{abx.drugName}</td>
-                      <td className="py-2 pr-3 text-muted-foreground">
-                        {abx.dosage && abx.frequency ? `${abx.dosage} ${abx.frequency}` : '-'}
-                      </td>
-                      <td className="py-2 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <Badge
-                            variant={abx.isLongTerm ? 'destructive' : 'secondary'}
-                            className={abx.isLongTerm ? '' : abx.dDay >= 10 ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200' : ''}
-                          >
-                            D+{abx.dDay}
-                          </Badge>
-                          {abx.endDate && (() => {
-                            const end = new Date(abx.endDate);
-                            const now = new Date();
-                            const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-                            const tmr = new Date(now); tmr.setDate(tmr.getDate()+1);
-                            const tmrStr = `${tmr.getFullYear()}-${String(tmr.getMonth()+1).padStart(2,'0')}-${String(tmr.getDate()).padStart(2,'0')}`;
-                            const endStr = `${end.getFullYear()}-${String(end.getMonth()+1).padStart(2,'0')}-${String(end.getDate()).padStart(2,'0')}`;
-                            if (endStr === todayStr) return <Badge className="text-[10px] bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300 border-red-300">오늘 종료</Badge>;
-                            if (endStr === tmrStr) return <Badge className="text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300 border-orange-300">내일 종료</Badge>;
-                            return null;
-                          })()}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {abxByPatient.map((group) =>
+                    group.meds.map((abx, idx) => (
+                      <tr
+                        key={abx.medicationId}
+                        className="border-b last:border-0 cursor-pointer hover:bg-muted/50 transition-colors"
+                        onClick={() => goToPatient(abx.patientId, 'medication')}
+                      >
+                        {idx === 0 && (
+                          <td className="py-2 pr-3" rowSpan={group.meds.length}>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-xs shrink-0">{abx.roomBed}</Badge>
+                              <span className="font-medium">{abx.patientName}</span>
+                            </div>
+                          </td>
+                        )}
+                        <td className="py-2 pr-3">{abx.drugName}</td>
+                        <td className="py-2 pr-3 text-muted-foreground">
+                          {abx.dosage && abx.frequency ? `${abx.dosage} ${abx.frequency}` : '-'}
+                        </td>
+                        <td className="py-2 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <Badge
+                              variant={abx.isLongTerm ? 'destructive' : 'secondary'}
+                              className={abx.isLongTerm ? '' : abx.dDay >= 10 ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200' : ''}
+                            >
+                              D+{abx.dDay}
+                            </Badge>
+                            {abx.endDate && (() => {
+                              const end = new Date(abx.endDate);
+                              const now = new Date();
+                              const todayStr3 = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+                              const tmr = new Date(now); tmr.setDate(tmr.getDate()+1);
+                              const tmrStr = `${tmr.getFullYear()}-${String(tmr.getMonth()+1).padStart(2,'0')}-${String(tmr.getDate()).padStart(2,'0')}`;
+                              const endStr = `${end.getFullYear()}-${String(end.getMonth()+1).padStart(2,'0')}-${String(end.getDate()).padStart(2,'0')}`;
+                              if (endStr === todayStr3) return <Badge className="text-[10px] bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300 border-red-300">오늘 종료</Badge>;
+                              if (endStr === tmrStr) return <Badge className="text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300 border-orange-300">내일 종료</Badge>;
+                              return null;
+                            })()}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -559,6 +590,77 @@ const HomePage = () => {
           )}
         </CardContent>
       </Card>
+      {/* 범용 알림 관리 모달 */}
+      {showAlertManager && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowAlertManager(false)}>
+          <Card className="w-full max-w-lg max-h-[80vh] overflow-y-auto p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-lg flex items-center gap-2">
+                <Megaphone className="h-5 w-5 text-violet-500" />
+                알림 관리 ({allGlobalAlerts.length}개)
+              </h2>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowAlertManager(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {allGlobalAlerts.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">등록된 알림이 없습니다.</p>
+            ) : (
+              <div className="space-y-2">
+                {allGlobalAlerts.map((ga) => {
+                  const today = new Date().toISOString().split('T')[0]!;
+                  const isActive = (!ga.startDate || today >= ga.startDate) && (!ga.endDate || today <= ga.endDate);
+                  const isExpired = ga.endDate && today > ga.endDate;
+
+                  return (
+                    <div key={ga.id} className={cn(
+                      'rounded-md border p-3 space-y-1.5',
+                      isExpired ? 'opacity-50 bg-muted/30' : isActive ? 'border-violet-200 bg-violet-50/30' : 'bg-muted/20'
+                    )}>
+                      <div className="flex items-start gap-2">
+                        <p className="flex-1 text-sm">{ga.content}</p>
+                        <div className="flex gap-1 shrink-0">
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
+                            setEditingAlertId(ga.id);
+                            setAlertFormData({ content: ga.content, startDate: ga.startDate || '', endDate: ga.endDate || '' });
+                            setShowAlertManager(false);
+                            setShowAlertForm(true);
+                          }}>
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => deleteAlert(ga.id)}>
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                        {ga.startDate || ga.endDate ? (
+                          <span>{ga.startDate || '시작 없음'} ~ {ga.endDate || '종료 없음'}</span>
+                        ) : (
+                          <span>항상 표시</span>
+                        )}
+                        {isExpired && <Badge variant="secondary" className="text-[9px] h-4">만료</Badge>}
+                        {isActive && !isExpired && <Badge className="text-[9px] h-4 bg-violet-100 text-violet-700 border-violet-300">활성</Badge>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <Button size="sm" className="w-full" onClick={() => {
+              setEditingAlertId(null);
+              setAlertFormData({ content: '', startDate: '', endDate: '' });
+              setShowAlertManager(false);
+              setShowAlertForm(true);
+            }}>
+              <Plus className="h-4 w-4 mr-1" />
+              새 알림 추가
+            </Button>
+          </Card>
+        </div>
+      )}
     </div>
   );
 };

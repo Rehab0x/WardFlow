@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { usePinLockStore, checkHasPin, setPin as savePinToDB, removePin, verifyPin } from '@/hooks/usePinLock';
 import { useChartingSettingsStore } from '@/stores/useChartingSettingsStore';
 import { useScheduleCategoryStore, COLOR_OPTIONS } from '@/stores/useScheduleCategoryStore';
+import { useCalendarColorStore, COLOR_PRESETS, PRESET_KEYS, type CalendarEventType } from '@/stores/useCalendarColorStore';
 import { db } from '@/db/database';
 import type { LabDisplayCategory, Patient } from '@/db/database';
 import type { User, UserRole, WardLinkModule } from '@/types/user';
@@ -1178,6 +1179,17 @@ const SettingsPage = () => {
           </Button>
         </div>
       </Card>
+
+      {/* Calendar Event Colors */}
+      <Card className="p-4 sm:p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <Calendar className="h-5 w-5 text-primary" />
+          <h2 className="text-lg font-semibold">캘린더 색상</h2>
+        </div>
+        <p className="text-sm text-muted-foreground">캘린더와 Today's Note에서 표시되는 이벤트 색상을 변경합니다.</p>
+        <CalendarColorSettings />
+      </Card>
+
       {/* Lab Import Inbox */}
       <Card className="p-6 space-y-4">
         <div className="flex items-center gap-2">
@@ -1526,5 +1538,47 @@ const SettingsPage = () => {
     </div>
   );
 };
+
+// --- Calendar Color Settings Sub-component ---
+
+const EVENT_TYPE_LABELS: Record<CalendarEventType, string> = {
+  schedule: '일정',
+  global_alert: '범용 알림',
+  reminder: '알림 메모',
+};
+
+function CalendarColorSettings() {
+  const { colors, setColor, getColor } = useCalendarColorStore();
+
+  return (
+    <div className="space-y-3">
+      {(Object.keys(EVENT_TYPE_LABELS) as CalendarEventType[]).map((type) => {
+        const currentColor = getColor(type);
+        return (
+          <div key={type} className="flex items-center gap-3">
+            <div className={`w-4 h-4 rounded-full shrink-0 ${currentColor.dot}`} />
+            <span className="text-sm font-medium w-20 shrink-0">{EVENT_TYPE_LABELS[type]}</span>
+            <div className="flex gap-1.5 flex-wrap">
+              {PRESET_KEYS.map((key) => {
+                const preset = COLOR_PRESETS[key]!;
+                const isSelected = colors[type] === key;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setColor(type, key)}
+                    className={`w-7 h-7 rounded-full border-2 transition-all ${preset.dot} ${
+                      isSelected ? 'border-foreground scale-110 ring-2 ring-offset-1 ring-foreground/20' : 'border-transparent opacity-60 hover:opacity-100'
+                    }`}
+                    title={preset.name}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export default SettingsPage;

@@ -7,12 +7,15 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/utils/cn';
 import { useScheduleStore } from '@/stores/useScheduleStore';
 import { usePatientStore } from '@/stores/usePatientStore';
+import { useGlobalAlertStore } from '@/stores/useGlobalAlertStore';
+import { useCalendarColorStore } from '@/stores/useCalendarColorStore';
 import { db } from '@/db/database';
 import type { Note } from '@/types/note';
+import { Megaphone } from 'lucide-react';
 
 interface CalendarEvent {
   id: string;
-  type: 'schedule' | 'reminder';
+  type: 'schedule' | 'reminder' | 'global_alert';
   title: string;
   patientId: string;
   patientName: string;
@@ -30,6 +33,8 @@ const SchedulePage = () => {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const { schedules, fetchAll } = useScheduleStore();
   const { patients } = usePatientStore();
+  const { getColor } = useCalendarColorStore();
+  const { alerts: globalAlerts } = useGlobalAlertStore();
   const [reminders, setReminders] = useState<Note[]>([]);
 
   const year = currentDate.getFullYear();
@@ -53,6 +58,8 @@ const SchedulePage = () => {
     patients.forEach((p) => map.set(p.id, { name: p.name, roomBed: p.roomBed }));
     return map;
   }, [patients]);
+
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
 
   // Build events map: dateKey -> CalendarEvent[]
   const eventsMap = useMemo(() => {
@@ -97,12 +104,31 @@ const SchedulePage = () => {
       });
     }
 
+    // Global alerts — show on each day within their date range (or all days if no range)
+    for (const ga of globalAlerts) {
+      const start = ga.startDate || `${year}-${String(month + 1).padStart(2, '0')}-01`;
+      const end = ga.endDate || `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+
+      // Only iterate days in current month
+      for (let d = 1; d <= daysInMonth; d++) {
+        const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        if (key >= start && key <= end) {
+          addEvent(key, {
+            id: ga.id,
+            type: 'global_alert',
+            title: ga.content,
+            patientId: '',
+            patientName: '',
+          });
+        }
+      }
+    }
+
     return map;
-  }, [schedules, reminders, patientMap]);
+  }, [schedules, reminders, patientMap, globalAlerts, year, month, daysInMonth]);
 
   // Calendar grid
   const firstDay = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
   const today = new Date();
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
@@ -203,7 +229,7 @@ const SchedulePage = () => {
                         key={e.id}
                         className={cn(
                           'w-1.5 h-1.5 rounded-full sm:hidden',
-                          e.type === 'schedule' ? 'bg-violet-500' : 'bg-blue-500',
+                          getColor(e.type).dot,
                           e.isCompleted && 'opacity-40'
                         )}
                       />
@@ -215,13 +241,11 @@ const SchedulePage = () => {
                           key={e.id}
                           className={cn(
                             'text-[10px] leading-tight px-1 py-0.5 rounded truncate',
-                            e.type === 'schedule'
-                              ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
-                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+                            `${getColor(e.type).bg} ${getColor(e.type).text} ${getColor(e.type).darkBg} ${getColor(e.type).darkText}`,
                             e.isCompleted && 'opacity-50 line-through'
                           )}
                         >
-                          {e.patientName}
+                          {e.type === 'global_alert' ? e.title : e.patientName}
                         </div>
                       ))}
                       {events.length > 2 && (
@@ -261,22 +285,20 @@ const SchedulePage = () => {
                     'flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors',
                     event.isCompleted && 'opacity-50'
                   )}
-                  onClick={() => navigate(`/patients/${event.patientId}?tab=overview`)}
+                  onClick={() => event.patientId ? navigate(`/patients/${event.patientId}?tab=overview`) : undefined}
                 >
                   <div className={cn(
                     'mt-0.5 p-1.5 rounded-full shrink-0',
-                    event.type === 'schedule'
-                      ? 'bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400'
-                      : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
+                    `${getColor(event.type).iconBg} ${getColor(event.type).iconText}`
                   )}>
-                    {event.type === 'schedule' ? <Clock className="h-3.5 w-3.5" /> : <Bell className="h-3.5 w-3.5" />}
+                    {event.type === 'schedule' ? <Clock className="h-3.5 w-3.5" /> : event.type === 'global_alert' ? <Megaphone className="h-3.5 w-3.5" /> : <Bell className="h-3.5 w-3.5" />}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-0.5">
                       {event.roomBed && (
                         <Badge variant="outline" className="text-[10px] shrink-0">{event.roomBed}</Badge>
                       )}
-                      <span className="text-sm font-medium">{event.patientName}</span>
+                      {event.patientName && <span className="text-sm font-medium">{event.patientName}</span>}
                       {event.time && (
                         <span className="text-xs text-muted-foreground">{event.time}</span>
                       )}
@@ -301,11 +323,15 @@ const SchedulePage = () => {
       {/* Legend */}
       <div className="flex items-center gap-4 text-xs text-muted-foreground">
         <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-violet-500" />
+          <div className={cn('w-2.5 h-2.5 rounded-full', getColor('schedule').dot)} />
           일정
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+          <div className={cn('w-2.5 h-2.5 rounded-full', getColor('global_alert').dot)} />
+          범용 알림
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className={cn('w-2.5 h-2.5 rounded-full', getColor('reminder').dot)} />
           알림 메모
         </div>
       </div>

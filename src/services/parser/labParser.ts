@@ -315,9 +315,14 @@ function extractGroupsFromRows(rows: string[][]): XlsPatientGroup[] {
 
     // Culture 판별:
     // 1) labCodeMap/inferCategory에서 'Culture'로 판별됨
-    // 2) numResult 없고 textResult만 있되, 이름에 culture/배양/cre- 포함
+    // 2) numResult 없고 textResult만 있되:
+    //    a) 이름에 culture/배양/cre- 포함, 또는
+    //    b) textResult 자체에 growth/culture/배양/sensitivity/resistant 등 포함
     const isCulture = categoryFromMap === 'Culture'
-      || (!numResult && !!textResult && /culture|배양|^cre-|^cre /i.test(labName));
+      || (!numResult && !!textResult && (
+        /culture|배양|^cre-|^cre /i.test(labName)
+        || /growth|culture|배양|sensitivity|resistant|susceptib|감수성/i.test(textResult)
+      ));
 
     // textResult만 있고 Culture가 아닌 경우 (예: HbA1c) → 첫 번째 숫자 추출
     let resolvedValue: string;

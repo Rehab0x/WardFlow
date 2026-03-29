@@ -26,6 +26,7 @@ import { useNoteStore } from '@/stores/useNoteStore';
 import { calculateAge, calculateDetailedAge, calculateOnsetDuration, parseLocalDate, getLocalToday } from '@/utils/dateUtils';
 import { cn } from '@/utils/cn';
 import { db } from '@/db/database';
+import type { Patient } from '@/db/database';
 import { formatDate } from '@/utils/dateUtils';
 
 const PatientDetailPage = () => {
@@ -66,6 +67,20 @@ const PatientDetailPage = () => {
     }
   }, [patients.length, patientsLoading, fetchPatients]);
 
+  // Fallback: 스토어에서 찾을 수 없으면 DB에서 직접 조회
+  const [directPatient, setDirectPatient] = useState<Patient | null>(null);
+  useEffect(() => {
+    if (!patientId) return;
+    if (getPatientById(patientId)) {
+      setDirectPatient(null); // store에 있으면 불필요
+      return;
+    }
+    // Store에 없으면 DB 직접 조회
+    db.patients.get(patientId).then((p) => {
+      if (p) setDirectPatient(p);
+    });
+  }, [patientId, patients]); // patients 변경 시 재확인
+
   useEffect(() => {
     if (patientId) {
       fetchLabsByPatient(patientId);
@@ -88,7 +103,7 @@ const PatientDetailPage = () => {
     }
   }, [showAddLabDropdown]);
 
-  const patient = patientId ? getPatientById(patientId) : undefined;
+  const patient = patientId ? (getPatientById(patientId) ?? directPatient ?? undefined) : undefined;
 
   // patients가 아직 로딩 중이면 로딩 표시 (로딩 전에 not found를 잘못 표시하는 문제 방지)
   if (!patient) {
