@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Trash2, GripVertical, ChevronDown, ChevronRight, RotateCcw, Save, UserCheck, UserX, Shield, Lock, Unlock, Stethoscope, FlaskConical, FileText, Calendar, Download, Upload, Eye, EyeOff, HardDrive, Bell, Cloud, CloudUpload, CloudDownload } from 'lucide-react';
+import { Plus, Trash2, GripVertical, ChevronDown, ChevronRight, RotateCcw, Save, UserCheck, UserX, Shield, Lock, Unlock, Stethoscope, FlaskConical, FileText, Calendar, Download, Upload, Eye, EyeOff, HardDrive, Bell, Cloud, CloudUpload, CloudDownload, Pencil, X, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/utils/cn';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +13,9 @@ import { usePinLockStore, checkHasPin, setPin as savePinToDB, removePin, verifyP
 import { useChartingSettingsStore } from '@/stores/useChartingSettingsStore';
 import { useScheduleCategoryStore, COLOR_OPTIONS } from '@/stores/useScheduleCategoryStore';
 import { useCalendarColorStore, COLOR_PRESETS, PRESET_KEYS, type CalendarEventType } from '@/stores/useCalendarColorStore';
+import { useLabReferenceStore } from '@/stores/useLabReferenceStore';
+import { useAIStore, LLM_PROVIDERS, type LLMProvider } from '@/stores/useAIStore';
+import { testConnection } from '@/services/aiService';
 import { db } from '@/db/database';
 import type { LabDisplayCategory, Patient } from '@/db/database';
 import type { User, UserRole, WardLinkModule } from '@/types/user';
@@ -459,11 +463,77 @@ const SettingsPage = () => {
     );
   };
 
+  const settingsSections = [
+    { id: 'pin', label: 'PIN 잠금', icon: hasPin ? Lock : Unlock },
+    { id: 'charting', label: '차팅 설정', icon: FileText },
+    { id: 'schedule-cat', label: '일정 카테고리', icon: Calendar },
+    ...(isAdmin ? [{ id: 'admin', label: '관리자', icon: Shield }] : []),
+    { id: 'lab-cat', label: 'Lab 카테고리', icon: FlaskConical },
+    { id: 'lab-ref', label: 'Lab 참조범위', icon: FlaskConical },
+    { id: 'calendar-color', label: '캘린더 색상', icon: Calendar },
+    { id: 'lab-import', label: 'Lab Import', icon: FlaskConical },
+    { id: 'ai', label: 'AI 설정', icon: Bot },
+    { id: 'backup', label: '백업 / 복원', icon: HardDrive },
+  ];
+
+  const [activeSection, setActiveSection] = useState(searchParams.get('section') || 'pin');
+
+  const scrollToSection = (id: string) => {
+    setActiveSection(id);
+    const el = document.getElementById(`settings-${id}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
-    <div className="p-3 sm:p-6 max-w-2xl mx-auto space-y-4 sm:space-y-6">
-      <h1 className="text-2xl font-bold">설정</h1>
+    <div className="flex h-full">
+      {/* Settings Side Navigation — Desktop */}
+      <nav className="hidden lg:block w-48 shrink-0 border-r bg-muted/20 overflow-y-auto p-3 space-y-1 sticky top-0 h-[calc(100vh-3.5rem)]">
+        <h2 className="text-sm font-semibold text-muted-foreground mb-3 px-2">설정</h2>
+        {settingsSections.map((s) => {
+          const Icon = s.icon;
+          return (
+            <button
+              key={s.id}
+              onClick={() => scrollToSection(s.id)}
+              className={cn(
+                'flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-sm transition-colors',
+                activeSection === s.id
+                  ? 'bg-primary/10 text-primary font-medium'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              )}
+            >
+              <Icon className="h-3.5 w-3.5 shrink-0" />
+              {s.label}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Mobile: Horizontal scroll tabs */}
+      <div className="lg:hidden fixed top-14 left-0 right-0 z-20 bg-background border-b overflow-x-auto">
+        <div className="flex gap-1 p-2 min-w-max">
+          {settingsSections.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => scrollToSection(s.id)}
+              className={cn(
+                'px-3 py-1.5 text-xs rounded-md whitespace-nowrap transition-colors',
+                activeSection === s.id
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground'
+              )}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 p-3 sm:p-6 max-w-2xl mx-auto space-y-4 sm:space-y-6 lg:pt-6 pt-16">
 
       {/* PIN Lock Settings */}
+      <div id="settings-pin">
       <Card className="p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -591,6 +661,8 @@ const SettingsPage = () => {
         )}
       </Card>
 
+      </div>
+      <div id="settings-charting">
       {/* Charting Settings */}
       <Card className="p-4 sm:p-6 space-y-5">
         <div className="flex items-center gap-2">
@@ -674,6 +746,8 @@ const SettingsPage = () => {
         )}
       </Card>
 
+      </div>
+      <div id="settings-schedule-cat">
       {/* Schedule Category Settings */}
       <Card className="p-4 sm:p-6 space-y-4">
         <div className="flex items-center justify-between">
@@ -754,7 +828,9 @@ const SettingsPage = () => {
         </div>
       </Card>
 
+      </div>
       {/* Admin Section */}
+      <div id="settings-admin">
       {isAdmin && (
         <Card className="p-0 overflow-hidden">
           {/* Admin header */}
@@ -1090,6 +1166,8 @@ const SettingsPage = () => {
         </Card>
       )}
 
+      </div>
+      <div id="settings-lab-cat">
       {/* Lab Category Settings */}
       <Card className="p-4 sm:p-6 space-y-4">
         <div className="flex items-center justify-between">
@@ -1180,6 +1258,22 @@ const SettingsPage = () => {
         </div>
       </Card>
 
+      </div>
+      <div id="settings-lab-ref">
+      {/* Lab Reference Ranges */}
+      <Card className="p-4 sm:p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <FlaskConical className="h-5 w-5 text-primary" />
+          <h2 className="text-lg font-semibold">Lab 참조범위</h2>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Lab 결과의 정상/비정상 색상 표시에 사용되는 참조범위를 설정합니다.
+        </p>
+        <LabReferenceSettings />
+      </Card>
+
+      </div>
+      <div id="settings-calendar-color">
       {/* Calendar Event Colors */}
       <Card className="p-4 sm:p-6 space-y-4">
         <div className="flex items-center gap-2">
@@ -1190,6 +1284,8 @@ const SettingsPage = () => {
         <CalendarColorSettings />
       </Card>
 
+      </div>
+      <div id="settings-lab-import">
       {/* Lab Import Inbox */}
       <Card className="p-6 space-y-4">
         <div className="flex items-center gap-2">
@@ -1206,6 +1302,22 @@ const SettingsPage = () => {
         />
       </Card>
 
+      </div>
+      </div>
+      <div id="settings-ai">
+      {/* AI Settings */}
+      <Card className="p-4 sm:p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <Bot className="h-5 w-5 text-primary" />
+          <h2 className="text-lg font-semibold">AI 설정</h2>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          AI 기능(SOAP 변환, Lab 요약 등)에 사용할 LLM API를 설정합니다.
+        </p>
+        <AISettings />
+      </Card>
+
+      <div id="settings-backup">
       {/* Backup & Restore */}
       <Card ref={backupSectionRef} className="p-6 space-y-5">
         <div className="flex items-center gap-2">
@@ -1535,9 +1647,241 @@ const SettingsPage = () => {
           </div>
         </div>
       </Card>
+      </div>
+      </div>
     </div>
   );
 };
+
+// --- AI Settings Sub-component ---
+
+function AISettings() {
+  const { provider, apiKey, model, setProvider, setApiKey, setModel, isConfigured } = useAIStore();
+  const [showKey, setShowKey] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const { toast } = useToast();
+
+  const providerInfo = LLM_PROVIDERS[provider];
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await testConnection();
+      setTestResult(result);
+      toast({ title: result.success ? '연결 성공' : '연결 실패', description: result.message, variant: result.success ? 'default' : 'destructive' });
+    } catch (err) {
+      setTestResult({ success: false, message: (err as Error).message });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Provider selection */}
+      <div>
+        <label className="text-sm font-medium mb-1.5 block">LLM 선택</label>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {(Object.keys(LLM_PROVIDERS) as LLMProvider[]).map((p) => (
+            <button
+              key={p}
+              onClick={() => setProvider(p)}
+              className={cn(
+                'rounded-md border px-3 py-2 text-sm transition-colors',
+                provider === p
+                  ? 'border-primary bg-primary/10 font-medium text-primary'
+                  : 'hover:bg-muted text-muted-foreground'
+              )}
+            >
+              {LLM_PROVIDERS[p].name.split(' ')[0]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Model selection */}
+      <div>
+        <label className="text-sm font-medium mb-1.5 block">모델</label>
+        <select
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          {providerInfo.models.map((m) => (
+            <option key={m.id} value={m.id}>{m.name} ({m.id})</option>
+          ))}
+        </select>
+      </div>
+
+      {/* API Key */}
+      <div>
+        <label className="text-sm font-medium mb-1.5 block">API Key</label>
+        <div className="relative">
+          <Input
+            type={showKey ? 'text' : 'password'}
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={`${providerInfo.name} API 키를 입력하세요`}
+            className="pr-10"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+            onClick={() => setShowKey(!showKey)}
+          >
+            {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          </Button>
+        </div>
+        {apiKey && (
+          <p className="text-xs text-muted-foreground mt-1">
+            {apiKey.slice(0, 8)}...{apiKey.slice(-4)} ({apiKey.length}자)
+          </p>
+        )}
+      </div>
+
+      {/* Test connection */}
+      <div className="flex items-center gap-3">
+        <Button size="sm" onClick={handleTest} disabled={testing || !isConfigured()}>
+          {testing ? (
+            <><div className="h-3.5 w-3.5 mr-1 animate-spin rounded-full border-2 border-current border-t-transparent" />테스트 중...</>
+          ) : (
+            '연결 테스트'
+          )}
+        </Button>
+        {testResult && (
+          <span className={cn('text-sm', testResult.success ? 'text-green-600' : 'text-destructive')}>
+            {testResult.success ? '✓ 연결됨' : '✗ 실패'}: {testResult.message.slice(0, 60)}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// --- Lab Reference Settings Sub-component ---
+
+function LabReferenceSettings() {
+  const { getAllReferences, setOverride, removeOverride, resetAll } = useLabReferenceStore();
+  const refs = getAllReferences();
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [editMin, setEditMin] = useState('');
+  const [editMax, setEditMax] = useState('');
+  const [addName, setAddName] = useState('');
+  const [addMin, setAddMin] = useState('');
+  const [addMax, setAddMax] = useState('');
+  const [showAll, setShowAll] = useState(false);
+
+  const displayRefs = showAll ? refs : refs.filter((r) => r.isOverridden || ['WBC', 'Hb', 'PLT', 'AST', 'ALT', 'BUN', 'Cr', 'Na', 'K', 'CRP', 'Glucose', 'Albumin', 'Total Bilirubin'].includes(r.name));
+
+  const hasOverrides = refs.some((r) => r.isOverridden);
+
+  return (
+    <div className="space-y-3">
+      {/* Table */}
+      <div className="overflow-x-auto rounded-md border">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50">
+            <tr>
+              <th className="text-left p-2 font-medium">항목</th>
+              <th className="text-center p-2 font-medium w-20">하한</th>
+              <th className="text-center p-2 font-medium w-20">상한</th>
+              <th className="text-center p-2 font-medium w-14">단위</th>
+              <th className="text-center p-2 font-medium w-16"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {displayRefs.map((ref) => {
+              const isEditing = editingName === ref.name;
+              return (
+                <tr key={ref.name} className={cn(ref.isOverridden && 'bg-amber-50/50 dark:bg-amber-950/10')}>
+                  <td className="p-2">
+                    <span className="font-medium">{ref.name}</span>
+                    {ref.isOverridden && <span className="ml-1 text-[10px] text-amber-600">수정됨</span>}
+                  </td>
+                  {isEditing ? (
+                    <>
+                      <td className="p-1"><Input type="number" step="any" value={editMin} onChange={(e) => setEditMin(e.target.value)} className="h-7 text-xs text-center" placeholder="-" /></td>
+                      <td className="p-1"><Input type="number" step="any" value={editMax} onChange={(e) => setEditMax(e.target.value)} className="h-7 text-xs text-center" placeholder="-" /></td>
+                      <td className="p-2 text-center text-xs text-muted-foreground">{ref.unit}</td>
+                      <td className="p-1 text-center">
+                        <div className="flex gap-0.5 justify-center">
+                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => {
+                            setOverride(ref.name, editMin ? parseFloat(editMin) : undefined, editMax ? parseFloat(editMax) : undefined);
+                            setEditingName(null);
+                          }}><Save className="h-3 w-3 text-green-600" /></Button>
+                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingName(null)}><X className="h-3 w-3" /></Button>
+                        </div>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="p-2 text-center text-muted-foreground">{ref.referenceMin ?? '-'}</td>
+                      <td className="p-2 text-center text-muted-foreground">{ref.referenceMax ?? '-'}</td>
+                      <td className="p-2 text-center text-xs text-muted-foreground">{ref.unit}</td>
+                      <td className="p-1 text-center">
+                        <div className="flex gap-0.5 justify-center">
+                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => {
+                            setEditingName(ref.name);
+                            setEditMin(ref.referenceMin?.toString() ?? '');
+                            setEditMax(ref.referenceMax?.toString() ?? '');
+                          }}><Pencil className="h-3 w-3" /></Button>
+                          {ref.isOverridden && (
+                            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeOverride(ref.name)}>
+                              <RotateCcw className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Toggle show all / common */}
+      <div className="flex items-center justify-between">
+        <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => setShowAll(!showAll)}>
+          {showAll ? `주요 항목만 (${displayRefs.length}개 표시 중)` : `전체 항목 보기 (${refs.length}개)`}
+        </Button>
+        {hasOverrides && (
+          <Button size="sm" variant="ghost" className="text-xs h-7 text-destructive" onClick={resetAll}>
+            <RotateCcw className="h-3 w-3 mr-1" />
+            기본값 초기화
+          </Button>
+        )}
+      </div>
+
+      {/* Add custom item */}
+      <div className="flex gap-2 items-end">
+        <div className="flex-1">
+          <label className="text-xs text-muted-foreground mb-1 block">항목명</label>
+          <Input value={addName} onChange={(e) => setAddName(e.target.value)} className="h-8 text-sm" placeholder="예: LDH" />
+        </div>
+        <div className="w-20">
+          <label className="text-xs text-muted-foreground mb-1 block">하한</label>
+          <Input type="number" step="any" value={addMin} onChange={(e) => setAddMin(e.target.value)} className="h-8 text-sm" />
+        </div>
+        <div className="w-20">
+          <label className="text-xs text-muted-foreground mb-1 block">상한</label>
+          <Input type="number" step="any" value={addMax} onChange={(e) => setAddMax(e.target.value)} className="h-8 text-sm" />
+        </div>
+        <Button size="sm" className="h-8" disabled={!addName.trim()} onClick={() => {
+          setOverride(addName.trim(), addMin ? parseFloat(addMin) : undefined, addMax ? parseFloat(addMax) : undefined);
+          setAddName(''); setAddMin(''); setAddMax('');
+        }}>
+          <Plus className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 // --- Calendar Color Settings Sub-component ---
 

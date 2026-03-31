@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { cn } from '@/utils/cn';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import type { LabResult, LabItem } from '@/types/lab';
 import { formatDate } from '@/utils/dateUtils';
 import { labCategoryService } from '@/services/labCategoryService';
 import type { LabDisplayCategory } from '@/db/database';
+import { useLabReferenceStore } from '@/stores/useLabReferenceStore';
 
 interface LabTableProps {
   results: LabResult[];
@@ -34,6 +35,7 @@ interface LabItemWithDates {
 }
 
 export function LabTable({ results, categories: categoriesProp, onItemClick, onCellClick, onAddCulture, onEditCulture, onDeleteCulture, onDeleteDate, onAddDate }: LabTableProps) {
+  const { checkAbnormal } = useLabReferenceStore();
   const [showAddDate, setShowAddDate] = useState(false);
   const [newDate, setNewDate] = useState('');
   const [deletingDate, setDeletingDate] = useState<string | null>(null);
@@ -292,8 +294,19 @@ export function LabTable({ results, categories: categoriesProp, onItemClick, onC
                           key={date}
                           className={cn(
                             'border-r px-3 py-2 text-center font-semibold cursor-pointer hover:opacity-70 transition-opacity',
-                            labItem.isAbnormal && labItem.hlFlag === 'H' && 'bg-red-50 text-red-600 dark:bg-red-950/20 dark:text-red-400',
-                            labItem.isAbnormal && labItem.hlFlag === 'L' && 'bg-blue-50 text-blue-600 dark:bg-blue-950/20 dark:text-blue-400',
+                            (() => {
+                              // Use store-based reference range check first, fallback to DB flags
+                              const numVal = typeof labItem.value === 'number' ? labItem.value : parseFloat(String(labItem.value));
+                              if (!isNaN(numVal)) {
+                                const ref = checkAbnormal(item.name, numVal);
+                                if (ref.hlFlag === 'H') return 'bg-red-50 text-red-600 dark:bg-red-950/20 dark:text-red-400';
+                                if (ref.hlFlag === 'L') return 'bg-blue-50 text-blue-600 dark:bg-blue-950/20 dark:text-blue-400';
+                              }
+                              // Fallback to original DB flags
+                              if (labItem.isAbnormal && labItem.hlFlag === 'H') return 'bg-red-50 text-red-600 dark:bg-red-950/20 dark:text-red-400';
+                              if (labItem.isAbnormal && labItem.hlFlag === 'L') return 'bg-blue-50 text-blue-600 dark:bg-blue-950/20 dark:text-blue-400';
+                              return '';
+                            })(),
                             isUaAbnormal(item.category, item.name, String(labItem.value)) && 'bg-red-50 text-red-600 dark:bg-red-950/20 dark:text-red-400'
                           )}
                           onClick={(e) => {
@@ -358,18 +371,33 @@ function CultureResultsSection({
   onEdit?: (resultId: string, date: string, name: string, value: string) => void;
   onDelete?: (resultId: string) => void;
 }) {
-  // Sort by date (most recent first)
-  const sortedResults = [...results].sort(
-    (a, b) => b.testDate.getTime() - a.testDate.getTime()
-  );
-
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const selectedResult = sortedResults[selectedIndex];
-
-  // date string helper: YYYY-MM-DD
+  // date string helper
   const toDateStr = (d: Date) => {
     const dt = d instanceof Date ? d : new Date(d);
     return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  };
+
+  // Group results by date
+  const dateGroups = useMemo(() => {
+    const map = new Map<string, LabResult[]>();
+    for (const r of results) {
+      const key = toDateStr(r.testDate);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(r);
+    }
+    // Sort dates descending
+    return Array.from(map.entries())
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([dateKey, items]) => ({ dateKey, results: items }));
+  }, [results]);
+
+  const [selectedDateIdx, setSelectedDateIdx] = useState(0);
+  const selectedGroup = dateGroups[selectedDateIdx];
+
+  // Get specimen name from items (first item that looks like Specimen, or category)
+  const getSpecimenName = (r: LabResult) => {
+    const specimenItem = r.items.find((i) => i.name.toLowerCase() === 'specimen');
+    return specimenItem ? String(specimenItem.value) : 'Culture';
   };
 
   return (
@@ -384,87 +412,91 @@ function CultureResultsSection({
         )}
       </div>
 
-      {sortedResults.length === 0 && (
+      {dateGroups.length === 0 && (
         <p className="text-sm text-muted-foreground">Culture 결과가 없습니다.</p>
       )}
 
       {/* Date Tabs */}
-      {sortedResults.length > 1 && (
+      {dateGroups.length > 1 && (
         <div className="mb-3 flex flex-wrap gap-2">
-          {sortedResults.map((result, idx) => (
+          {dateGroups.map((group, idx) => (
             <button
-              key={result.id}
-              onClick={() => setSelectedIndex(idx)}
+              key={group.dateKey}
+              onClick={() => setSelectedDateIdx(idx)}
               className={cn(
                 'px-3 py-1.5 text-sm rounded-md border transition-colors',
-                selectedIndex === idx
+                selectedDateIdx === idx
                   ? 'bg-primary text-primary-foreground border-primary'
                   : 'bg-background hover:bg-muted border-border'
               )}
             >
-              {formatDate(result.testDate)}
+              {group.dateKey}
+              {group.results.length > 1 && (
+                <span className="ml-1 text-xs opacity-70">({group.results.length})</span>
+              )}
             </button>
           ))}
         </div>
       )}
 
-      {/* Selected Culture Result */}
-      {selectedResult && (
-        <div className="rounded border p-3 bg-muted/30">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-sm font-medium">
-              {formatDate(selectedResult.testDate)}
-            </span>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-xs">
-                {selectedResult.source === 'manual' && '수동 입력'}
-                {selectedResult.source === 'xls' && 'XLS 파싱'}
-                {selectedResult.source === 'parsed' && '붙여넣기'}
-                {selectedResult.source === 'csv' && 'CSV 파일'}
-              </Badge>
-              {onDelete && (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-6 w-6 text-destructive hover:text-destructive"
-                  onClick={() => onDelete(selectedResult.id)}
-                  title="이 Culture 결과 삭제"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              )}
-            </div>
-          </div>
-          <div className="space-y-2">
-            {selectedResult.items.map((item, idx) => (
-              <div key={idx} className="text-sm group relative">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-medium">{item.name}</span>
-                  {onEdit && (
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={() =>
-                        onEdit(
-                          selectedResult.id,
-                          toDateStr(selectedResult.testDate),
-                          item.name,
-                          String(item.value)
-                        )
-                      }
-                      title="수정"
-                    >
-                      <Pencil className="h-3 w-3" />
-                    </Button>
-                  )}
+      {/* Selected Date Group — show all specimens for that date */}
+      {selectedGroup && (
+        <div className="space-y-3">
+          {selectedGroup.results.map((result) => {
+            const specimenName = getSpecimenName(result);
+            return (
+              <div key={result.id} className="rounded border p-3 bg-muted/30">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-primary">{specimenName}</span>
+                    <span className="text-xs text-muted-foreground">{selectedGroup.dateKey}</span>
+                    <Badge variant="outline" className="text-[10px]">
+                      {result.source === 'manual' && '수동'}
+                      {result.source === 'xls' && 'XLS'}
+                      {result.source === 'parsed' && '붙여넣기'}
+                      {result.source === 'csv' && 'CSV'}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {onEdit && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6"
+                        onClick={() => onEdit(result.id, toDateStr(result.testDate), '', '')}
+                        title="수정"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                    )}
+                    {onDelete && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6 text-destructive hover:text-destructive"
+                        onClick={() => onDelete(result.id)}
+                        title="삭제"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <div className="text-muted-foreground whitespace-pre-line font-mono text-xs pl-2">
-                  {item.value}
+                <div className="space-y-1.5">
+                  {result.items
+                    .filter((item) => item.name.toLowerCase() !== 'specimen')
+                    .map((item, idx) => (
+                    <div key={idx} className="text-sm">
+                      <span className="font-medium text-xs text-primary/80">{item.name}</span>
+                      <div className="text-muted-foreground whitespace-pre-line font-mono text-xs pl-2 mt-0.5">
+                        {item.value}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       )}
     </Card>

@@ -57,6 +57,8 @@ const SETTINGS_KEYS = [
   'wardflow-schedule-categories',
   'wardflow-global-alerts',
   'wardflow-calendar-colors',
+  'wardflow-lab-references',
+  'wardflow-ai-settings',
   'wardflow-auth',
 ];
 

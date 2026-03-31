@@ -1,6 +1,6 @@
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useEffect, useState, useRef } from 'react';
-import { ArrowLeft, AlertCircle, Edit, Plus, ChevronDown, Clipboard, Upload, X, AlertTriangle, Bell } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Edit, Plus, ChevronDown, Clipboard, Upload, X, AlertTriangle, Bell, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -12,6 +12,10 @@ import { LabTable } from '@/components/lab/LabTable';
 import { LabChart } from '@/components/lab/LabChart';
 import { LabParseInput } from '@/components/lab/LabParseInput';
 import type { ParsedLabItem } from '@/services/parser/labParser';
+import type { LabItem, LabResult } from '@/types/lab';
+import { AISOAPButton, AILabSummaryButton, AIHandoffButton, AIMedCheckButton } from '@/components/ai/AIAssistButton';
+import { useAIStore } from '@/stores/useAIStore';
+import type { Note } from '@/db/database';
 import { MedicationList } from '@/components/medication/MedicationList';
 import { MedicationAntibioticForm, type AntibioticFormData } from '@/components/medication/MedicationAntibioticForm';
 import { MedicationPasteInput } from '@/components/medication/MedicationPasteInput';
@@ -52,8 +56,9 @@ const PatientDetailPage = () => {
     mode: 'add' | 'edit';
     resultId?: string;
     date: string;
-    name: string;
-    text: string;
+    specimen: string;
+    cultureId: string;
+    sensitivity: string;
   } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -375,11 +380,28 @@ const PatientDetailPage = () => {
   })();
 
   const handleAddCulture = () => {
-    setCultureModal({ mode: 'add', date: todayStr, name: '', text: '' });
+    setCultureModal({ mode: 'add', date: todayStr, specimen: '', cultureId: '', sensitivity: '' });
   };
 
-  const handleEditCulture = (resultId: string, date: string, name: string, value: string) => {
-    setCultureModal({ mode: 'edit', resultId, date, name, text: value });
+  const handleEditCulture = (resultId: string, date: string, _name: string, _value: string) => {
+    // Find the existing culture record and populate fields
+    const record = labs.find((l) => l.id === resultId);
+    if (!record) return;
+    const specimenItem = record.items.find((i) => i.name === 'Specimen');
+    const cultureIdItem = record.items.find((i) => i.name === 'Culture & ID');
+    const sensitivityItem = record.items.find((i) => i.name === 'Sensitivity');
+    // Fallback: if old format (single item), put everything in cultureId
+    const hasStructured = !!(specimenItem || cultureIdItem);
+    setCultureModal({
+      mode: 'edit',
+      resultId,
+      date,
+      specimen: specimenItem ? String(specimenItem.value) : '',
+      cultureId: hasStructured
+        ? (cultureIdItem ? String(cultureIdItem.value) : '')
+        : record.items.map((i) => `${i.name}: ${i.value}`).join('\n'),
+      sensitivity: sensitivityItem ? String(sensitivityItem.value) : '',
+    });
   };
 
   const handleDeleteCulture = async (resultId: string) => {
@@ -435,9 +457,9 @@ const PatientDetailPage = () => {
 
   const handleSaveCulture = async () => {
     if (!cultureModal || !patientId) return;
-    const { mode, resultId, date, name, text } = cultureModal;
-    if (!name.trim() || !text.trim()) {
-      alert('검체명과 결과를 입력해주세요.');
+    const { mode, resultId, date, specimen, cultureId, sensitivity } = cultureModal;
+    if (!specimen.trim() || !cultureId.trim()) {
+      alert('검체명과 Culture & ID를 입력해주세요.');
       return;
     }
 
@@ -445,24 +467,21 @@ const PatientDetailPage = () => {
       const [year, month, day] = date.split('-').map(Number);
       const testDate = new Date(year!, month! - 1, day!);
 
+      // Build structured items: Specimen, Culture & ID, Sensitivity (if any)
+      const items: LabItem[] = [
+        { name: 'Specimen', value: specimen.trim(), unit: '', isAbnormal: false },
+        { name: 'Culture & ID', value: cultureId.trim(), unit: '', isAbnormal: false },
+      ];
+      if (sensitivity.trim()) {
+        items.push({ name: 'Sensitivity', value: sensitivity.trim(), unit: '', isAbnormal: false });
+      }
+
       if (mode === 'add') {
-        await addLabResult(
-          patientId,
-          'Culture',
-          [{ name: name.trim(), value: text.trim(), unit: '', isAbnormal: false }],
-          testDate,
-          'manual'
-        );
+        await addLabResult(patientId, 'Culture', items, testDate, 'manual');
       } else if (mode === 'edit' && resultId) {
-        // Find the existing record, update its item and date
+        await deleteLabResult(resultId);
         const existing = labs.find((l) => l.id === resultId);
-        if (existing) {
-          await deleteLabResult(resultId);
-          const updatedItems = existing.items.map((item) =>
-            item.name === name ? { ...item, value: text.trim() } : item
-          );
-          await addLabResult(patientId, 'Culture', updatedItems, testDate, existing.source);
-        }
+        await addLabResult(patientId, 'Culture', items, testDate, existing?.source ?? 'manual');
       }
 
       setCultureModal(null);
@@ -868,6 +887,14 @@ const PatientDetailPage = () => {
 
                 {/* Schedule Section */}
                 <ScheduleSection patientId={patient.id} />
+
+                {/* AI Assist */}
+                <AIOverviewSection
+                  patient={patient}
+                  medications={medications}
+                  labs={labs}
+                  notes={notes}
+                />
               </div>
             </TabsContent>
 
@@ -1122,7 +1149,7 @@ const PatientDetailPage = () => {
       {/* Culture Add/Edit Modal */}
       {cultureModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-background rounded-lg shadow-lg max-w-lg w-full">
+          <div className="bg-background rounded-lg shadow-lg max-w-lg w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <h3 className="mb-4 text-lg font-semibold">
                 {cultureModal.mode === 'add' ? 'Culture 결과 추가' : 'Culture 결과 수정'}
@@ -1138,30 +1165,55 @@ const PatientDetailPage = () => {
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium">검체명 (예: Blood, Urine, Sputum)</label>
+                  <label className="text-sm font-medium">검체 (Specimen)</label>
+                  <select
+                    value={cultureModal.specimen}
+                    onChange={(e) => setCultureModal({ ...cultureModal, specimen: e.target.value })}
+                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    <option value="">선택하세요</option>
+                    <option value="Blood">Blood</option>
+                    <option value="Urine">Urine</option>
+                    <option value="Sputum">Sputum</option>
+                    <option value="CRE-Rectal swab">CRE-Rectal swab</option>
+                    <option value="CRE-Urine">CRE-Urine</option>
+                    <option value="CRE-Blood">CRE-Blood</option>
+                    <option value="Wound">Wound</option>
+                    <option value="CSF">CSF</option>
+                    <option value="Stool">Stool</option>
+                  </select>
                   <input
                     type="text"
-                    value={cultureModal.name}
-                    onChange={(e) => setCultureModal({ ...cultureModal, name: e.target.value })}
-                    placeholder="예: Blood culture, Urine culture"
+                    value={cultureModal.specimen}
+                    onChange={(e) => setCultureModal({ ...cultureModal, specimen: e.target.value })}
+                    placeholder="또는 직접 입력"
                     className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    readOnly={cultureModal.mode === 'edit'}
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium">결과 내용</label>
+                  <label className="text-sm font-medium">Culture & ID (균 동정)</label>
                   <textarea
-                    value={cultureModal.text}
-                    onChange={(e) => setCultureModal({ ...cultureModal, text: e.target.value })}
-                    placeholder="균 동정 결과 및 항생제 감수성 결과를 입력하세요"
-                    rows={8}
+                    value={cultureModal.cultureId}
+                    onChange={(e) => setCultureModal({ ...cultureModal, cultureId: e.target.value })}
+                    placeholder="예: Klebsiella pneumoniae, No growth, E.coli"
+                    rows={3}
+                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Sensitivity (감수성) — No growth인 경우 비워두세요</label>
+                  <textarea
+                    value={cultureModal.sensitivity}
+                    onChange={(e) => setCultureModal({ ...cultureModal, sensitivity: e.target.value })}
+                    placeholder="예: Amikacin S, Ceftriaxone R, ..."
+                    rows={5}
                     className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring resize-y"
                   />
                 </div>
               </div>
               <div className="mt-6 flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setCultureModal(null)}>취소</Button>
-                <Button onClick={handleSaveCulture}>저장</Button>
+                <Button onClick={handleSaveCulture} disabled={!cultureModal.specimen.trim() || !cultureModal.cultureId.trim()}>저장</Button>
               </div>
             </div>
           </div>
@@ -1225,5 +1277,184 @@ const PatientDetailPage = () => {
     </div>
   );
 };
+
+// --- AI Overview Section ---
+
+function AIOverviewSection({ patient, medications, labs, notes }: {
+  patient: Patient;
+  medications: Array<{ drugName: string; dosage?: string; frequency?: string; isActive: boolean; category: string }>;
+  labs: LabResult[];
+  notes: Note[];
+}) {
+  const { isConfigured } = useAIStore();
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+
+  if (!isConfigured()) return null;
+
+  const toDateKey = (d: Date) => {
+    const dt = d instanceof Date ? d : new Date(d);
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  };
+
+  // 선택된 날짜의 경과기록 메모
+  const dateNotes = notes
+    .filter((n) => {
+      if (n.type !== 'progress') return false;
+      return toDateKey(n.createdAt) === selectedDate;
+    })
+    .map((n) => n.content)
+    .join('\n');
+
+  // 현재 투약 텍스트
+  const medText = medications
+    .filter((m) => m.isActive)
+    .map((m) => `${m.drugName} ${m.dosage || ''} ${m.frequency || ''}`.trim())
+    .join('\n');
+
+  // 선택 날짜 기준 Lab (당일 + 직전 1회)
+  const nonCultureLabs = [...labs]
+    .filter((l) => l.category !== 'Culture')
+    .sort((a, b) => b.testDate.getTime() - a.testDate.getTime());
+
+  const selectedDateLabs = nonCultureLabs.filter((l) => toDateKey(l.testDate) === selectedDate);
+  const beforeDateLabs = nonCultureLabs.filter((l) => toDateKey(l.testDate) < selectedDate).slice(0, 2);
+  const labsForAI = [...selectedDateLabs, ...beforeDateLabs];
+
+  // 선택 날짜에만 해당하는 Lab (Lab 요약용)
+  const labTextForDate = labsForAI.map((l) => {
+    const dateStr = toDateKey(l.testDate);
+    const items = l.items.map((i) => `${i.name}: ${i.value}${i.hlFlag ? ` (${i.hlFlag})` : ''}`).join(', ');
+    return `[${dateStr}] ${items}`;
+  }).join('\n');
+
+  // 경과기록이 있는 날짜 목록 (퀵 선택용)
+  const noteDates = [...new Set(
+    notes
+      .filter((n) => n.type === 'progress')
+      .map((n) => toDateKey(n.createdAt))
+  )].sort().reverse().slice(0, 7);
+
+  return (
+    <Card className="p-4 space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          <Bot className="h-4 w-4 text-primary" />
+          AI 어시스턴트
+        </h3>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="h-7 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
+      </div>
+
+      {/* Quick date buttons */}
+      {noteDates.length > 1 && (
+        <div className="flex flex-wrap gap-1">
+          {noteDates.map((d) => (
+            <button
+              key={d}
+              onClick={() => setSelectedDate(d)}
+              className={`px-2 py-0.5 text-[10px] rounded border transition-colors ${
+                selectedDate === d
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-background hover:bg-muted border-border text-muted-foreground'
+              }`}
+            >
+              {d === todayStr ? '오늘' : d.slice(5)}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <AISOAPButton
+          patientName={patient.name}
+          chiefComplaint={patient.chiefComplaint || ''}
+          onset={patient.onset || ''}
+          progressNote={dateNotes}
+          currentMedications={medText}
+          recentLab={labTextForDate}
+        />
+        <AILabSummaryButton
+          patientName={patient.name}
+          chiefComplaint={patient.chiefComplaint || ''}
+          labData={labTextForDate}
+        />
+      </div>
+      {!dateNotes && (
+        <p className="text-xs text-muted-foreground">SOAP 변환: {selectedDate === todayStr ? '오늘' : selectedDate}의 경과기록 메모가 없습니다.</p>
+      )}
+
+      {/* Handoff — 날짜 무관, 전체 컨텍스트 */}
+      <div className="border-t pt-3">
+        {(() => {
+          // 전체 Lab (최근 5회)
+          const allLabText = nonCultureLabs.slice(0, 5).map((l) => {
+            const ds = toDateKey(l.testDate);
+            const items = l.items.map((i) => `${i.name}: ${i.value}${i.hlFlag ? ` (${i.hlFlag})` : ''}`).join(', ');
+            return `[${ds}] ${items}`;
+          }).join('\n');
+
+          // 최근 3일 경과기록
+          const threeDaysAgo = new Date(today);
+          threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+          const recentNotesText = notes
+            .filter((n) => n.type === 'progress' && (n.createdAt instanceof Date ? n.createdAt : new Date(n.createdAt)) >= threeDaysAgo)
+            .map((n) => `[${toDateKey(n.createdAt)}] ${n.content}`)
+            .join('\n');
+
+          // 항생제
+          const abxText = medications
+            .filter((m) => m.isActive && m.category === 'antibiotic')
+            .map((m) => `${m.drugName} ${m.dosage || ''} ${m.frequency || ''}`.trim())
+            .join('\n');
+
+          // 입원일
+          const admDate = patient.admissionDate instanceof Date ? patient.admissionDate : new Date(patient.admissionDate);
+          const admStr = toDateKey(admDate);
+
+          // 나이
+          const birthDate = patient.birthDate instanceof Date ? patient.birthDate : new Date(patient.birthDate);
+          const ageYears = Math.floor((today.getTime() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+
+          return (
+            <div className="flex flex-wrap gap-2">
+              <AIHandoffButton
+                patientName={patient.name}
+                sex={patient.sex}
+                age={ageYears}
+                admissionDate={admStr}
+                chiefComplaint={patient.chiefComplaint || ''}
+                onset={patient.onset || ''}
+                problemList={Array.isArray(patient.problemList) ? patient.problemList.join('\n') : ''}
+                currentMedications={medText}
+                antibiotics={abxText}
+                recentLab={allLabText}
+                recentNotes={recentNotesText}
+                tags={patient.tags?.join(', ') || ''}
+                attention={!!patient.attention}
+                schedules=""
+              />
+              <AIMedCheckButton
+                patientName={patient.name}
+                age={ageYears}
+                sex={patient.sex}
+                currentMedications={medText}
+                antibiotics={abxText}
+                recentLab={allLabText}
+              />
+            </div>
+          );
+        })()}
+      </div>
+    </Card>
+  );
+}
 
 export default PatientDetailPage;
