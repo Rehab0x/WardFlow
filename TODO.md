@@ -267,11 +267,26 @@
 
 ---
 
-## Phase 3: WardAide — AI (Phase 2 완료 후)
-- [ ] AI 사이드바 UI
+## Phase 3: WardAide — AI
+
+### 3.1 AI 기반 (멀티 LLM) `@Architect` `@Coder-Logic` — 완료
+- [x] AI 멀티 LLM 설정 (Claude/GPT/Gemini/Grok, 모델 선택, API 키, 연결 테스트) → `src/stores/useAIStore.ts`
+- [x] AI 통합 호출 서비스 (Anthropic + OpenAI호환 + Gemini API) → `src/services/aiService.ts`
+- [x] AI SOAP 변환 (경과기록 → S/O/A/P, 개별 섹션 복사) → `src/components/ai/AIAssistButton.tsx`
+- [x] AI Lab 요약 (최근 Lab → 임상 요약)
+- [x] AI 인수인계 요약 (전체 환자 컨텍스트 → 인수인계 보고서)
+- [x] AI 투약 체크 (투약 × Lab 교차 분석 → 안전성 알림)
+- [x] AI 날짜 선택 (date picker + 퀵 버튼, 선택 날짜 기준 데이터)
+- [x] 설정 페이지 AI 설정 UI
+
+### 3.2 알림 고도화 `@Coder-Logic` → Phase 3 후반
+- [ ] 커스텀 알림 규칙 설정 (Lab 수치 기반 등)
+- [ ] 알림 히스토리 (과거 알림 열람/삭제)
+
+### 3.3 AI 추가 기능 (예정)
+- [ ] 근거연결 AI (가이드라인 키워드 추천, 논문/근거 연결)
 - [ ] 로컬 DB 자연어 쿼리 (자연어 → Dexie 쿼리)
-- [ ] Lab 추이 분석 AI
-- [ ] Renal dose 가이드
+- [ ] AI 기반 Morning Briefing 분석
 
 ---
 
@@ -318,4 +333,5 @@
 | 2026-03-26 | **v1.0.2 Release — Lab 셀 편집 수정 + 서버 동기화**: ① **Lab 셀 편집 구현** (updateLabItemValue 스토어 함수 추가, Enter/저장 버튼으로 DB 반영, 비정상 플래그 자동 재계산) ② **빈 Lab 셀 값 추가** (Culture 레코드 건너뛰기, non-Culture 레코드에 item 추가, 해당 날짜에 레코드 없으면 새로 생성) ③ **Supabase 서버 동기화** (supabaseClient.ts, backups 테이블, AES 암호화→Base64→upsert, 동기화 키 기반 업로드/다운로드) ④ 설정 페이지 서버 동기화 UI (동기화 키+비밀번호 입력, 서버 확인/업로드/다운로드 버튼, 마지막 업로드 시간 표시) ⑤ **초기 로드 개선** (AppShell에서 fetchPatients 선행 호출, 환자 클릭 시 빈 화면 문제 완화). | ✅ 완료 | @Coder-Logic + @Coder-UI + @Architect |
 | 2026-03-27 | **v1.0.3 Release — 다수 버그 수정 + UX 대폭 개선**: ① Lab 수정 시 H/L 색상 유지 (참조범위 기반 isAbnormal/hlFlag 재계산) ② Lab 값 삭제 시 `-` 표시 (아이템 제거) ③ Lab 차트 날짜 하루 밀림 수정 (toISOString→로컬 날짜) ④ HbA1c NGSP 값만 추출 (Culture 오분류 방지, B3120 카테고리 Chemistry) ⑤ 항생제 endDate 자동 비활성화 (fetchMedicationsByPatient+briefingService에서 만료 체크) ⑥ 사이드바 다중 카테고리 열림 (컨설트/퇴원 동시 표시) ⑦ 사이드바 환자 hover 시 Tag 툴팁 ⑧ Today's Note 오늘의 회진 섹션 (progress 메모 한줄 표시) ⑨ 알림 한줄 truncate ⑩ 항생제 현황 클릭→투약 탭 이동 (medication 오타 수정) ⑪ 사이드바 플래그 실시간 반영 (refreshSidebarFlags 글로벌 트리거) ⑫ Problem List 수정/순서변경 (인라인 편집, ArrowUp/Down) ⑬ Onset 복사 시 경과기간 괄호 제거 ⑭ 보호자 설명 필드 저장 수정 (initialData 누락) ⑮ UA Leukocyte B-code/D-code 추가 ⑯ Urine Sediment 카테고리 통일 + Crystal/Cast 추가 ⑰ Micro 접두사 NAME_ALIASES 매핑 ⑱ Today's Note 범용 알림 (추가/수정/삭제, 기간 설정, localStorage persist) ⑲ 서버 동기화 버튼 모바일 반응형 (flex-wrap) ⑳ 지참약 종료/현재 구분 (CircleOff→종료, RotateCcw→재활성화, 종료 목록) ㉑ 아이디 기억하기 체크박스 + 비밀번호 자동 포커스. | ✅ 완료 | @Coder-UI + @Coder-Logic + @Architect |
 | 2026-03-29 | **v1.0.4 Release — 범용 알림 관리 + 캘린더 색상 + Lab 자동 Import + 백업 확장**: ① **범용 알림 관리 모달** (전체 목록 활성/만료 구분, 수정/삭제, 새 알림 추가) ② **범용 알림 캘린더 연동** (날짜 범위 내 모든 날에 도트/라벨 표시, Megaphone 아이콘) ③ **CRE Urine No growth Culture 분류** (textResult에 growth/sensitivity/resistant 포함 시 Culture 판별) ④ **백업 v7** (templates DB 테이블 + localStorage 설정 5종 포함: 차팅/일정카테고리/범용알림/캘린더색상/인증) ⑤ **항생제 현황 환자 그룹화** (데스크톱 rowSpan, 모바일 환자별 카드) ⑥ **모바일 환자 로딩 fallback** (store 없으면 DB 직접 조회 directPatient) ⑦ **Hook 순서 수정** (useMemo를 early return 전으로 이동) ⑧ **캘린더 색상 커스텀** (useCalendarColorStore persist, 10가지 프리셋, 설정 페이지 색상 picker) ⑨ **투약 bulk 저장** (bulkAddMedications: 단일 트랜잭션, refreshSidebarFlags 1회) ⑩ **Lab Import Inbox** (labImportInbox.ts 로컬 폴더 스캔, LabImportInbox.tsx UI, 폴더 핸들 IndexedDB 영구 저장) ⑪ **Supabase Storage inbox** (storageInbox.ts, StorageLabInbox.tsx, curl 업로드→WardFlow 가져오기) ⑫ **/lab-import 전용 페이지** (공개 라우트 PIN 불필요, 서버 데이터 다운로드 + Storage/로컬 듀얼 모드, autoRun) ⑬ **서버 동기화 키 localStorage persist** (설정 페이지 입력 시 자동 저장, lab-import에서 읽기). | ✅ 완료 | @Coder-UI + @Coder-Logic + @Architect |
+| 2026-04-01 | **v1.0.5 Release — Phase 3 AI 기능 + Culture 재설계 + Lab 참조범위 + 설정 리뉴얼**: ① **AI 멀티 LLM 지원** (useAIStore: Claude/GPT/Gemini/Grok 4종, 모델 선택, API 키 관리, 연결 테스트) ② **AI SOAP 변환** (경과기록 메모 → S/O/A/P 구조화, 개별 섹션 복사 버튼, 환자 컨텍스트 자동 수집) ③ **AI Lab 요약** (최근 Lab 데이터 → 임상적 요약, 비정상 추이 분석) ④ **AI 인수인계 요약** (전체 환자 컨텍스트 → 인수인계 보고서: 진단/투약/Lab/메모/일정 통합) ⑤ **AI 투약 체크** (투약 × Lab 교차 분석 → 신기능/간기능/전해질 주의사항, 약물 상호작용) ⑥ **AI 날짜 선택** (date picker + 경과기록 있는 날짜 퀵 버튼, 선택 날짜 기준 SOAP/Lab 생성) ⑦ **Culture 모달 재설계** (Specimen 드롭다운 + Culture&ID + Sensitivity 3필드 구조) ⑧ **Culture 표시 재설계** (날짜별 그룹화, Specimen이 카드 제목, 하위 항목으로 분리) ⑨ **Lab 참조범위 설정** (useLabReferenceStore persist, 기본값+오버라이드, 설정 페이지 테이블 편집, 커스텀 항목 추가) ⑩ **LabTable 실시간 색상** (store 기반 참조범위 체크, DB 플래그 fallback) ⑪ **설정 페이지 리뉴얼** (데스크톱 좌측 사이드 네비 + 모바일 수평 탭, 10개 섹션 앵커 스크롤) ⑫ SOAP 프롬프트 개선 (Subjective 등 제목 제거, 파서에서도 자동 strip) ⑬ 경과기록 날짜 비교 UTC→로컬 수정 ⑭ 백업에 AI 설정 + Lab 참조범위 포함. | ✅ 완료 | @Architect + @Coder-UI + @Coder-Logic |
 | 2026-03-18 | **개요 탭 알림 시스템 구현 및 날짜 버그 전면 수정**: ① 개요 탭 Quick Stats 카드(Lab/투약/메모 갯수) 제거 ② 개요 탭 최상단 알림 박스 추가 (C/C 위, 앰버 색상) — 오늘 알림 메모(reminder) + 오늘/어제 Lab 결과 유무 표시 ③ Lab 알림 표시 형식: "어제 (2026-03-17) Lab 결과가 있습니다." ④ **날짜 timezone 버그 전면 수정**: `formatDate()` 유틸을 `toISOString()` 대신 로컬 시간 기준으로 수정, `LabTable.tsx` 날짜 키 생성 시 toISOString() → formatDate() 교체, `LabManualInput.tsx` 기본값 및 저장 시 `parseLocalDate()` 적용 ⑤ Tags 카드 제목 "주의사항 (Tags)" → "Tags" 단순화 및 빈 상태 문구 수정. | ✅ 완료 | @Coder-UI + @Coder-Logic |
