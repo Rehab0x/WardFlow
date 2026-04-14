@@ -218,6 +218,79 @@ function groupByCategory(items: ParsedLabItem[]): Map<string, ParsedLabItem[]> {
 }
 
 // ─────────────────────────────────────────────────
+// Recent Lab status by patient
+// ─────────────────────────────────────────────────
+
+export interface RecentLabStatus {
+  patientId: string;
+  patientName: string;
+  roomBed: string;
+  patientType: 'admitted' | 'consult';
+  registrationNumber: string;
+  latestLabDate: string | null; // YYYY-MM-DD, null if no lab
+  daysSinceLatest: number | null;
+}
+
+/**
+ * 등록된 활성 환자(입원/컨설트)별로 최신 Lab 날짜를 집계합니다.
+ * Lab 파싱 시작 전 "누가 언제까지 Lab 이 들어가있는지" 한눈에 보기 위함.
+ */
+async function getRecentLabStatus(): Promise<RecentLabStatus[]> {
+  const patients = await db.patients
+    .where('status')
+    .equals('active')
+    .toArray();
+
+  const allLabs = await db.labResults.toArray();
+
+  // Latest non-Culture lab per patient
+  const latestByPatient = new Map<string, Date>();
+  for (const lab of allLabs) {
+    if (lab.category === 'Culture') continue;
+    const existing = latestByPatient.get(lab.patientId);
+    if (!existing || lab.testDate > existing) {
+      latestByPatient.set(lab.patientId, lab.testDate);
+    }
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const toDateStr = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  const result: RecentLabStatus[] = patients.map((p) => {
+    const latest = latestByPatient.get(p.id);
+    let daysSince: number | null = null;
+    if (latest) {
+      const latestStart = new Date(latest.getFullYear(), latest.getMonth(), latest.getDate());
+      daysSince = Math.floor((today.getTime() - latestStart.getTime()) / (1000 * 60 * 60 * 24));
+    }
+    return {
+      patientId: p.id,
+      patientName: p.name,
+      roomBed: p.roomBed,
+      patientType: p.patientType,
+      registrationNumber: p.registrationNumber ?? '',
+      latestLabDate: latest ? toDateStr(latest) : null,
+      daysSinceLatest: daysSince,
+    };
+  });
+
+  // Sort: never-lab first, then oldest lab first (most urgent to update)
+  result.sort((a, b) => {
+    if (a.latestLabDate === null && b.latestLabDate !== null) return -1;
+    if (a.latestLabDate !== null && b.latestLabDate === null) return 1;
+    if (a.latestLabDate && b.latestLabDate) {
+      return a.latestLabDate.localeCompare(b.latestLabDate);
+    }
+    return a.roomBed.localeCompare(b.roomBed, 'ko-KR', { numeric: true });
+  });
+
+  return result;
+}
+
+// ─────────────────────────────────────────────────
 // Export as singleton service object
 // (automation agents import this directly)
 // ─────────────────────────────────────────────────
@@ -226,4 +299,5 @@ export const bulkLabImport = {
   processFile,
   saveAll,
   savePatient,
+  getRecentLabStatus,
 };

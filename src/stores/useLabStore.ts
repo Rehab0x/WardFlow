@@ -100,8 +100,12 @@ export const useLabStore = create<LabStore>((set) => ({
         .equals(patientId)
         .toArray();
 
-      const numVal = typeof newValue === 'string' ? parseFloat(newValue) : newValue;
-      const isNumeric = !isNaN(numVal as number);
+      // 순수 숫자 판별 (공백 trim 후 -?digits.digits 만 허용)
+      // "1+", "2+", "+", "trace" 같은 질적 값은 문자열로 유지
+      const PURE_NUMERIC = /^-?\d+(\.\d+)?$/;
+      const valueStr = typeof newValue === 'string' ? newValue.trim() : String(newValue);
+      const isNumeric = PURE_NUMERIC.test(valueStr);
+      const numVal = isNumeric ? parseFloat(valueStr) : NaN;
 
       // Find labs matching date
       let targetLab: LabResult | undefined;
@@ -123,7 +127,7 @@ export const useLabStore = create<LabStore>((set) => ({
 
       if (targetLab && itemIndex !== -1) {
         // If value is empty, remove the item
-        if (String(newValue).trim() === '') {
+        if (valueStr === '') {
           const updatedItems = targetLab.items.filter((_, i) => i !== itemIndex);
           await db.labResults.update(targetLab.id, { items: updatedItems });
           set((state) => ({
@@ -141,7 +145,7 @@ export const useLabStore = create<LabStore>((set) => ({
         const refMax = existingItem.referenceMax;
         updatedItems[itemIndex] = {
           ...existingItem,
-          value: isNumeric ? numVal as number : newValue,
+          value: isNumeric ? numVal : valueStr,
           isAbnormal: isNumeric
             ? (refMin !== undefined && (numVal as number) < refMin) ||
               (refMax !== undefined && (numVal as number) > refMax)
@@ -164,7 +168,7 @@ export const useLabStore = create<LabStore>((set) => ({
         // Add new item to existing non-Culture lab result on that date
         const newItem: LabItem = {
           name: itemName,
-          value: isNumeric ? numVal as number : newValue,
+          value: isNumeric ? numVal : valueStr,
           unit: '',
           isAbnormal: false,
         };
@@ -182,7 +186,7 @@ export const useLabStore = create<LabStore>((set) => ({
         const newId = `lab${Date.now()}`;
         const newItem: LabItem = {
           name: itemName,
-          value: isNumeric ? numVal as number : newValue,
+          value: isNumeric ? numVal : valueStr,
           unit: '',
           isAbnormal: false,
         };

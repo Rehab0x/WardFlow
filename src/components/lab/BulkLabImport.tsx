@@ -1,9 +1,9 @@
-import { useState, useRef } from 'react';
-import { Loader2, CheckCircle2, XCircle, ChevronDown, ChevronRight, FlaskConical } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Loader2, CheckCircle2, XCircle, ChevronDown, ChevronRight, FlaskConical, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { bulkLabImport, type BulkImportPreview, type MatchedPatient, type BulkImportResult } from '@/services/bulkLabImport';
+import { bulkLabImport, type BulkImportPreview, type MatchedPatient, type BulkImportResult, type RecentLabStatus } from '@/services/bulkLabImport';
 
 interface BulkLabImportProps {
   onClose: () => void;
@@ -20,7 +20,16 @@ export function BulkLabImport({ onClose, onComplete }: BulkLabImportProps) {
   const [preview, setPreview] = useState<BulkImportPreview | null>(null);
   const [result, setResult] = useState<BulkImportResult | null>(null);
   const [expandedUnmatched, setExpandedUnmatched] = useState(false);
+  const [recentStatus, setRecentStatus] = useState<RecentLabStatus[] | null>(null);
+  const [showRecentStatus, setShowRecentStatus] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Upload 단계 진입 시 최근 Lab 현황 로드
+  useEffect(() => {
+    if (step === 'upload' && recentStatus === null) {
+      bulkLabImport.getRecentLabStatus().then(setRecentStatus).catch(() => setRecentStatus([]));
+    }
+  }, [step, recentStatus]);
 
   // ── File processing ───────────────────────────────
 
@@ -101,6 +110,83 @@ export function BulkLabImport({ onClose, onComplete }: BulkLabImportProps) {
             병원 OCS에서 내보낸 XLS 파일을 업로드하면 등록된 모든 환자의 Lab 결과를
             차트번호(등록번호)로 자동 매칭하여 일괄 저장합니다.
           </p>
+
+          {/* 최근 Lab 현황 */}
+          {recentStatus && recentStatus.length > 0 && (
+            <Card className="p-3 space-y-2">
+              <button
+                className="flex items-center justify-between w-full"
+                onClick={() => setShowRecentStatus(!showRecentStatus)}
+              >
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium">환자별 최근 Lab 현황 ({recentStatus.length}명)</span>
+                </div>
+                {showRecentStatus ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              </button>
+
+              {showRecentStatus && (
+                <div className="space-y-1 max-h-[240px] overflow-y-auto">
+                  {(() => {
+                    // 날짜별 그룹화: latestLabDate 기준
+                    const groups = new Map<string, RecentLabStatus[]>();
+                    for (const p of recentStatus) {
+                      const key = p.latestLabDate ?? '없음';
+                      if (!groups.has(key)) groups.set(key, []);
+                      groups.get(key)!.push(p);
+                    }
+                    const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
+                      if (a === '없음') return -1;
+                      if (b === '없음') return 1;
+                      return a.localeCompare(b); // 오래된 순
+                    });
+
+                    return sortedKeys.map((dateKey) => {
+                      const patients = groups.get(dateKey)!;
+                      const firstPatient = patients[0];
+                      const days = firstPatient?.daysSinceLatest;
+                      const isOld = days !== null && days !== undefined && days >= 3;
+                      const isNone = dateKey === '없음';
+
+                      return (
+                        <div key={dateKey} className="flex items-start gap-2 text-xs">
+                          <div className="shrink-0 w-24">
+                            <Badge
+                              variant="outline"
+                              className={
+                                isNone ? 'bg-red-50 text-red-700 border-red-300 dark:bg-red-950/20 dark:text-red-300' :
+                                isOld ? 'bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950/20 dark:text-amber-300' :
+                                'bg-green-50 text-green-700 border-green-300 dark:bg-green-950/20 dark:text-green-300'
+                              }
+                            >
+                              {isNone ? 'Lab 없음' : dateKey}
+                            </Badge>
+                            {!isNone && days !== null && days !== undefined && days > 0 && (
+                              <span className="ml-1 text-[10px] text-muted-foreground">D-{days}</span>
+                            )}
+                          </div>
+                          <div className="flex-1 flex flex-wrap gap-x-2 gap-y-0.5">
+                            {patients.map((p) => (
+                              <span key={p.patientId} className="whitespace-nowrap">
+                                <span className="text-muted-foreground">{p.roomBed}</span>{' '}
+                                <span className="font-medium">{p.patientName}</span>
+                                <span className="text-[10px] text-muted-foreground ml-0.5">
+                                  {p.patientType === 'consult' ? '(C)' : ''}
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              )}
+              <p className="text-[10px] text-muted-foreground">
+                가장 오래된 순으로 표시. <span className="text-red-600">빨강</span>=Lab 없음, <span className="text-amber-600">주황</span>=3일 이상 경과
+              </p>
+            </Card>
+          )}
 
           <div
             className="border-2 border-dashed rounded-lg p-10 text-center cursor-pointer hover:border-primary hover:bg-muted/30 transition-colors"

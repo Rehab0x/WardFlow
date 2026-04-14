@@ -97,7 +97,7 @@ function parseLine(line: string): ParsedLabItem | null {
 
 function parseTabLine(line: string): ParsedLabItem | null {
   const cols = line.split('\t').map((c) => c.trim());
-  if (cols.length < 3) return null;
+  if (cols.length < 2) return null;
 
   const col0 = cols[0] ?? '';
   const col1 = cols[1] ?? '';
@@ -115,12 +115,14 @@ function parseTabLine(line: string): ParsedLabItem | null {
   let refRaw = '';
 
   if (codePattern.test(col0)) {
+    // 검사코드 + 검사명 + 값 + [H/L] + [참조치]
     code = col0.toUpperCase();
     rawName = col1;
     value = col2;
     flagRaw = col3;
     refRaw = col4;
   } else {
+    // 검사명 + 값 + [H/L] + [참조치]  (간소화된 형식)
     rawName = col0;
     value = col1;
     flagRaw = col2;
@@ -164,30 +166,84 @@ function inferCategoryFromName(name: string): string {
 
 function parseSpaceLine(line: string): ParsedLabItem | null {
   const codeMatch = line.match(/^([ABab]\d{4,6}[ABab]?)\s+(.+)/);
-  if (!codeMatch || !codeMatch[1] || !codeMatch[2]) return null;
+  if (codeMatch && codeMatch[1] && codeMatch[2]) {
+    // 코드가 있는 경우: 기존 형식
+    const code = codeMatch[1].toUpperCase();
+    const rest = codeMatch[2].trim();
 
-  const code = codeMatch[1].toUpperCase();
-  const rest = codeMatch[2].trim();
+    const parts = rest.split(/\s{2,}/).map((p) => p.trim()).filter(Boolean);
+    if (parts.length < 2) return null;
 
-  const parts = rest.split(/\s{2,}/).map((p) => p.trim()).filter(Boolean);
-  if (parts.length < 2) return null;
+    const name = parts[0] ?? '';
+    const value = parts[1] ?? '';
+    const thirdPart = parts[2] ?? '';
+    const flag = thirdPart === 'H' || thirdPart === 'L' ? thirdPart : '';
+    const refRaw = flag ? (parts[3] ?? '') : (parts[2] ?? '');
 
+    const info = getLabInfo(code);
+    const ref = parseReferenceRange(refRaw);
+
+    return {
+      code,
+      name: info?.name ?? name,
+      category: info?.category ?? 'Other',
+      unit: info?.unit ?? '',
+      value,
+      flag: flag as 'H' | 'L' | '',
+      referenceMin: ref.min,
+      referenceMax: ref.max,
+      referenceText: (ref.text ?? refRaw) || undefined,
+    };
+  }
+
+  // 코드 없이 "검사명 값" 또는 "검사명 값 H/L" 형식
+  // 여러 공백으로 분리
+  const parts = line.split(/\s{2,}|\t+/).map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 2) {
+    // 단일 공백으로 분리 시도 — 마지막 토큰이 값일 가능성
+    const tokens = line.trim().split(/\s+/);
+    if (tokens.length < 2) return null;
+    // 뒤에서부터 값/flag/ref 파싱
+    const lastToken = tokens[tokens.length - 1] ?? '';
+    const secondLast = tokens[tokens.length - 2] ?? '';
+    // "검사명 ... 값" 패턴 — 값이 숫자나 +기호이면 마지막 토큰을 값으로
+    if (/^[\d.+\-]/.test(lastToken)) {
+      const value = lastToken;
+      const name = tokens.slice(0, -1).join(' ');
+      return buildItemFromNameValue(name, value, '', '');
+    }
+    // "검사명 값 H/L" 패턴
+    if ((lastToken === 'H' || lastToken === 'L') && /^[\d.+\-]/.test(secondLast)) {
+      const value = secondLast;
+      const flag = lastToken;
+      const name = tokens.slice(0, -2).join(' ');
+      return buildItemFromNameValue(name, value, flag, '');
+    }
+    return null;
+  }
+
+  // 2+ parts
   const name = parts[0] ?? '';
   const value = parts[1] ?? '';
   const thirdPart = parts[2] ?? '';
   const flag = thirdPart === 'H' || thirdPart === 'L' ? thirdPart : '';
   const refRaw = flag ? (parts[3] ?? '') : (parts[2] ?? '');
 
-  const info = getLabInfo(code);
-  const ref = parseReferenceRange(refRaw);
+  return buildItemFromNameValue(name, value, flag, refRaw);
+}
 
+function buildItemFromNameValue(name: string, value: string, flag: string, refRaw: string): ParsedLabItem | null {
+  if (!name || !value) return null;
+  const cleanName = extractCleanName('', name);
+  const info = findLabByName(cleanName);
+  const ref = parseReferenceRange(refRaw);
   return {
-    code,
-    name: info?.name ?? name,
-    category: info?.category ?? 'Other',
+    code: '',
+    name: cleanName,
+    category: info?.category ?? inferCategoryFromName(cleanName),
     unit: info?.unit ?? '',
     value,
-    flag: flag as 'H' | 'L' | '',
+    flag: (flag === 'H' || flag === 'L' ? flag : '') as 'H' | 'L' | '',
     referenceMin: ref.min,
     referenceMax: ref.max,
     referenceText: (ref.text ?? refRaw) || undefined,

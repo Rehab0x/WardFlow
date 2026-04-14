@@ -134,10 +134,13 @@ export function LabParseInput({ mode, patientId: _patientId, registrationNumber,
       {mode === 'paste' && (
         <div className="space-y-3">
           <Label>OCS Lab 결과 붙여넣기</Label>
+          <p className="text-xs text-muted-foreground">
+            검사명과 값만 붙여넣어도 됩니다. 참조범위는 설정에서 관리되며, 코드/참조치는 있으면 사용합니다.
+          </p>
           <textarea
             value={pasteText}
             onChange={(e) => setPasteText(e.target.value)}
-            placeholder={`OCS에서 Lab 결과를 복사한 후 여기에 붙여넣으세요.\n\n예시:\nB2500\tTotal Protein\t7.45\t\t6.60 ~ 8.30\nB2510\tAlbumin\t3.20\tL\t3.50 ~ 5.20\nB1050\tWBC\t15.16\tH\t4.00 ~ 10.00`}
+            placeholder={`검사명과 값을 탭(또는 공백) 구분으로 붙여넣으세요.\n\n간단한 예:\nWBC\t15.16\nHb\t11.2\nPLT\t240\nCRP\t8.5\n\n또는 H/L 포함:\nWBC\t15.16\tH\nHb\t11.2\tL`}
             className="w-full min-h-[180px] font-mono text-xs rounded-md border border-input bg-background px-3 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-ring"
           />
           <Button
