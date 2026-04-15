@@ -170,7 +170,7 @@ export function MedicationList({
                                 {formatDate(med.startDate)} ~ {formatDate(med.endDate)}
                               </span>
                               <span className={`font-mono text-xs font-semibold ${shouldAlert ? 'text-destructive' : 'text-primary'}`}>
-                                (D+{dDay})
+                                ({dDay + 1}일)
                               </span>
                               {shouldAlert && (
                                 <AlertTriangle className="h-3.5 w-3.5 text-destructive flex-shrink-0" />

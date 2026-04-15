@@ -291,7 +291,7 @@ const HomePage = () => {
                           variant={abx.isLongTerm ? 'destructive' : 'secondary'}
                           className={cn('text-[10px]', !abx.isLongTerm && abx.dDay >= 10 && 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200')}
                         >
-                          D+{abx.dDay}
+                          {abx.dDay + 1}일
                         </Badge>
                         {abx.endDate && (() => {
                           const end = new Date(abx.endDate);
@@ -348,7 +348,7 @@ const HomePage = () => {
                               variant={abx.isLongTerm ? 'destructive' : 'secondary'}
                               className={abx.isLongTerm ? '' : abx.dDay >= 10 ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200' : ''}
                             >
-                              D+{abx.dDay}
+                              {abx.dDay + 1}일
                             </Badge>
                             {abx.endDate && (() => {
                               const end = new Date(abx.endDate);
