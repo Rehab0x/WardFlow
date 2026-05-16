@@ -4,48 +4,62 @@
 
 @layer base {
   :root {
-    --background: 210 20% 98%;
-    --foreground: 220 25% 10%;
+    /* zinc-50 */
+    --background: 0 0% 98%;
+    /* zinc-900 */
+    --foreground: 240 6% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 220 25% 10%;
+    --card-foreground: 240 6% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 220 25% 10%;
-    --primary: 199 89% 38%;
+    --popover-foreground: 240 6% 10%;
+    /* zinc-900 — primary는 다크 무채색 */
+    --primary: 240 6% 10%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 199 30% 94%;
-    --secondary-foreground: 199 50% 25%;
-    --muted: 210 25% 95%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 199 30% 92%;
-    --accent-foreground: 199 50% 20%;
+    /* zinc-100 */
+    --secondary: 240 5% 96%;
+    /* zinc-700 */
+    --secondary-foreground: 240 5% 34%;
+    /* zinc-100 */
+    --muted: 240 5% 96%;
+    /* zinc-500 */
+    --muted-foreground: 240 4% 46%;
+    /* zinc-100 */
+    --accent: 240 5% 96%;
+    /* zinc-700 */
+    --accent-foreground: 240 5% 34%;
+    /* red-500 */
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 214 20% 90%;
-    --input: 214 20% 90%;
-    --ring: 199 89% 38%;
-    --radius: 0.625rem;
+    /* zinc-200 */
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    /* zinc-400 — focus ring */
+    --ring: 240 5% 65%;
+    --radius: 0.5rem;
   }
 
   .dark {
-    --background: 220 25% 6%;
-    --foreground: 210 30% 96%;
-    --card: 220 20% 9%;
-    --card-foreground: 210 30% 96%;
-    --popover: 220 20% 9%;
-    --popover-foreground: 210 30% 96%;
-    --primary: 199 85% 48%;
-    --primary-foreground: 220 25% 6%;
-    --secondary: 220 20% 15%;
-    --secondary-foreground: 210 30% 90%;
-    --muted: 220 20% 14%;
-    --muted-foreground: 215 18% 60%;
-    --accent: 220 20% 15%;
-    --accent-foreground: 210 30% 90%;
+    /* zinc-950 */
+    --background: 240 10% 4%;
+    /* zinc-50 */
+    --foreground: 0 0% 98%;
+    --card: 240 6% 10%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 6% 10%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 6% 10%;
+    --secondary: 240 4% 16%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 5% 65%;
+    --accent: 240 4% 16%;
+    --accent-foreground: 0 0% 98%;
     --destructive: 0 63% 31%;
-    --destructive-foreground: 210 30% 96%;
-    --border: 220 20% 16%;
-    --input: 220 20% 16%;
-    --ring: 199 85% 48%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 4% 16%;
+    --input: 240 4% 16%;
+    --ring: 240 5% 65%;
   }
 }
 
@@ -54,6 +68,8 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-zinc-50 text-zinc-900;
+    /* tabular numbers 전역 보장 — 숫자 정렬 안정성 */
+    font-feature-settings: 'tnum';
   }
 }

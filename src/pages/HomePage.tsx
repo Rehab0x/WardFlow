@@ -1,19 +1,37 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  Bell,
+  Pill as PillIcon,
+  FlaskConical,
+  CalendarDays,
+  ClipboardList,
+  Search,
+  X,
+  Plus,
+  Pencil,
+  Trash2,
+  Megaphone,
+} from 'lucide-react';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { fetchBriefingData, type BriefingData } from '@/services/briefingService';
 import { formatDate } from '@/utils/dateUtils';
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/utils/cn';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Bell, Pill, FlaskConical, AlertTriangle, ChevronRight, Calendar, Check, Search, FileText, X, ClipboardList, Plus, Pencil, Trash2, Megaphone } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { useScheduleCategoryStore } from '@/stores/useScheduleCategoryStore';
 import { db } from '@/db/database';
 import type { Note } from '@/db/database';
 import { usePatientStore } from '@/stores/usePatientStore';
 import { useGlobalAlertStore } from '@/stores/useGlobalAlertStore';
+import { StatCard } from '@/components/dashboard/StatCard';
+import {
+  SectionCard,
+  Row,
+  Room,
+  Time,
+  Body,
+  Pill,
+  Metric,
+} from '@/components/dashboard/SectionCard';
+import { cn } from '@/lib/utils';
 
 const HomePage = () => {
   const navigate = useNavigate();
@@ -29,7 +47,11 @@ const HomePage = () => {
   const allGlobalAlerts = globalAlertStore.alerts;
   const activeGlobalAlerts = getActiveAlerts();
   const [showAlertForm, setShowAlertForm] = useState(false);
-  const [alertFormData, setAlertFormData] = useState({ content: '', startDate: '', endDate: '' });
+  const [alertFormData, setAlertFormData] = useState({
+    content: '',
+    startDate: '',
+    endDate: '',
+  });
   const [showAlertManager, setShowAlertManager] = useState(false);
   const [editingAlertId, setEditingAlertId] = useState<string | null>(null);
 
@@ -37,6 +59,13 @@ const HomePage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [allNotes, setAllNotes] = useState<Note[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+
+  // 시간 (1분마다 갱신)
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(t);
+  }, []);
 
   // 환자 ID → 환자 정보 매핑
   const patientMap = useMemo(() => {
@@ -47,7 +76,6 @@ const HomePage = () => {
     return map;
   }, [patients]);
 
-  // 검색어 입력 시 전체 메모 로드
   useEffect(() => {
     if (!searchQuery.trim()) {
       setAllNotes([]);
@@ -64,21 +92,24 @@ const HomePage = () => {
       }
     };
     loadNotes();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [searchQuery]);
 
-  // 검색 결과 필터링
   const searchResults = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return [];
-    return allNotes.filter((note) => {
-      const patient = patientMap.get(note.patientId);
-      return (
-        note.content.toLowerCase().includes(q) ||
-        (patient?.name.toLowerCase().includes(q)) ||
-        (patient?.roomBed.toLowerCase().includes(q))
-      );
-    }).slice(0, 20); // 최대 20개
+    return allNotes
+      .filter((note) => {
+        const patient = patientMap.get(note.patientId);
+        return (
+          note.content.toLowerCase().includes(q) ||
+          patient?.name.toLowerCase().includes(q) ||
+          patient?.roomBed.toLowerCase().includes(q)
+        );
+      })
+      .slice(0, 20);
   }, [searchQuery, allNotes, patientMap]);
 
   const loadData = useCallback(async () => {
@@ -98,550 +129,518 @@ const HomePage = () => {
     loadData();
   }, [loadData]);
 
-  const todayStr = formatDate(new Date());
+  const todayStr = formatDate(now);
+  const dateStr = now.toLocaleDateString('ko-KR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'long',
+  });
+  const timeStr = now.toLocaleTimeString('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
   const goToPatient = (patientId: string, tab?: string) => {
     const query = tab ? `?tab=${tab}` : '';
     navigate(`/patients/${patientId}${query}`);
   };
 
-  // Group antibiotics by patient (must be before early return for hooks order)
-  const abxByPatient = useMemo(() => {
-    if (!data) return [];
-    const grouped: Array<{ patientId: string; patientName: string; roomBed: string; meds: typeof data.antibiotics }> = [];
-    const map = new Map<string, typeof data.antibiotics>();
-    for (const abx of data.antibiotics) {
-      if (!map.has(abx.patientId)) map.set(abx.patientId, []);
-      map.get(abx.patientId)!.push(abx);
-    }
-    for (const [patientId, meds] of map) {
-      grouped.push({ patientId, patientName: meds[0]!.patientName, roomBed: meds[0]!.roomBed, meds });
-    }
-    return grouped;
-  }, [data?.antibiotics]);
+  // Antibiotic D-day → Pill tone
+  const abxTone = (dDay: number, isLongTerm: boolean): 'muted' | 'warning' | 'danger' => {
+    if (isLongTerm) return 'danger';
+    const days = dDay + 1;
+    if (days >= 10) return 'danger';
+    if (days >= 6) return 'warning';
+    return 'muted';
+  };
 
   if (isLoading || !data) {
     return (
-      <div className="container mx-auto p-3 sm:p-6">
-        <h1 className="mb-2 text-2xl sm:text-3xl font-bold text-primary">Today's Note</h1>
-        <p className="mb-6 text-sm text-muted-foreground">{todayStr}</p>
+      <div className="mx-auto max-w-5xl px-4 py-6 md:px-6">
+        <div className="mb-5">
+          <h1 className="text-[22px] font-medium leading-tight tracking-tight text-zinc-900">
+            Today
+          </h1>
+          <p className="mt-0.5 text-[12px] text-zinc-400">{dateStr}</p>
+        </div>
         <div className="flex items-center justify-center py-20">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900" />
         </div>
       </div>
     );
   }
 
-  const totalAlerts = data.reminders.length + activeGlobalAlerts.length;
-  const hasReminders = totalAlerts > 0;
-  const hasLongTermAbx = data.antibiotics.some(a => a.isLongTerm);
+  const reminderTotal = data.reminders.length + activeGlobalAlerts.length;
+  const alertTone: 'default' | 'warning' = reminderTotal > 0 ? 'warning' : 'default';
+  const abxTotal = data.antibiotics.length;
+  const abxStatTone: 'default' | 'warning' | 'danger' = data.antibiotics.some(
+    (a) => a.isLongTerm,
+  )
+    ? 'danger'
+    : abxTotal > 0
+      ? 'warning'
+      : 'default';
+
+  // 항생제 환자별 그룹핑 (같은 환자 여러 약물)
+  const abxRows: Array<{
+    medicationId: string;
+    patientId: string;
+    patientName: string;
+    roomBed: string;
+    drugName: string;
+    dDay: number;
+    isLongTerm: boolean;
+  }> = data.antibiotics.map((a) => ({
+    medicationId: a.medicationId,
+    patientId: a.patientId,
+    patientName: a.patientName,
+    roomBed: a.roomBed,
+    drugName: a.drugName,
+    dDay: a.dDay,
+    isLongTerm: a.isLongTerm,
+  }));
 
   return (
-    <div className="container mx-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-primary">Today's Note</h1>
-        <p className="text-sm text-muted-foreground">{todayStr} | {currentUser?.name} | 환자 {data.patientSummary.total}명 (입원 {data.patientSummary.admitted} / 컨설트 {data.patientSummary.consult})</p>
+    <div className="mx-auto max-w-5xl px-4 py-6 md:px-6">
+      {/* Page header */}
+      <div className="mb-5 flex items-baseline justify-between">
+        <div>
+          <h1 className="text-[22px] font-medium leading-tight tracking-tight text-zinc-900">
+            Today
+          </h1>
+          <p className="mt-0.5 text-[12px] text-zinc-400">
+            {dateStr}
+            {currentUser?.name && <> · {currentUser.name}</>}
+          </p>
+        </div>
+        <div className="font-mono text-[11px] text-zinc-400 tabular-nums">{timeStr}</div>
       </div>
 
-      {/* 오늘의 알림 */}
-      <Card className={hasReminders ? 'border-amber-300 dark:border-amber-700' : ''}>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Bell className="h-5 w-5 text-amber-500" />
-            오늘의 알림
-            {hasReminders && (
-              <Badge variant="secondary" className="bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
-                {totalAlerts}
-              </Badge>
-            )}
-            <div className="flex items-center gap-1 ml-auto">
-              {allGlobalAlerts.length > 0 && (
-                <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={() => setShowAlertManager(true)}>
-                  관리 ({allGlobalAlerts.length})
-                </Button>
-              )}
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingAlertId(null); setAlertFormData({ content: '', startDate: '', endDate: '' }); setShowAlertForm(true); }}>
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {/* 범용 알림 */}
-          {activeGlobalAlerts.map((ga) => (
-            <div key={ga.id} className="flex items-center gap-2 rounded-md border border-violet-200 bg-violet-50/50 p-2.5 dark:border-violet-800 dark:bg-violet-950/20">
-              <Megaphone className="h-4 w-4 text-violet-500 shrink-0" />
-              <span className="flex-1 text-sm truncate">{ga.content}</span>
-              {ga.endDate && <span className="text-[10px] text-muted-foreground shrink-0">~{ga.endDate}</span>}
-              <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => {
-                setEditingAlertId(ga.id);
-                setAlertFormData({ content: ga.content, startDate: ga.startDate || '', endDate: ga.endDate || '' });
-                setShowAlertForm(true);
-              }}>
-                <Pencil className="h-3 w-3" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 text-destructive" onClick={() => deleteAlert(ga.id)}>
-                <Trash2 className="h-3 w-3" />
-              </Button>
-            </div>
-          ))}
+      {/* Stats */}
+      <div className="mb-2 grid grid-cols-2 gap-2 md:grid-cols-4">
+        <StatCard label="입원" value={data.patientSummary.admitted} />
+        <StatCard label="컨설트" value={data.patientSummary.consult} />
+        <StatCard label="항생제" value={abxTotal} tone={abxStatTone} />
+        <StatCard label="알림" value={reminderTotal} tone={alertTone} />
+      </div>
 
-          {/* 범용 알림 추가/수정 폼 */}
-          {showAlertForm && (
-            <div className="rounded-md border border-dashed border-violet-300 bg-violet-50/30 p-3 space-y-2 dark:border-violet-700 dark:bg-violet-950/10">
-              <Input
-                value={alertFormData.content}
-                onChange={(e) => setAlertFormData((p) => ({ ...p, content: e.target.value }))}
-                placeholder="알림 내용..."
-                className="text-sm"
+      {/* Sections 2x2 */}
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+        {/* 알림 */}
+        <SectionCard icon={Bell} title="알림" count={reminderTotal}>
+          {reminderTotal === 0 ? (
+            <Row>
+              <Body>
+                <span className="text-zinc-400">없음</span>
+              </Body>
+            </Row>
+          ) : (
+            <>
+              {activeGlobalAlerts.map((ga) => (
+                <Row key={`ga-${ga.id}`}>
+                  <Room>전체</Room>
+                  <Body>{ga.content}</Body>
+                  {ga.endDate && <Pill tone="muted">~{ga.endDate.slice(5)}</Pill>}
+                </Row>
+              ))}
+              {data.reminders.map((r) => (
+                <Row key={r.noteId} onClick={() => goToPatient(r.patientId, 'notes')}>
+                  <Room>{r.roomBed}</Room>
+                  <Body>
+                    <span className="text-zinc-900">{r.patientName}</span>
+                    <span className="ml-1.5 text-zinc-500">{r.content}</span>
+                  </Body>
+                </Row>
+              ))}
+            </>
+          )}
+          <div className="mt-2 flex items-center gap-1 border-t border-zinc-100 pt-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setEditingAlertId(null);
+                setAlertFormData({ content: '', startDate: '', endDate: '' });
+                setShowAlertForm(true);
+              }}
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
+            >
+              <Plus className="h-3 w-3" />
+              알림 추가
+            </button>
+            {allGlobalAlerts.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowAlertManager(true)}
+                className="ml-auto inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
+              >
+                관리 ({allGlobalAlerts.length})
+              </button>
+            )}
+          </div>
+        </SectionCard>
+
+        {/* 항생제 */}
+        <SectionCard icon={PillIcon} title="항생제" count={abxTotal}>
+          {abxRows.length === 0 ? (
+            <Row>
+              <Body>
+                <span className="text-zinc-400">없음</span>
+              </Body>
+            </Row>
+          ) : (
+            abxRows.map((a) => (
+              <Row
+                key={a.medicationId}
+                onClick={() => goToPatient(a.patientId, 'medication')}
+              >
+                <Room>{a.roomBed}</Room>
+                <Body>
+                  <span className="text-zinc-900">{a.patientName}</span>
+                  <span className="ml-1.5 text-zinc-500">{a.drugName}</span>
+                </Body>
+                <Pill tone={abxTone(a.dDay, a.isLongTerm)}>D{a.dDay + 1}</Pill>
+              </Row>
+            ))
+          )}
+        </SectionCard>
+
+        {/* 최근 Lab */}
+        <SectionCard icon={FlaskConical} title="최근 Lab" count={data.recentLabs.length}>
+          {data.recentLabs.length === 0 ? (
+            <Row>
+              <Body>
+                <span className="text-zinc-400">없음</span>
+              </Body>
+            </Row>
+          ) : (
+            data.recentLabs.map((lab) => {
+              const tone: 'danger' | 'default' = lab.abnormalCount > 0 ? 'danger' : 'default';
+              const summary =
+                lab.abnormalCount > 0
+                  ? lab.abnormalItems.slice(0, 2).join(', ') +
+                    (lab.abnormalCount > 2 ? ` +${lab.abnormalCount - 2}` : '')
+                  : '정상';
+              return (
+                <Row
+                  key={`${lab.patientId}-${lab.dateKey}`}
+                  onClick={() => goToPatient(lab.patientId, 'lab')}
+                >
+                  <Room>{lab.roomBed}</Room>
+                  <Body>
+                    <span className="text-zinc-900">{lab.patientName}</span>
+                    <span className="ml-1.5">
+                      <Metric tone={tone} value={summary} />
+                    </span>
+                    <span className="ml-1.5 font-mono text-[10.5px] text-zinc-400">
+                      {lab.dateKey === todayStr ? '오늘' : lab.dateKey.slice(5)}
+                    </span>
+                  </Body>
+                </Row>
+              );
+            })
+          )}
+        </SectionCard>
+
+        {/* 일정 */}
+        <SectionCard
+          icon={CalendarDays}
+          title="일정"
+          count={data.todaySchedules.length}
+        >
+          {data.todaySchedules.length === 0 ? (
+            <Row>
+              <Body>
+                <span className="text-zinc-400">없음</span>
+              </Body>
+            </Row>
+          ) : (
+            data.todaySchedules.map((s) => (
+              <Row
+                key={s.scheduleId}
+                onClick={() => navigate(`/patients/${s.patientId}?tab=overview`)}
+              >
+                <Time>{s.scheduledTime || '—'}</Time>
+                <Body>
+                  <span
+                    className={cn(
+                      'text-zinc-900',
+                      s.isCompleted && 'text-zinc-400 line-through',
+                    )}
+                  >
+                    {s.patientName}
+                  </span>
+                  <span
+                    className={cn(
+                      'ml-1.5 text-zinc-500',
+                      s.isCompleted && 'line-through',
+                    )}
+                  >
+                    {s.title}
+                  </span>
+                  <span className="ml-1.5 font-mono text-[10.5px] text-zinc-400">
+                    {s.roomBed}
+                  </span>
+                </Body>
+                <Pill tone="muted">{getScheduleLabel(s.category)}</Pill>
+              </Row>
+            ))
+          )}
+        </SectionCard>
+      </div>
+
+      {/* 오늘의 회진 (data.progressNotes 있을 때만) */}
+      {data.progressNotes.length > 0 && (
+        <div className="mt-2">
+          <SectionCard
+            icon={ClipboardList}
+            title="오늘의 회진"
+            count={data.progressNotes.length}
+          >
+            {data.progressNotes.map((p) => (
+              <Row key={p.noteId} onClick={() => goToPatient(p.patientId, 'notes')}>
+                <Room>{p.roomBed}</Room>
+                <Body>
+                  <span className="text-zinc-900">{p.patientName}</span>
+                  <span className="ml-1.5 text-zinc-500">{p.content}</span>
+                </Body>
+              </Row>
+            ))}
+          </SectionCard>
+        </div>
+      )}
+
+      {/* Memo search */}
+      <div className="mt-3 rounded-lg border border-zinc-200 bg-white px-3 py-2.5">
+        <div className="flex items-center gap-2">
+          <Search className="h-3.5 w-3.5 text-zinc-400" />
+          <input
+            type="text"
+            placeholder="환자명, 병실번호 또는 메모 내용으로 검색"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-transparent text-[12px] text-zinc-700 placeholder:text-zinc-400 focus:outline-none"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="text-zinc-400 hover:text-zinc-700"
+              aria-label="검색 지우기"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+        {isSearching && (
+          <div className="mt-2 flex items-center justify-center py-4">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900" />
+          </div>
+        )}
+        {searchQuery.trim() && !isSearching && (
+          <div className="mt-2 space-y-px border-t border-zinc-100 pt-2">
+            {searchResults.length === 0 ? (
+              <p className="py-1 text-[12px] text-zinc-400">검색 결과가 없습니다.</p>
+            ) : (
+              <>
+                <p className="px-0.5 pb-1 font-mono text-[10.5px] text-zinc-400">
+                  {searchResults.length}개 결과
+                  {searchResults.length >= 20 ? ' (최대 20개 표시)' : ''}
+                </p>
+                {searchResults.map((note) => {
+                  const patient = patientMap.get(note.patientId);
+                  return (
+                    <Row key={note.id} onClick={() => goToPatient(note.patientId, 'notes')}>
+                      <Room>{patient?.roomBed || '—'}</Room>
+                      <Body>
+                        <span className="text-zinc-900">{patient?.name}</span>
+                        <span className="ml-1.5 text-zinc-500">{note.content}</span>
+                      </Body>
+                      <Pill tone="muted">{note.type === 'reminder' ? '알림' : '경과'}</Pill>
+                    </Row>
+                  );
+                })}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 범용 알림 추가/수정 모달 */}
+      {showAlertForm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setShowAlertForm(false)}
+        >
+          <div
+            className="w-full max-w-md space-y-3 rounded-lg border border-zinc-200 bg-white p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="flex items-center gap-1.5 text-[13px] font-medium text-zinc-900">
+                <Megaphone className="h-3.5 w-3.5 text-zinc-500" />
+                {editingAlertId ? '알림 수정' : '새 알림'}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowAlertForm(false)}
+                className="text-zinc-400 hover:text-zinc-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <input
+              type="text"
+              value={alertFormData.content}
+              onChange={(e) =>
+                setAlertFormData((p) => ({ ...p, content: e.target.value }))
+              }
+              placeholder="알림 내용..."
+              className="w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-[12px] text-zinc-700 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none"
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-[11px] text-zinc-500">기간:</label>
+              <input
+                type="date"
+                value={alertFormData.startDate}
+                onChange={(e) =>
+                  setAlertFormData((p) => ({ ...p, startDate: e.target.value }))
+                }
+                className="flex-1 rounded-md border border-zinc-200 px-2 py-1 font-mono text-[11px] text-zinc-700 focus:border-zinc-400 focus:outline-none"
               />
-              <div className="flex items-center gap-2 flex-wrap">
-                <label className="text-xs text-muted-foreground shrink-0">기간:</label>
-                <Input type="date" value={alertFormData.startDate} onChange={(e) => setAlertFormData((p) => ({ ...p, startDate: e.target.value }))} className="text-xs h-8 w-auto flex-1 min-w-[120px]" />
-                <span className="text-xs">~</span>
-                <Input type="date" value={alertFormData.endDate} onChange={(e) => setAlertFormData((p) => ({ ...p, endDate: e.target.value }))} className="text-xs h-8 w-auto flex-1 min-w-[120px]" />
-              </div>
-              <p className="text-[10px] text-muted-foreground">비워두면 항상 표시됩니다.</p>
-              <div className="flex gap-2">
-                <Button size="sm" className="h-7 text-xs" onClick={() => {
+              <span className="text-[11px] text-zinc-400">~</span>
+              <input
+                type="date"
+                value={alertFormData.endDate}
+                onChange={(e) =>
+                  setAlertFormData((p) => ({ ...p, endDate: e.target.value }))
+                }
+                className="flex-1 rounded-md border border-zinc-200 px-2 py-1 font-mono text-[11px] text-zinc-700 focus:border-zinc-400 focus:outline-none"
+              />
+            </div>
+            <p className="text-[10.5px] text-zinc-400">비워두면 항상 표시됩니다.</p>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowAlertForm(false)}
+                className="rounded-md px-2.5 py-1 text-[12px] text-zinc-500 hover:bg-zinc-100"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => {
                   if (!alertFormData.content.trim()) return;
                   if (editingAlertId) {
-                    updateAlert(editingAlertId, { content: alertFormData.content.trim(), startDate: alertFormData.startDate || undefined, endDate: alertFormData.endDate || undefined });
+                    updateAlert(editingAlertId, {
+                      content: alertFormData.content.trim(),
+                      startDate: alertFormData.startDate || undefined,
+                      endDate: alertFormData.endDate || undefined,
+                    });
                   } else {
-                    addAlert(alertFormData.content.trim(), alertFormData.startDate || undefined, alertFormData.endDate || undefined);
+                    addAlert(
+                      alertFormData.content.trim(),
+                      alertFormData.startDate || undefined,
+                      alertFormData.endDate || undefined,
+                    );
                   }
                   setShowAlertForm(false);
                   setAlertFormData({ content: '', startDate: '', endDate: '' });
-                }}>
-                  {editingAlertId ? '수정' : '추가'}
-                </Button>
-                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShowAlertForm(false)}>취소</Button>
-              </div>
+                }}
+                className="rounded-md bg-zinc-900 px-2.5 py-1 text-[12px] font-medium text-white hover:bg-zinc-800"
+              >
+                {editingAlertId ? '수정' : '추가'}
+              </button>
             </div>
-          )}
-
-          {/* 환자별 알림 */}
-          {data.reminders.length === 0 && activeGlobalAlerts.length === 0 && !showAlertForm ? (
-            <p className="text-sm text-muted-foreground">오늘 알림이 없습니다.</p>
-          ) : (
-            <div className="space-y-2">
-              {data.reminders.map((r) => (
-                <div
-                  key={r.noteId}
-                  className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50/50 p-3 cursor-pointer hover:bg-amber-100/50 transition-colors dark:border-amber-800 dark:bg-amber-950/20 dark:hover:bg-amber-950/40"
-                  onClick={() => goToPatient(r.patientId, 'notes')}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Badge variant="outline" className="text-xs shrink-0">{r.roomBed}</Badge>
-                      <span className="font-medium text-sm">{r.patientName}</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground truncate">{r.content}</p>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* 항생제 현황 */}
-      <Card className={hasLongTermAbx ? 'border-red-300 dark:border-red-700' : ''}>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Pill className="h-5 w-5 text-blue-500" />
-            항생제 현황
-            {data.antibiotics.length > 0 && (
-              <Badge variant="secondary">{data.antibiotics.length}</Badge>
-            )}
-            {hasLongTermAbx && (
-              <Badge variant="destructive" className="gap-1">
-                <AlertTriangle className="h-3 w-3" />
-                장기투여
-              </Badge>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {data.antibiotics.length === 0 ? (
-            <p className="text-sm text-muted-foreground">항생제 사용 중인 환자가 없습니다.</p>
-          ) : (
-            <>
-            {/* 모바일: 환자별 그룹화 */}
-            <div className="space-y-2 sm:hidden">
-              {abxByPatient.map((group) => (
-                <div
-                  key={group.patientId}
-                  className="rounded-md border p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                  onClick={() => goToPatient(group.patientId, 'medication')}
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <Badge variant="outline" className="text-xs shrink-0">{group.roomBed}</Badge>
-                    <span className="font-medium text-sm">{group.patientName}</span>
-                  </div>
-                  {group.meds.map((abx) => (
-                    <div key={abx.medicationId} className="flex items-center justify-between ml-1 py-0.5">
-                      <p className="text-xs text-muted-foreground truncate flex-1">
-                        {abx.drugName} {abx.dosage && abx.frequency ? `${abx.dosage} ${abx.frequency}` : ''}
-                      </p>
-                      <div className="flex items-center gap-1 ml-2 shrink-0">
-                        <Badge
-                          variant={abx.isLongTerm ? 'destructive' : 'secondary'}
-                          className={cn('text-[10px]', !abx.isLongTerm && abx.dDay >= 10 && 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200')}
-                        >
-                          {abx.dDay + 1}일
-                        </Badge>
-                        {abx.endDate && (() => {
-                          const end = new Date(abx.endDate);
-                          const now = new Date();
-                          const todayStr2 = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-                          const tmr = new Date(now); tmr.setDate(tmr.getDate()+1);
-                          const tmrStr = `${tmr.getFullYear()}-${String(tmr.getMonth()+1).padStart(2,'0')}-${String(tmr.getDate()).padStart(2,'0')}`;
-                          const endStr = `${end.getFullYear()}-${String(end.getMonth()+1).padStart(2,'0')}-${String(end.getDate()).padStart(2,'0')}`;
-                          if (endStr === todayStr2) return <Badge className="text-[10px] bg-red-100 text-red-700 border-red-300">종료</Badge>;
-                          if (endStr === tmrStr) return <Badge className="text-[10px] bg-orange-100 text-orange-700 border-orange-300">내일</Badge>;
-                          return null;
-                        })()}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-
-            {/* 데스크톱: 테이블 */}
-            <div className="hidden sm:block overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-muted-foreground">
-                    <th className="pb-2 pr-3 font-medium">환자</th>
-                    <th className="pb-2 pr-3 font-medium">항생제</th>
-                    <th className="pb-2 pr-3 font-medium">용법</th>
-                    <th className="pb-2 font-medium text-center">D-day</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {abxByPatient.map((group) =>
-                    group.meds.map((abx, idx) => (
-                      <tr
-                        key={abx.medicationId}
-                        className="border-b last:border-0 cursor-pointer hover:bg-muted/50 transition-colors"
-                        onClick={() => goToPatient(abx.patientId, 'medication')}
-                      >
-                        {idx === 0 && (
-                          <td className="py-2 pr-3" rowSpan={group.meds.length}>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline" className="text-xs shrink-0">{abx.roomBed}</Badge>
-                              <span className="font-medium">{abx.patientName}</span>
-                            </div>
-                          </td>
-                        )}
-                        <td className="py-2 pr-3">{abx.drugName}</td>
-                        <td className="py-2 pr-3 text-muted-foreground">
-                          {abx.dosage && abx.frequency ? `${abx.dosage} ${abx.frequency}` : '-'}
-                        </td>
-                        <td className="py-2 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <Badge
-                              variant={abx.isLongTerm ? 'destructive' : 'secondary'}
-                              className={abx.isLongTerm ? '' : abx.dDay >= 10 ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200' : ''}
-                            >
-                              {abx.dDay + 1}일
-                            </Badge>
-                            {abx.endDate && (() => {
-                              const end = new Date(abx.endDate);
-                              const now = new Date();
-                              const todayStr3 = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-                              const tmr = new Date(now); tmr.setDate(tmr.getDate()+1);
-                              const tmrStr = `${tmr.getFullYear()}-${String(tmr.getMonth()+1).padStart(2,'0')}-${String(tmr.getDate()).padStart(2,'0')}`;
-                              const endStr = `${end.getFullYear()}-${String(end.getMonth()+1).padStart(2,'0')}-${String(end.getDate()).padStart(2,'0')}`;
-                              if (endStr === todayStr3) return <Badge className="text-[10px] bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300 border-red-300">오늘 종료</Badge>;
-                              if (endStr === tmrStr) return <Badge className="text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300 border-orange-300">내일 종료</Badge>;
-                              return null;
-                            })()}
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* 오늘의 회진 (경과기록) */}
-      {data.progressNotes.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <ClipboardList className="h-5 w-5 text-teal-500" />
-              오늘의 회진
-              <Badge variant="secondary">{data.progressNotes.length}</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-1">
-              {data.progressNotes.map((p) => (
-                <div
-                  key={p.noteId}
-                  className="flex items-center gap-3 rounded-md border p-2.5 cursor-pointer hover:bg-muted/50 transition-colors"
-                  onClick={() => goToPatient(p.patientId, 'notes')}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-xs shrink-0">{p.roomBed}</Badge>
-                      <span className="font-medium text-sm shrink-0">{p.patientName}</span>
-                      <span className="text-sm text-muted-foreground truncate">{p.content}</span>
-                    </div>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
-      {/* 최근 Lab 결과 */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <FlaskConical className="h-5 w-5 text-green-500" />
-            최근 Lab 결과
-            {data.recentLabs.length > 0 && (
-              <Badge variant="secondary">{data.recentLabs.length}</Badge>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {data.recentLabs.length === 0 ? (
-            <p className="text-sm text-muted-foreground">최근 2일간 새로운 Lab 결과가 없습니다.</p>
-          ) : (
-            <div className="space-y-2">
-              {data.recentLabs.map((lab) => (
-                <div
-                  key={`${lab.patientId}-${lab.dateKey}`}
-                  className="flex items-center gap-3 rounded-md border p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                  onClick={() => goToPatient(lab.patientId, 'lab')}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Badge variant="outline" className="text-xs shrink-0">{lab.roomBed}</Badge>
-                      <span className="font-medium text-sm">{lab.patientName}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {lab.dateKey === todayStr ? '오늘' : '어제'} ({lab.dateKey})
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="text-muted-foreground">총 {lab.totalItems}개 항목</span>
-                      {lab.abnormalCount > 0 && (
-                        <>
-                          <span className="text-red-500 font-medium">비정상 {lab.abnormalCount}개</span>
-                          <span className="text-red-400 truncate">
-                            ({lab.abnormalItems.join(', ')}{lab.abnormalCount > 5 ? ' ...' : ''})
-                          </span>
-                        </>
-                      )}
-                      {lab.abnormalCount === 0 && (
-                        <span className="text-green-600">모두 정상</span>
-                      )}
-                    </div>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Today's Schedules */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Calendar className="h-5 w-5 text-violet-500" />
-            오늘 일정
-            {data.todaySchedules.length > 0 && (
-              <Badge variant="secondary">{data.todaySchedules.filter(s => !s.isCompleted).length}</Badge>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {data.todaySchedules.length === 0 ? (
-            <p className="text-sm text-muted-foreground">오늘 예정된 일정이 없습니다.</p>
-          ) : (
-            <div className="space-y-1">
-              {data.todaySchedules.map((s) => (
-                <div
-                  key={s.scheduleId}
-                  onClick={() => navigate(`/patient/${s.patientId}?tab=overview`)}
-                  className={cn(
-                    'flex items-center gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/50 transition-colors',
-                    s.isCompleted && 'opacity-50'
-                  )}
-                >
-                  <div className={cn(
-                    'h-5 w-5 rounded border flex items-center justify-center shrink-0',
-                    s.isCompleted ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30'
-                  )}>
-                    {s.isCompleted && <Check className="h-3 w-3" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">
-                        {getScheduleLabel(s.category)}
-                      </Badge>
-                      <span className={cn('text-sm font-medium truncate', s.isCompleted && 'line-through')}>
-                        {s.title}
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-0.5">
-                      {s.roomBed} {s.patientName}
-                      {s.scheduledTime && ` · ${s.scheduledTime}`}
-                    </div>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* 메모 검색 */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Search className="h-5 w-5 text-slate-500" />
-            메모 검색
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="text"
-              placeholder="환자명, 병실번호 또는 메모 내용으로 검색..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 pr-9"
-            />
-            {searchQuery && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                onClick={() => setSearchQuery('')}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-          {isSearching && (
-            <div className="flex items-center justify-center py-4">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-            </div>
-          )}
-          {searchQuery.trim() && !isSearching && (
-            <div className="mt-3">
-              {searchResults.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-2">검색 결과가 없습니다.</p>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground">{searchResults.length}개 결과{searchResults.length >= 20 ? ' (최대 20개 표시)' : ''}</p>
-                  {searchResults.map((note) => {
-                    const patient = patientMap.get(note.patientId);
-                    return (
-                      <div
-                        key={note.id}
-                        className="flex items-start gap-3 rounded-md border p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                        onClick={() => goToPatient(note.patientId, 'notes')}
-                      >
-                        <FileText className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            {patient && (
-                              <>
-                                <Badge variant="outline" className="text-xs shrink-0">{patient.roomBed}</Badge>
-                                <span className="font-medium text-sm">{patient.name}</span>
-                              </>
-                            )}
-                            <Badge variant="secondary" className="text-[10px]">
-                              {note.type === 'reminder' ? '알림' : '경과'}
-                            </Badge>
-                            <span className="text-xs text-muted-foreground">
-                              {formatDate(note.createdAt)}
-                            </span>
-                          </div>
-                          <p className="text-sm text-muted-foreground line-clamp-2 whitespace-pre-line">{note.content}</p>
-                        </div>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
       {/* 범용 알림 관리 모달 */}
       {showAlertManager && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowAlertManager(false)}>
-          <Card className="w-full max-w-lg max-h-[80vh] overflow-y-auto p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setShowAlertManager(false)}
+        >
+          <div
+            className="max-h-[80vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-lg border border-zinc-200 bg-white p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-lg flex items-center gap-2">
-                <Megaphone className="h-5 w-5 text-violet-500" />
-                알림 관리 ({allGlobalAlerts.length}개)
+              <h2 className="flex items-center gap-1.5 text-[13px] font-medium text-zinc-900">
+                <Megaphone className="h-3.5 w-3.5 text-zinc-500" />
+                알림 관리
+                <span className="ml-1 font-mono text-[11px] text-zinc-400">
+                  {allGlobalAlerts.length}
+                </span>
               </h2>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowAlertManager(false)}>
+              <button
+                type="button"
+                onClick={() => setShowAlertManager(false)}
+                className="text-zinc-400 hover:text-zinc-700"
+              >
                 <X className="h-4 w-4" />
-              </Button>
+              </button>
             </div>
 
             {allGlobalAlerts.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">등록된 알림이 없습니다.</p>
+              <p className="py-4 text-center text-[12px] text-zinc-400">
+                등록된 알림이 없습니다.
+              </p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-1">
                 {allGlobalAlerts.map((ga) => {
                   const today = new Date().toISOString().split('T')[0]!;
-                  const isActive = (!ga.startDate || today >= ga.startDate) && (!ga.endDate || today <= ga.endDate);
+                  const isActive =
+                    (!ga.startDate || today >= ga.startDate) &&
+                    (!ga.endDate || today <= ga.endDate);
                   const isExpired = ga.endDate && today > ga.endDate;
-
                   return (
-                    <div key={ga.id} className={cn(
-                      'rounded-md border p-3 space-y-1.5',
-                      isExpired ? 'opacity-50 bg-muted/30' : isActive ? 'border-violet-200 bg-violet-50/30' : 'bg-muted/20'
-                    )}>
+                    <div
+                      key={ga.id}
+                      className={cn(
+                        'rounded-md border border-zinc-200 p-2.5',
+                        isExpired && 'opacity-50',
+                      )}
+                    >
                       <div className="flex items-start gap-2">
-                        <p className="flex-1 text-sm">{ga.content}</p>
-                        <div className="flex gap-1 shrink-0">
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
-                            setEditingAlertId(ga.id);
-                            setAlertFormData({ content: ga.content, startDate: ga.startDate || '', endDate: ga.endDate || '' });
-                            setShowAlertManager(false);
-                            setShowAlertForm(true);
-                          }}>
+                        <p className="flex-1 text-[12px] text-zinc-700">{ga.content}</p>
+                        <div className="flex shrink-0 gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingAlertId(ga.id);
+                              setAlertFormData({
+                                content: ga.content,
+                                startDate: ga.startDate || '',
+                                endDate: ga.endDate || '',
+                              });
+                              setShowAlertManager(false);
+                              setShowAlertForm(true);
+                            }}
+                            className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+                          >
                             <Pencil className="h-3 w-3" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => deleteAlert(ga.id)}>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteAlert(ga.id)}
+                            className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-600"
+                          >
                             <Trash2 className="h-3 w-3" />
-                          </Button>
+                          </button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                      <div className="mt-1 flex items-center gap-1.5 font-mono text-[10px] text-zinc-400">
                         {ga.startDate || ga.endDate ? (
-                          <span>{ga.startDate || '시작 없음'} ~ {ga.endDate || '종료 없음'}</span>
+                          <span>
+                            {ga.startDate || '시작 없음'} ~ {ga.endDate || '종료 없음'}
+                          </span>
                         ) : (
                           <span>항상 표시</span>
                         )}
-                        {isExpired && <Badge variant="secondary" className="text-[9px] h-4">만료</Badge>}
-                        {isActive && !isExpired && <Badge className="text-[9px] h-4 bg-violet-100 text-violet-700 border-violet-300">활성</Badge>}
+                        {isExpired && <Pill tone="muted">만료</Pill>}
+                        {isActive && !isExpired && <Pill tone="warning">활성</Pill>}
                       </div>
                     </div>
                   );
@@ -649,18 +648,23 @@ const HomePage = () => {
               </div>
             )}
 
-            <Button size="sm" className="w-full" onClick={() => {
-              setEditingAlertId(null);
-              setAlertFormData({ content: '', startDate: '', endDate: '' });
-              setShowAlertManager(false);
-              setShowAlertForm(true);
-            }}>
-              <Plus className="h-4 w-4 mr-1" />
+            <button
+              type="button"
+              onClick={() => {
+                setEditingAlertId(null);
+                setAlertFormData({ content: '', startDate: '', endDate: '' });
+                setShowAlertManager(false);
+                setShowAlertForm(true);
+              }}
+              className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-zinc-300 py-1.5 text-[12px] text-zinc-500 hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-900"
+            >
+              <Plus className="h-3 w-3" />
               새 알림 추가
-            </Button>
-          </Card>
+            </button>
+          </div>
         </div>
       )}
+
     </div>
   );
 };

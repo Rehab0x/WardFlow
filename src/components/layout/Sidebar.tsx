@@ -164,42 +164,39 @@ const Sidebar = ({ isOpen = true, onClose, onOpen }: SidebarProps) => {
         ref={sidebarRef}
         className={cn(
           'fixed left-0 border-r bg-background transition-all duration-300 lg:static lg:translate-x-0',
-          // Mobile: below header (top-14, h-[calc(100vh-3.5rem)]), Desktop: full height
-          'top-14 h-[calc(100vh-3.5rem)] z-40 lg:top-0 lg:h-screen lg:z-auto',
+          // Mobile: below header (top-12 = h-12, h-[calc(100vh-3rem)]), Desktop: full height
+          'top-12 h-[calc(100vh-3rem)] z-40 lg:top-0 lg:h-screen lg:z-auto',
           isOpen ? 'translate-x-0' : '-translate-x-full',
           // Dynamic width based on department name length
           currentUser?.department && currentUser.department.length > 4 ? 'w-72' : 'w-64'
         )}
       >
-        {/* User Info Card (at top) */}
+        {/* User Info Card (at top) — height matches header (h-12) */}
         {currentUser && (
-          <div className="border-b bg-gradient-to-r from-primary/5 to-primary/10 p-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary/10">
-                <RoleIcon className="h-5 w-5 text-primary" />
-              </div>
-              <div className="flex flex-1 items-center gap-1.5 min-w-0">
-                <span className="text-sm font-semibold whitespace-nowrap">{currentUser.name}</span>
-                <Badge variant="secondary" className="text-xs h-5 px-2 flex-shrink-0">
-                  {getRoleDisplayName(currentUser.role)}
-                </Badge>
-                {currentUser.department && (
-                  <span className="text-xs text-muted-foreground truncate">
-                    {currentUser.department}
-                  </span>
-                )}
-              </div>
-              {/* Mobile close button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="lg:hidden flex-shrink-0"
-                onClick={onClose}
-                aria-label="사이드바 닫기"
-              >
-                <X className="h-5 w-5" />
-              </Button>
+          <div className="flex h-12 items-center gap-2 border-b bg-gradient-to-r from-primary/5 to-primary/10 px-3">
+            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-primary/10">
+              <RoleIcon className="h-4 w-4 text-primary" />
             </div>
+            <div className="flex flex-1 items-center gap-1.5 min-w-0">
+              <span className="text-[13px] font-medium whitespace-nowrap">{currentUser.name}</span>
+              <Badge variant="secondary" className="text-[10px] h-4 px-1.5 flex-shrink-0">
+                {getRoleDisplayName(currentUser.role)}
+              </Badge>
+              {currentUser.department && (
+                <span className="text-[11px] text-muted-foreground truncate">
+                  {currentUser.department}
+                </span>
+              )}
+            </div>
+            {/* Mobile close button */}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="사이드바 닫기"
+              className="lg:hidden inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         )}
 
