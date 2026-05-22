@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { db } from '@/db/database';
 import { seedDatabase } from '@/db/seed';
+import { useSupabaseBackend } from '@/config/backend';
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -25,7 +26,7 @@ const LoginPage = () => {
   useEffect(() => {
     const checkAndSeedDatabase = async () => {
       try {
-        if (import.meta.env.DEV) {
+        if (import.meta.env.DEV && !useSupabaseBackend) {
           const userCount = await db.users.count();
           if (userCount === 0) {
             console.log('Database is empty, seeding data...');
@@ -172,7 +173,7 @@ const LoginPage = () => {
         </div>
 
         {/* Dev only: 테스트 계정 + 개발 도구 (프로덕션 빌드에서 자동 제거) */}
-        {import.meta.env.DEV && (
+        {import.meta.env.DEV && !useSupabaseBackend && (
           <>
             <div className="mt-6 border-t pt-6">
               <p className="mb-3 text-center text-sm font-medium text-muted-foreground">

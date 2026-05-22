@@ -2,6 +2,19 @@ import { create } from 'zustand';
 import { db } from '@/db/database';
 import type { Medication } from '@/db/database';
 import { refreshSidebarFlags } from '@/hooks/useSidebarFlags';
+import { useSupabaseBackend } from '@/config/backend';
+import { useAuthStore } from './useAuthStore';
+import {
+  createMedication as createSupabaseMedication,
+  createMedications as createSupabaseMedications,
+  listMedicationsByPatient as listSupabaseMedicationsByPatient,
+  softDeleteMedication as softDeleteSupabaseMedication,
+  updateMedication as updateSupabaseMedication,
+} from '@/data/medications.repository';
+import {
+  fromDomainMedication,
+  toDomainMedicationCreateInput,
+} from '@/mappers/legacyClinical.mapper';
 
 interface MedicationStore {
   medications: Medication[];
@@ -25,6 +38,12 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
   fetchMedicationsByPatient: async (patientId: string) => {
     set({ isLoading: true, error: null });
     try {
+      if (useSupabaseBackend) {
+        const medications = await listSupabaseMedicationsByPatient(patientId);
+        set({ medications: medications.map(fromDomainMedication), isLoading: false });
+        return;
+      }
+
       const medications = await db.medications
         .where('patientId')
         .equals(patientId)
@@ -57,6 +76,20 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
 
   addMedication: async (medication) => {
     try {
+      if (useSupabaseBackend) {
+        const { currentUser } = useAuthStore.getState();
+        if (!currentUser) throw new Error('User not authenticated');
+        const saved = await createSupabaseMedication(
+          toDomainMedicationCreateInput(medication, currentUser.id)
+        );
+        const legacyMedication = fromDomainMedication(saved);
+        set((state) => ({
+          medications: [legacyMedication, ...state.medications],
+        }));
+        refreshSidebarFlags();
+        return legacyMedication.id;
+      }
+
       const id = `med${Date.now()}`;
       const now = new Date();
 
@@ -86,6 +119,20 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
 
   bulkAddMedications: async (medications) => {
     try {
+      if (useSupabaseBackend) {
+        const { currentUser } = useAuthStore.getState();
+        if (!currentUser) throw new Error('User not authenticated');
+        const saved = await createSupabaseMedications(
+          medications.map((medication) => toDomainMedicationCreateInput(medication, currentUser.id))
+        );
+        const legacyMedications = saved.map(fromDomainMedication);
+        set((state) => ({
+          medications: [...legacyMedications, ...state.medications],
+        }));
+        refreshSidebarFlags();
+        return;
+      }
+
       const now = new Date();
       const newMedications: Medication[] = medications.map((med, i) => ({
         id: `med${Date.now()}_${i}`,
@@ -116,6 +163,32 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
 
   updateMedication: async (id: string, updates: Partial<Medication>) => {
     try {
+      if (useSupabaseBackend) {
+        const saved = await updateSupabaseMedication(id, {
+          category: updates.category,
+          drugName: updates.drugName,
+          drugBaseName: updates.drugBaseName,
+          singleDose: updates.singleDose,
+          schedule: updates.schedule,
+          timing: updates.timing,
+          daysRemaining: updates.daysRemaining,
+          dosage: updates.dosage,
+          frequency: updates.frequency,
+          startDate: updates.startDate,
+          endDate: updates.endDate,
+          isActive: updates.isActive,
+          notes: updates.notes,
+        });
+        const legacyMedication = fromDomainMedication(saved);
+        set((state) => ({
+          medications: state.medications.map((med) =>
+            med.id === id ? legacyMedication : med
+          ),
+        }));
+        refreshSidebarFlags();
+        return;
+      }
+
       await db.medications.update(id, {
         ...updates,
         updatedAt: new Date(),
@@ -140,6 +213,15 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
 
   deleteMedication: async (id: string) => {
     try {
+      if (useSupabaseBackend) {
+        await softDeleteSupabaseMedication(id);
+        set((state) => ({
+          medications: state.medications.filter((med) => med.id !== id),
+        }));
+        refreshSidebarFlags();
+        return;
+      }
+
       await db.medications.delete(id);
 
       // Update local state
@@ -160,6 +242,18 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
       const medication = get().medications.find((med) => med.id === id);
       if (!medication) {
         throw new Error('Medication not found');
+      }
+
+      if (useSupabaseBackend) {
+        const saved = await updateSupabaseMedication(id, { isActive: !medication.isActive });
+        const legacyMedication = fromDomainMedication(saved);
+        set((state) => ({
+          medications: state.medications.map((med) =>
+            med.id === id ? legacyMedication : med
+          ),
+        }));
+        refreshSidebarFlags();
+        return;
       }
 
       await db.medications.update(id, {

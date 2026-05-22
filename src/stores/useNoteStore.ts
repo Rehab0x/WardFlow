@@ -3,6 +3,15 @@ import { db } from '@/db/database';
 import type { Note } from '@/db/database';
 import { parseLocalDate } from '@/utils/dateUtils';
 import { refreshSidebarFlags } from '@/hooks/useSidebarFlags';
+import { useSupabaseBackend } from '@/config/backend';
+import { useAuthStore } from './useAuthStore';
+import {
+  createNote as createSupabaseNote,
+  listNotesByPatient as listSupabaseNotesByPatient,
+  softDeleteNote as softDeleteSupabaseNote,
+  updateNote as updateSupabaseNote,
+} from '@/data/notes.repository';
+import { fromDomainNote } from '@/mappers/legacyClinical.mapper';
 
 // Extended type for adding/updating notes (accepts string dates from forms)
 type NoteInput = Omit<Note, 'id' | 'createdAt' | 'updatedAt' | 'alertDate'> & {
@@ -35,6 +44,12 @@ export const useNoteStore = create<NoteStore>((set) => ({
   fetchNotesByPatient: async (patientId: string) => {
     set({ isLoading: true, error: null });
     try {
+      if (useSupabaseBackend) {
+        const notes = await listSupabaseNotesByPatient(patientId);
+        set({ notes: notes.map(fromDomainNote), isLoading: false });
+        return;
+      }
+
       const notes = await db.notes
         .where('patientId')
         .equals(patientId)
@@ -52,6 +67,26 @@ export const useNoteStore = create<NoteStore>((set) => ({
 
   addNote: async (noteData) => {
     try {
+      if (useSupabaseBackend) {
+        const { currentUser } = useAuthStore.getState();
+        if (!currentUser) throw new Error('User not authenticated');
+
+        const now = new Date();
+        const createdAt = noteData.date ? parseLocalDate(noteData.date) : now;
+        const alertDate = noteData.alertDate ? parseLocalDate(noteData.alertDate) : undefined;
+        const note = await createSupabaseNote({
+          patientId: noteData.patientId,
+          content: noteData.content,
+          type: noteData.type,
+          alertDate,
+          createdBy: currentUser.id,
+        });
+        const legacyNote = { ...fromDomainNote(note), createdAt };
+        set((state) => ({ notes: [legacyNote, ...state.notes] }));
+        refreshSidebarFlags();
+        return legacyNote.id;
+      }
+
       const now = new Date();
       const id = crypto.randomUUID();
 
@@ -94,6 +129,20 @@ export const useNoteStore = create<NoteStore>((set) => ({
 
   updateNote: async (id, updates) => {
     try {
+      if (useSupabaseBackend) {
+        const note = await updateSupabaseNote(id, {
+          content: updates.content,
+          type: updates.type,
+          alertDate: updates.alertDate ? parseLocalDate(updates.alertDate) : undefined,
+        });
+        const legacyNote = fromDomainNote(note);
+        set((state) => ({
+          notes: state.notes.map((n) => (n.id === id ? legacyNote : n)),
+        }));
+        refreshSidebarFlags();
+        return;
+      }
+
       const now = new Date();
 
       // If date is provided in updates, update createdAt as well
@@ -129,6 +178,15 @@ export const useNoteStore = create<NoteStore>((set) => ({
 
   deleteNote: async (id) => {
     try {
+      if (useSupabaseBackend) {
+        await softDeleteSupabaseNote(id);
+        set((state) => ({
+          notes: state.notes.filter((n) => n.id !== id),
+        }));
+        refreshSidebarFlags();
+        return;
+      }
+
       await db.notes.delete(id);
 
       // Update local state

@@ -1,13 +1,15 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { db } from '@/db/database';
+import { useSupabaseBackend } from '@/config/backend';
+import { listActiveAntibiotics } from '@/data/medications.repository';
+import { listReminderNotesByAlertDate } from '@/data/notes.repository';
 
 export interface PatientFlags {
   hasAntibiotic: boolean;
   hasReminder: boolean;
-  hasAttention: boolean; // from patient.attention field directly
+  hasAttention: boolean;
 }
 
-// Global refresh trigger — call refreshSidebarFlags() from anywhere to reload
 let _refreshCounter = 0;
 let _listeners: Array<() => void> = [];
 
@@ -16,57 +18,74 @@ export function refreshSidebarFlags() {
   _listeners.forEach((fn) => fn());
 }
 
-/**
- * 사이드바 플래그 데이터를 전체 환자 대상으로 한번에 조회
- * 환자별 조회가 아닌 bulk 쿼리로 성능 최적화
- */
 export function useSidebarFlags(patientIds: string[]) {
   const [flags, setFlags] = useState<Map<string, PatientFlags>>(new Map());
   const [, setRefresh] = useState(0);
 
-  // Subscribe to global refresh trigger
   useEffect(() => {
-    const handler = () => setRefresh((c) => c + 1);
+    const handler = () => setRefresh((count) => count + 1);
     _listeners.push(handler);
-    return () => { _listeners = _listeners.filter((fn) => fn !== handler); };
+    return () => {
+      _listeners = _listeners.filter((fn) => fn !== handler);
+    };
   }, []);
 
   const load = useCallback(async () => {
-    if (patientIds.length === 0) return;
-      const map = new Map<string, PatientFlags>();
+    if (patientIds.length === 0) {
+      setFlags(new Map());
+      return;
+    }
 
-      // 초기화
-      for (const id of patientIds) {
-        map.set(id, { hasAntibiotic: false, hasReminder: false, hasAttention: false });
+    const map = new Map<string, PatientFlags>();
+    for (const id of patientIds) {
+      map.set(id, { hasAntibiotic: false, hasReminder: false, hasAttention: false });
+    }
+
+    if (useSupabaseBackend) {
+      const [activeAntibiotics, todayNotes] = await Promise.all([
+        listActiveAntibiotics(),
+        listReminderNotesByAlertDate(new Date()),
+      ]);
+
+      for (const med of activeAntibiotics) {
+        const flag = map.get(med.patientId);
+        if (flag) flag.hasAntibiotic = true;
       }
-
-      // 1. 활성 항생제 환자 조회
-      const allMeds = await db.medications
-        .filter(med => med.category === 'antibiotic' && med.isActive)
-        .toArray();
-
-      for (const med of allMeds) {
-        const f = map.get(med.patientId);
-        if (f) f.hasAntibiotic = true;
-      }
-
-      // 2. 오늘 알림 메모 조회
-      const today = new Date();
-      const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      const endOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
-
-      const todayNotes = await db.notes
-        .where('alertDate')
-        .between(startOfToday, endOfToday, true, true)
-        .toArray();
 
       for (const note of todayNotes) {
-        if (note.type !== 'reminder') continue;
-        const f = map.get(note.patientId);
-        if (f) f.hasReminder = true;
+        const flag = map.get(note.patientId);
+        if (flag) flag.hasReminder = true;
       }
 
       setFlags(new Map(map));
+      return;
+    }
+
+    const allMeds = await db.medications
+      .filter((med) => med.category === 'antibiotic' && med.isActive)
+      .toArray();
+
+    for (const med of allMeds) {
+      const flag = map.get(med.patientId);
+      if (flag) flag.hasAntibiotic = true;
+    }
+
+    const today = new Date();
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const endOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
+
+    const todayNotes = await db.notes
+      .where('alertDate')
+      .between(startOfToday, endOfToday, true, true)
+      .toArray();
+
+    for (const note of todayNotes) {
+      if (note.type !== 'reminder') continue;
+      const flag = map.get(note.patientId);
+      if (flag) flag.hasReminder = true;
+    }
+
+    setFlags(new Map(map));
   }, [patientIds]);
 
   useEffect(() => {
@@ -75,3 +94,4 @@ export function useSidebarFlags(patientIds: string[]) {
 
   return flags;
 }
+

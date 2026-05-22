@@ -2,6 +2,18 @@ import { create } from 'zustand';
 import { db } from '@/db/database';
 import type { Patient } from '@/db/database';
 import { useAuthStore } from './useAuthStore';
+import { useSupabaseBackend } from '@/config/backend';
+import {
+  archivePatient as archiveSupabasePatient,
+  createPatient as createSupabasePatient,
+  listPatients as listSupabasePatients,
+  updatePatient as updateSupabasePatient,
+} from '@/data/patients.repository';
+import {
+  fromDomainPatient,
+  toDomainPatientCreateInput,
+  toDomainPatientUpdateInput,
+} from '@/mappers/legacyPatient.mapper';
 
 interface PatientStore {
   patients: Patient[];
@@ -25,6 +37,12 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
   fetchPatients: async () => {
     set({ isLoading: true, error: null });
     try {
+      if (useSupabaseBackend) {
+        const patients = await listSupabasePatients();
+        set({ patients: patients.map(fromDomainPatient), isLoading: false });
+        return;
+      }
+
       const { currentUser } = useAuthStore.getState();
 
       let patients: Patient[];
@@ -80,6 +98,21 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
         throw new Error('User not authenticated');
       }
 
+      if (useSupabaseBackend) {
+        const patient = await createSupabasePatient(
+          toDomainPatientCreateInput({
+            ...patientData,
+            createdBy: currentUser.id,
+            sharedWith: patientData.sharedWith || [],
+          })
+        );
+        const legacyPatient = fromDomainPatient(patient);
+        set((state) => ({
+          patients: [...state.patients, legacyPatient],
+        }));
+        return legacyPatient.id;
+      }
+
       const now = new Date();
       const id = `p${Date.now()}`; // Simple ID generation
 
@@ -110,6 +143,15 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
 
   updatePatient: async (id, updates) => {
     try {
+      if (useSupabaseBackend) {
+        const patient = await updateSupabasePatient(id, toDomainPatientUpdateInput(updates));
+        const legacyPatient = fromDomainPatient(patient);
+        set((state) => ({
+          patients: state.patients.map((p) => (p.id === id ? legacyPatient : p)),
+        }));
+        return;
+      }
+
       const updatedData = {
         ...updates,
         updatedAt: new Date(),
@@ -131,6 +173,14 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
 
   deletePatient: async (id) => {
     try {
+      if (useSupabaseBackend) {
+        await archiveSupabasePatient(id);
+        set((state) => ({
+          patients: state.patients.filter((p) => p.id !== id),
+        }));
+        return;
+      }
+
       await db.patients.delete(id);
 
       // Update local state
@@ -151,6 +201,18 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
 
   dischargePatient: async (id, dischargeDate) => {
     try {
+      if (useSupabaseBackend) {
+        const patient = await updateSupabasePatient(id, {
+          status: 'discharged',
+          dischargeDate,
+        });
+        const legacyPatient = fromDomainPatient(patient);
+        set((state) => ({
+          patients: state.patients.map((p) => (p.id === id ? legacyPatient : p)),
+        }));
+        return;
+      }
+
       await db.patients.update(id, {
         status: 'discharged',
         dischargeDate,

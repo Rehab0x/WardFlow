@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { db } from '@/db/database';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { useSupabaseBackend } from '@/config/backend';
 
 // --- PIN Lock Store ---
 
@@ -43,12 +44,16 @@ export const usePinLockStore = create<PinLockStore>()(
 // --- PIN Actions (DB operations) ---
 
 export async function verifyPin(userId: string, pin: string): Promise<boolean> {
+  if (useSupabaseBackend) return false;
   const credentials = await db.authCredentials.get(userId);
   if (!credentials?.pin) return false;
   return credentials.pin === pin;
 }
 
 export async function setPin(userId: string, newPin: string): Promise<void> {
+  if (useSupabaseBackend) {
+    throw new Error('PIN lock is not available in Supabase mode yet.');
+  }
   await db.authCredentials.update(userId, {
     pin: newPin,
     updatedAt: new Date(),
@@ -57,6 +62,11 @@ export async function setPin(userId: string, newPin: string): Promise<void> {
 }
 
 export async function removePin(userId: string): Promise<void> {
+  if (useSupabaseBackend) {
+    usePinLockStore.getState().setHasPin(false);
+    usePinLockStore.getState().setLocked(false);
+    return;
+  }
   await db.authCredentials.update(userId, {
     pin: undefined,
     updatedAt: new Date(),
@@ -66,6 +76,7 @@ export async function removePin(userId: string): Promise<void> {
 }
 
 export async function checkHasPin(userId: string): Promise<boolean> {
+  if (useSupabaseBackend) return false;
   const credentials = await db.authCredentials.get(userId);
   return !!credentials?.pin;
 }

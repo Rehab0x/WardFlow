@@ -15,6 +15,7 @@ const PatientDetailPage = lazy(() => import('./pages/PatientDetailPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const SchedulePage = lazy(() => import('./pages/SchedulePage'));
 const LabImportPage = lazy(() => import('./pages/LabImportPage'));
+const V2PreviewPage = lazy(() => import('./pages/v2/V2PreviewPage'));
 
 // Loading fallback component
 const LoadingFallback = () => (
@@ -73,6 +74,15 @@ function App() {
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/calendar" element={<SchedulePage />} />
           </Route>
+
+          <Route
+            path="/v2"
+            element={
+              <ProtectedRoute>
+                <V2PreviewPage />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Lab Import - public, no auth/PIN (local IndexedDB only) */}
           <Route path="/lab-import" element={<LabImportPage />} />

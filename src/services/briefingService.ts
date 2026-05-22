@@ -1,6 +1,13 @@
 import { db } from '@/db/database';
 import type { Patient, LabResult } from '@/db/database';
 import { formatDate, daysBetween } from '@/utils/dateUtils';
+import { useSupabaseBackend } from '@/config/backend';
+import { listPatients as listSupabasePatients } from '@/data/patients.repository';
+import { listActiveAntibiotics } from '@/data/medications.repository';
+import { listLabsByPatient } from '@/data/labs.repository';
+import { listProgressNotesCreatedBetween, listReminderNotesByAlertDate } from '@/data/notes.repository';
+import { listSchedulesByDate } from '@/data/schedules.repository';
+import type { Patient as DomainPatient } from '@/domain/patient';
 
 // --- Types ---
 
@@ -81,6 +88,10 @@ export interface BriefingData {
  * 스토어를 루핑하지 않고 DB 쿼리로 한번에 조회
  */
 export async function fetchBriefingData(userId: string, userRole: string): Promise<BriefingData> {
+  if (useSupabaseBackend) {
+    return fetchSupabaseBriefingData(userId, userRole);
+  }
+
   // 1. 사용자의 환자 목록 조회
   const patients = await fetchUserPatients(userId, userRole);
   const activePatients = patients.filter(p => p.status === 'active');
@@ -108,6 +119,161 @@ export async function fetchBriefingData(userId: string, userRole: string): Promi
       consult: activePatients.filter(p => p.patientType === 'consult').length,
     },
   };
+}
+
+async function fetchSupabaseBriefingData(_userId: string, _userRole: string): Promise<BriefingData> {
+  const patients = await listSupabasePatients();
+  const activePatients = patients.filter((patient) => patient.status === 'active');
+  const patientMap = new Map(activePatients.map((patient) => [patient.id, patient]));
+
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+
+  const [reminderNotes, progressNotes, antibiotics, schedules, recentLabs] = await Promise.all([
+    listReminderNotesByAlertDate(today),
+    listProgressNotesCreatedBetween(todayStart, todayEnd),
+    listActiveAntibiotics(),
+    listSchedulesByDate(today),
+    fetchSupabaseRecentLabs(activePatients, patientMap),
+  ]);
+
+  return {
+    reminders: reminderNotes
+      .map((note) => {
+        const patient = patientMap.get(note.patientId);
+        if (!patient) return null;
+        return {
+          patientId: note.patientId,
+          patientName: patient.name,
+          roomBed: patient.roomBed,
+          noteId: note.id,
+          content: note.content,
+        };
+      })
+      .filter((item): item is ReminderItem => item !== null),
+    progressNotes: progressNotes
+      .map((note) => {
+        const patient = patientMap.get(note.patientId);
+        if (!patient) return null;
+        return {
+          patientId: note.patientId,
+          patientName: patient.name,
+          roomBed: patient.roomBed,
+          noteId: note.id,
+          content: note.content,
+        };
+      })
+      .filter((item): item is ProgressItem => item !== null),
+    antibiotics: antibiotics
+      .map((medication): AntibioticItem | null => {
+        const patient = patientMap.get(medication.patientId);
+        if (!patient) return null;
+        const dDay = daysBetween(medication.startDate, today);
+        return {
+          patientId: medication.patientId,
+          patientName: patient.name,
+          roomBed: patient.roomBed,
+          medicationId: medication.id,
+          drugName: medication.drugName,
+          dosage: medication.dosage,
+          frequency: medication.frequency,
+          dDay,
+          isLongTerm: dDay >= 14,
+          startDate: medication.startDate,
+          endDate: medication.endDate,
+        };
+      })
+      .filter((item): item is AntibioticItem => item !== null)
+      .sort((a, b) => b.dDay - a.dDay),
+    recentLabs,
+    todaySchedules: schedules
+      .map((schedule): ScheduleItem | null => {
+        const patient = patientMap.get(schedule.patientId);
+        if (!patient) return null;
+        return {
+          patientId: schedule.patientId,
+          patientName: patient.name,
+          roomBed: patient.roomBed,
+          scheduleId: schedule.id,
+          title: schedule.title,
+          category: schedule.category,
+          scheduledTime: schedule.scheduledTime,
+          isCompleted: schedule.isCompleted,
+        };
+      })
+      .filter((item): item is ScheduleItem => item !== null)
+      .sort((a, b) => (a.scheduledTime || '').localeCompare(b.scheduledTime || '')),
+    patientSummary: {
+      total: activePatients.length,
+      admitted: activePatients.filter((patient) => patient.patientType === 'admitted').length,
+      consult: activePatients.filter((patient) => patient.patientType === 'consult').length,
+    },
+  };
+}
+
+async function fetchSupabaseRecentLabs(
+  patients: DomainPatient[],
+  patientMap: Map<string, DomainPatient>
+): Promise<LabSummaryItem[]> {
+  const today = new Date();
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  const startOfYesterday = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate());
+  const endOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
+  const summaries: LabSummaryItem[] = [];
+
+  const labsByPatient = await Promise.all(
+    patients.map(async (patient) => ({
+      patientId: patient.id,
+      labs: await listLabsByPatient(patient.id),
+    }))
+  );
+
+  for (const { patientId, labs } of labsByPatient) {
+    const patient = patientMap.get(patientId);
+    if (!patient) continue;
+
+    const grouped = new Map<string, typeof labs>();
+    for (const lab of labs) {
+      if (lab.category === 'Culture') continue;
+      if (lab.testDate < startOfYesterday || lab.testDate > endOfToday) continue;
+      const dateKey = formatDate(lab.testDate);
+      const existing = grouped.get(dateKey) ?? [];
+      existing.push(lab);
+      grouped.set(dateKey, existing);
+    }
+
+    for (const [dateKey, group] of grouped) {
+      let abnormalCount = 0;
+      let totalItems = 0;
+      const abnormalItems: string[] = [];
+
+      for (const lab of group) {
+        for (const item of lab.items) {
+          totalItems++;
+          if (!item.isAbnormal) continue;
+          abnormalCount++;
+          const flag = item.hlFlag ? ` ${item.hlFlag}` : '';
+          abnormalItems.push(`${item.name}${flag}`);
+        }
+      }
+
+      summaries.push({
+        patientId,
+        patientName: patient.name,
+        roomBed: patient.roomBed,
+        dateKey,
+        abnormalCount,
+        abnormalItems: abnormalItems.slice(0, 5),
+        totalItems,
+      });
+    }
+  }
+
+  return summaries.sort((a, b) => {
+    if (a.dateKey !== b.dateKey) return b.dateKey.localeCompare(a.dateKey);
+    return a.roomBed.localeCompare(b.roomBed);
+  });
 }
 
 async function fetchUserPatients(userId: string, userRole: string): Promise<Patient[]> {

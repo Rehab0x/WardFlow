@@ -2,6 +2,18 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { db } from '@/db/database';
 import type { User } from '@/types/user';
+import { useSupabaseBackend } from '@/config/backend';
+import {
+  approveProfile,
+  getCurrentProfile,
+  listPendingProfiles,
+  listProfiles,
+  registerProfile,
+  rejectProfile,
+  signInWithEmail,
+  signOut,
+} from '@/data/auth.repository';
+import { fromUserProfile, loginIdentifierToEmail } from '@/mappers/legacyUser.mapper';
 
 interface RegisterInput {
   name: string;
@@ -43,6 +55,25 @@ export const useAuthStore = create<AuthStore>()(
         set({ isLoading: true, error: null });
 
         try {
+          if (useSupabaseBackend) {
+            const profile = await signInWithEmail(loginIdentifierToEmail(username), password);
+            if (!profile) throw new Error('프로필을 찾을 수 없습니다.');
+            if (profile.status === 'pending') {
+              throw new Error('가입 승인 대기 중입니다. 관리자 승인 후 로그인할 수 있습니다.');
+            }
+            if (profile.status === 'rejected') {
+              throw new Error('가입 요청이 거절되었습니다. 관리자에게 문의하세요.');
+            }
+
+            set({
+              currentUser: { ...fromUserProfile(profile), lastLoginAt: new Date() },
+              isAuthenticated: true,
+              isLoading: false,
+              error: null,
+            });
+            return;
+          }
+
           // Find user by username
           const user = await db.users.where('username').equals(username).first();
 
@@ -97,6 +128,19 @@ export const useAuthStore = create<AuthStore>()(
         set({ isLoading: true, error: null });
 
         try {
+          if (useSupabaseBackend) {
+            await registerProfile({
+              email: loginIdentifierToEmail(input.username),
+              password: input.password,
+              username: input.username,
+              displayName: input.name,
+              department: input.department,
+            });
+
+            set({ isLoading: false, error: null });
+            return;
+          }
+
           // Check duplicate username
           const existing = await db.users.where('username').equals(input.username).first();
           if (existing) {
@@ -142,6 +186,11 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       logout: () => {
+        if (useSupabaseBackend) {
+          signOut().catch(() => {
+            // Local state is still cleared even if the remote sign-out request fails.
+          });
+        }
         set({
           currentUser: null,
           isAuthenticated: false,
@@ -150,6 +199,24 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       checkAuth: async () => {
+        if (useSupabaseBackend) {
+          try {
+            const profile = await getCurrentProfile();
+            if (!profile || profile.status !== 'approved') {
+              set({ currentUser: null, isAuthenticated: false });
+              return;
+            }
+
+            set({
+              currentUser: fromUserProfile(profile),
+              isAuthenticated: true,
+            });
+          } catch {
+            set({ currentUser: null, isAuthenticated: false });
+          }
+          return;
+        }
+
         const { currentUser } = get();
 
         if (!currentUser) {
@@ -185,10 +252,20 @@ export const useAuthStore = create<AuthStore>()(
 
       // Admin actions
       getPendingUsers: async () => {
+        if (useSupabaseBackend) {
+          const profiles = await listPendingProfiles();
+          return profiles.map(fromUserProfile);
+        }
+
         return await db.users.where('status').equals('pending').toArray();
       },
 
       approveUser: async (userId: string, role: User['role'], modules: User['modules']) => {
+        if (useSupabaseBackend) {
+          await approveProfile(userId, role, modules);
+          return;
+        }
+
         const { currentUser } = get();
         if (!currentUser || currentUser.role !== 'admin') {
           throw new Error('관리자만 승인할 수 있습니다.');
@@ -206,6 +283,11 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       rejectUser: async (userId: string) => {
+        if (useSupabaseBackend) {
+          await rejectProfile(userId);
+          return;
+        }
+
         const { currentUser } = get();
         if (!currentUser || currentUser.role !== 'admin') {
           throw new Error('관리자만 거절할 수 있습니다.');
@@ -218,10 +300,20 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       getAllUsers: async () => {
+        if (useSupabaseBackend) {
+          const profiles = await listProfiles();
+          return profiles.map(fromUserProfile);
+        }
+
         return await db.users.toArray();
       },
 
       deleteUser: async (userId: string) => {
+        if (useSupabaseBackend) {
+          await rejectProfile(userId);
+          return;
+        }
+
         const { currentUser } = get();
         if (!currentUser || currentUser.role !== 'admin') {
           throw new Error('관리자만 회원을 삭제할 수 있습니다.');

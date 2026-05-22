@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { db } from '@/db/database';
+import { useSupabaseBackend } from '@/config/backend';
 
 const RegisterPage = () => {
   const navigate = useNavigate();
@@ -13,6 +14,10 @@ const RegisterPage = () => {
   const [isFirstUser, setIsFirstUser] = useState(false);
 
   useEffect(() => {
+    if (useSupabaseBackend) {
+      setIsFirstUser(false);
+      return;
+    }
     db.users.count().then(count => setIsFirstUser(count === 0));
   }, []);
 

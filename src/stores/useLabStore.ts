@@ -2,6 +2,18 @@ import { create } from 'zustand';
 import { db } from '@/db/database';
 import type { LabResult, LabItem } from '@/types/lab';
 import type { LabTrendData } from '@/types/lab';
+import { useSupabaseBackend } from '@/config/backend';
+import { useAuthStore } from './useAuthStore';
+import {
+  createLabResult as createSupabaseLabResult,
+  listLabsByPatient as listSupabaseLabsByPatient,
+  softDeleteLabResult as softDeleteSupabaseLabResult,
+  updateLabItemValue as updateSupabaseLabItemValue,
+} from '@/data/labs.repository';
+import {
+  fromDomainLabResult,
+  toDomainLabItemCreateInput,
+} from '@/mappers/legacyClinical.mapper';
 
 interface LabStore {
   labs: LabResult[];
@@ -30,6 +42,12 @@ export const useLabStore = create<LabStore>((set) => ({
   fetchLabsByPatient: async (patientId: string) => {
     set({ isLoading: true, error: null });
     try {
+      if (useSupabaseBackend) {
+        const labs = await listSupabaseLabsByPatient(patientId);
+        set({ labs: labs.map(fromDomainLabResult), isLoading: false });
+        return;
+      }
+
       const labs = await db.labResults
         .where('patientId')
         .equals(patientId)
@@ -47,6 +65,24 @@ export const useLabStore = create<LabStore>((set) => ({
 
   addLabResult: async (patientId, category, items, testDate, source = 'manual') => {
     try {
+      if (useSupabaseBackend) {
+        const { currentUser } = useAuthStore.getState();
+        if (!currentUser) throw new Error('User not authenticated');
+        const labResult = await createSupabaseLabResult({
+          patientId,
+          category,
+          items: items.map((item, index) => toDomainLabItemCreateInput(item, index)),
+          testDate,
+          source,
+          createdBy: currentUser.id,
+        });
+        const legacyLab = fromDomainLabResult(labResult);
+        set((state) => ({
+          labs: [legacyLab, ...state.labs],
+        }));
+        return legacyLab.id;
+      }
+
       const id = `lab${Date.now()}`;
       const now = new Date();
 
@@ -78,6 +114,14 @@ export const useLabStore = create<LabStore>((set) => ({
 
   deleteLabResult: async (id: string) => {
     try {
+      if (useSupabaseBackend) {
+        await softDeleteSupabaseLabResult(id);
+        set((state) => ({
+          labs: state.labs.filter((lab) => lab.id !== id),
+        }));
+        return;
+      }
+
       await db.labResults.delete(id);
 
       // Update local state
@@ -94,6 +138,13 @@ export const useLabStore = create<LabStore>((set) => ({
 
   updateLabItemValue: async (patientId: string, date: string, itemName: string, newValue: string | number) => {
     try {
+      if (useSupabaseBackend) {
+        await updateSupabaseLabItemValue({ patientId, date, itemName, newValue });
+        const labs = await listSupabaseLabsByPatient(patientId);
+        set({ labs: labs.map(fromDomainLabResult) });
+        return;
+      }
+
       // Find the lab result matching patient + date + item
       const allLabs = await db.labResults
         .where('patientId')
@@ -214,6 +265,41 @@ export const useLabStore = create<LabStore>((set) => ({
 
   getLabTrendData: async (patientId: string, itemCode: string, itemName: string) => {
     try {
+      if (useSupabaseBackend) {
+        const allLabs = await listSupabaseLabsByPatient(patientId);
+        const dataPoints: LabTrendData['dataPoints'] = [];
+        let unit = '';
+        let referenceMin: number | undefined;
+        let referenceMax: number | undefined;
+
+        for (const lab of allLabs) {
+          const item = lab.items.find(
+            (i) => (itemCode && i.code === itemCode) || i.name === itemName
+          );
+
+          if (!item) continue;
+
+          if (!unit && item.unit) unit = item.unit;
+          if (referenceMin === undefined && item.referenceMin !== undefined) {
+            referenceMin = item.referenceMin;
+          }
+          if (referenceMax === undefined && item.referenceMax !== undefined) {
+            referenceMax = item.referenceMax;
+          }
+
+          const dateKey = `${lab.testDate.getFullYear()}-${String(lab.testDate.getMonth() + 1).padStart(2, '0')}-${String(lab.testDate.getDate()).padStart(2, '0')}`;
+          dataPoints.push({
+            date: dateKey,
+            value: item.valueNumeric ?? item.valueText,
+            isAbnormal: item.isAbnormal,
+            hlFlag: item.hlFlag,
+          });
+        }
+
+        if (dataPoints.length === 0) return null;
+        return { itemCode, itemName, unit, referenceMin, referenceMax, dataPoints };
+      }
+
       // Fetch all lab results for this patient
       const allLabs = await db.labResults
         .where('patientId')
