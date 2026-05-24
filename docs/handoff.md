@@ -1,15 +1,15 @@
 # WardFlow Rebuild Handoff
 
-Last updated: 2026-05-22
+Last updated: 2026-05-25
 
 ## Current Git State
 
 - Branch: `main`
-- Latest commit pushed to GitHub: `3326058 feat: scaffold supabase backend and v2 preview`
+- Latest commit pushed to GitHub: `1fa17ea Add patient delete action and icon tooltips`
 - Remote: `https://github.com/Rehab0x/WardFlow.git`
 - Local verification before push:
-  - `npm.cmd run type-check` passed
-  - `npm.cmd run build` passed
+  - `npm.cmd run type-check` passed on 2026-05-25
+  - `npm.cmd run build` passed on 2026-05-25
   - `npm.cmd run lint` does not pass yet because of pre-existing legacy lint issues
 
 ## What Was Added
@@ -100,7 +100,8 @@ If `VITE_DATA_BACKEND` is missing, the app stays in the old IndexedDB mode.
 
 ## Known Risks / Remaining Work
 
-- This is not a full rewrite yet. It is a bridge layer that keeps the existing app working while adding a Supabase backend option.
+- Main route `/` now runs the Supabase-backed v2 shell when `VITE_DATA_BACKEND=supabase` and Supabase env vars are present. `/v2/app` redirects to `/`; `/v2` remains the design preview.
+- This is still a staged rewrite. The v2 shell is now usable against Supabase, while some legacy routes and fallback services remain in the repository.
 - Auth flow is minimally adapted. Username login in Supabase mode maps non-email usernames to `username@wardflow.example.com`.
 - PIN lock is disabled in Supabase mode because the old PIN credential model lived in IndexedDB.
 - Lint still needs a legacy cleanup pass.
@@ -205,19 +206,34 @@ If `VITE_DATA_BACKEND` is missing, the app stays in the old IndexedDB mode.
 - Patient rail indicator derivation now uses the memoized patient id map and only creates entries for patients that actually have queue flags, avoiding one empty indicator object per patient on every briefing update.
 - `usePatientStore` now maintains a `patientById` map alongside the array so store-level patient lookup no longer needs repeated array scans, while patient rail search text is precomputed when the patient list changes instead of rebuilt on every query.
 - `usePatientStore.fetchPatients` and `fetchPatientById` now share in-flight promises, preventing duplicate patient-list or single-patient Supabase reads when initial load, focus refresh, and future lazy hydration overlap.
+- `/v2/app` patient edit now includes a confirmed patient-delete action. The delete path uses the existing patient store archive/soft-delete behavior, removes the patient from local briefing state, clears selection if needed, and queues the normal server confirmation refresh.
+- Icon-only controls in the v2 top bar and patient workspace header now expose hover tooltips and clearer aria labels for actions such as patient search, patient add, settings, logout, attention toggle, patient edit, and discharge/restore.
 - This rebuild is starting from an empty clinical dataset. Keep migration tooling focused on schema/bootstrap and safety snapshots, not Dexie-to-Supabase patient transfer.
 - Supabase-generated TypeScript types should eventually replace the hand-written `src/types/supabase.ts`.
 - Today briefing and sidebar flag Supabase reads should remain scoped to accessible active patient IDs to avoid broad table scans.
 
+## Current 2026-05-25 Checkpoint
+
+- Supabase env values are set locally and the user has applied the foundation migration.
+- First admin login works, patient creation works after the RLS/profile setup was corrected, and the user reported the core app flow is broadly functional.
+- The main app route has been moved onto the v2 shell; `/v2/app` redirects to `/`.
+- Settings has been reshaped into a left settings sidebar plus right content panel and is wired to the existing admin, charting, Lab, AI, and backup sections.
+- Recent verification: `npm run type-check` and `npm run build` both pass.
+- Git status at handoff time was clean on `main...origin/main`.
+
 ## Recommended Next Steps
 
-1. Confirm the deployed build with `VITE_DATA_BACKEND=supabase`.
-2. Run the migration in Supabase and create the first admin account.
-3. Test patient CRUD, notes, schedules, medications, lab import, and today briefing in Supabase mode.
-4. Promote the stable `/v2` shell into the authenticated app flow once the real repository-backed workspace screens are ready.
-5. Clean up legacy mojibake text and lint warnings.
+1. Do a manual deployed-app smoke test in Supabase mode: login, add/edit/delete patient, discharge/restore, charting save, note save/delete, Lab save/delete, antibiotic save/delete, schedule save/delete, refresh, and relogin.
+2. Tighten Settings behavior after real use. Prioritize admin approval/member management, Supabase snapshot backup preview, charting templates, Lab category/reference settings, and any controls that still look like legacy IndexedDB behavior.
+3. Add a small admin-facing explanation for pending user approval if the current Settings admin tab is not discoverable enough.
+4. Decide whether patient delete should remain a soft archive only, or whether an admin-only purge flow is needed later. Keep hard delete out of the normal edit panel.
+5. Replace hand-written `src/types/supabase.ts` with generated Supabase types once the schema settles.
+6. Continue removing remaining legacy/mojibake strings only where they are visible in the Supabase v2 flow. Legacy routes can be cleaned later unless they leak into the current app.
+7. Add focused tests for the highest-risk v2/Supabase flows: patient create/update/archive mapping, RLS-friendly repository errors, backup snapshot restore checks, and briefing optimistic update helpers.
+8. Consider loading thin patient shell rows first and hydrating full charting rows on patient open, using the repository path already added for patient shell rows.
+9. Keep performance work scoped to real bottlenecks: active-patient scoped reads, explicit column selects, chunked parallel queries, and avoiding full patient-list refreshes after small clinical writes.
 
-Use `docs/supabase-validation.md` for the current Supabase validation checklist. Local Supabase env is now set and remote anon table preflight passes; real remote E2E now needs permission to create a test account and clinical test rows, or the user can create the first admin account manually in the app.
+Use `docs/supabase-validation.md` for the current Supabase validation checklist. Local Supabase env is set, the foundation migration has been applied, and the user has confirmed admin login plus patient creation. The next useful validation should happen against the deployed build and should focus on repeated real workflow use rather than schema bootstrap.
 
 ## Useful Files
 

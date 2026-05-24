@@ -6,15 +6,17 @@ Current local state:
 - `VITE_SUPABASE_URL` is set to the project URL shape, not the REST `/rest/v1` endpoint.
 - `VITE_SUPABASE_ANON_KEY` is set locally.
 - Supabase CLI is not installed on this machine.
+- The foundation SQL migration has been applied manually through the Supabase SQL editor.
+- First admin login and patient creation have been validated by the user.
 - Static checks passed for the current migration/repository shape.
-- Remote Supabase connection works, but real table selects currently report missing `public.profiles`/core tables. Apply the migration before app login validation.
+- Current route state: `/` is the authenticated Supabase-backed v2 shell, `/v2/app` redirects to `/`, and `/v2` remains the local design preview.
 
 ## Preflight Already Checked
 
 - `npx vitest run` passes: 5 files, 67 tests.
 - `npm run build` passes in normal local mode.
 - `npm run build` passes with real local Supabase env values.
-- Remote anon connectivity reaches the project, but core table selects must be rechecked after applying the migration.
+- Remote anon connectivity reaches the project and the user has confirmed the app can create patients after the profile/RLS setup was corrected.
 - Main migration includes the expected core tables: `profiles`, `patients`, `patient_shares`, `notes`, `schedules`, `medications`, `lab_results`, `lab_items`, `templates`, `lab_categories`, `user_settings`, and `backup_snapshots`.
 - Main migration enables RLS on core tables and includes the first-user admin trigger.
 - Repository column selects for the core patient/briefing/write paths match the migration columns.
@@ -34,7 +36,7 @@ VITE_DATA_BACKEND=supabase
 4. For fastest local validation, either disable email confirmation during testing or confirm the first auth user in Supabase before login.
 5. Start the app and verify the console does not show missing-env fallback warnings.
 
-Local status: steps 3 and basic project connectivity are complete. Step 2 still needs confirmation on the connected project.
+Local status: steps 2 and 3 are complete for the current project.
 
 Auth note: the app maps a username such as `admin` to `admin@wardflow.example.com` for Supabase Auth. If Supabase email confirmation is enabled, repeated test signups can hit "email rate limit exceeded". For local validation, turn off email confirmation temporarily or create/confirm the user from the Supabase Dashboard.
 
@@ -68,6 +70,8 @@ Auth cache note: Supabase mode uses a separate persisted auth key from Dexie mod
 20. Confirm the patient leaves active queues and appears in the collapsed discharged section.
 21. Reopen the app or refresh the browser.
 22. Confirm data persists from Supabase.
+23. Edit the patient again and use the patient-delete action from the edit panel.
+24. Confirm the deleted patient disappears from the active list and Today queues, then refresh and confirm it stays hidden.
 
 ## Admin And Safety Pass
 
@@ -80,6 +84,14 @@ Auth cache note: Supabase mode uses a separate persisted auth key from Dexie mod
 7. Create a snapshot backup.
 8. Preview the snapshot and confirm record counts match.
 9. Confirm destructive restore is still blocked/not exposed.
+
+## Current Priority For Next Session
+
+1. Repeat the first real E2E pass on the deployed build, not only local dev.
+2. Spend extra time in Settings: admin approval, member management, charting settings persistence, Lab categories, AI settings, and Supabase snapshot preview.
+3. Verify icon-only controls have usable hover tooltips in desktop and do not block touch usage on mobile.
+4. Watch for any save/delete that feels slow enough to need a more explicit pending state.
+5. Keep an eye on patient-list and Today queue duplication after rapid clinical writes.
 
 ## Stop Conditions
 
