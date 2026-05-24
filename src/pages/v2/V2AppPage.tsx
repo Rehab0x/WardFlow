@@ -90,6 +90,7 @@ export default function V2AppPage() {
     fetchPatients,
     addPatient,
     updatePatient,
+    deletePatient,
     dischargePatient,
   } = usePatientStore();
   const { addNote, deleteNote } = useNoteStore();
@@ -392,6 +393,29 @@ export default function V2AppPage() {
       queueBriefingRefresh();
     } catch (error) {
       setAddError(formatUserFacingError(error, '환자 정보를 저장하지 못했습니다.'));
+    } finally {
+      setSavingPatient(false);
+    }
+  };
+
+  const handleDeleteEditingPatient = async () => {
+    if (!editingPatient || savingPatient) return;
+    if (!window.confirm(`${editingPatient.name} 환자를 삭제할까요? 삭제된 환자는 목록에서 보이지 않습니다.`)) return;
+
+    setSavingPatient(true);
+    setAddError(null);
+    try {
+      await deletePatient(editingPatient.id);
+      applyOptimisticRemovePatientItems(setBriefingData, editingPatient.id);
+      if (selectedPatientId === editingPatient.id) {
+        setSelectedPatientId(null);
+        setSelectedTab('overview');
+      }
+      setEditPatientId(null);
+      markLocalBriefingUpdated();
+      queueBriefingRefresh();
+    } catch (error) {
+      setAddError(formatUserFacingError(error, '환자를 삭제하지 못했습니다.'));
     } finally {
       setSavingPatient(false);
     }
@@ -737,6 +761,7 @@ export default function V2AppPage() {
           isSaving={savingPatient}
           onClose={() => setEditPatientId(null)}
           onSubmit={handleUpdatePatientInfo}
+          onDelete={handleDeleteEditingPatient}
         />
       )}
     </AppShellV2>
@@ -751,6 +776,7 @@ function AddPatientPanel({
   isSaving,
   onClose,
   onSubmit,
+  onDelete,
 }: {
   title: string;
   submitLabel: string;
@@ -759,6 +785,7 @@ function AddPatientPanel({
   isSaving: boolean;
   onClose: () => void;
   onSubmit: (draft: AddPatientDraft) => void | Promise<void>;
+  onDelete?: () => void | Promise<void>;
 }) {
   const [draft, setDraft] = useState<AddPatientDraft>(initialDraft);
   const [submitAttempted, setSubmitAttempted] = useState(false);
@@ -922,23 +949,37 @@ function AddPatientPanel({
           </div>
         )}
         {error && <div className="mx-4 rounded-md bg-red-50 px-3 py-2 text-[12px] text-red-700">{error}</div>}
-        <div className="flex justify-end gap-2 px-4 py-3">
-          <button
-            type="button"
-            onClick={close}
-            disabled={isSaving}
-            className="h-8 rounded-md border border-zinc-200 px-3 text-[12px] font-medium text-zinc-600 hover:bg-zinc-100"
-          >
-            취소
-          </button>
-          <button
-            type="submit"
-            disabled={isSaving || !canSubmit}
-            title={canSubmit ? undefined : validationMessages[0]}
-            className="h-8 rounded-md bg-zinc-900 px-3 text-[12px] font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:bg-zinc-300"
-          >
-            {isSaving ? '저장 중' : submitLabel}
-          </button>
+        <div className="flex items-center justify-between gap-2 px-4 py-3">
+          <div>
+            {onDelete && (
+              <button
+                type="button"
+                onClick={onDelete}
+                disabled={isSaving}
+                className="h-8 rounded-md border border-red-200 px-3 text-[12px] font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                환자 삭제
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={close}
+              disabled={isSaving}
+              className="h-8 rounded-md border border-zinc-200 px-3 text-[12px] font-medium text-zinc-600 hover:bg-zinc-100"
+            >
+              취소
+            </button>
+            <button
+              type="submit"
+              disabled={isSaving || !canSubmit}
+              title={canSubmit ? undefined : validationMessages[0]}
+              className="h-8 rounded-md bg-zinc-900 px-3 text-[12px] font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:bg-zinc-300"
+            >
+              {isSaving ? '저장 중' : submitLabel}
+            </button>
+          </div>
         </div>
       </form>
     </div>

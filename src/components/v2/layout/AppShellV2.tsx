@@ -52,9 +52,7 @@ export function AppShellV2({
     document.body.style.overflow = 'hidden';
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setPatientsOpen(false);
-      }
+      if (event.key === 'Escape') setPatientsOpen(false);
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -182,11 +180,7 @@ export function AppShellV2({
         <BottomAction label="오늘" active={activeMobileAction === 'today'} onClick={handleToday}>
           <Home className="h-4 w-4" />
         </BottomAction>
-        <BottomAction
-          label="환자"
-          active={activeMobileAction === 'patients'}
-          onClick={openPatients}
-        >
+        <BottomAction label="환자" active={activeMobileAction === 'patients'} onClick={openPatients}>
           <Users className="h-4 w-4" />
         </BottomAction>
         <BottomAction label="설정" active={activeMobileAction === 'settings'} onClick={handleSettings}>

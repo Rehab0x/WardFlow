@@ -1,5 +1,11 @@
 import { AlertTriangle, Archive, ArrowLeft, Bell, Hash, Pencil, RotateCcw } from 'lucide-react';
 import type { Patient } from '@/db/database';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { formatDateInput, formatDetailedAge, formatOnsetElapsedText } from '../clinical/dateLabels';
 
@@ -34,14 +40,14 @@ export function WorkspaceHeader({
     <header className="border-b border-zinc-200 bg-white px-3 py-3 sm:px-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-2 sm:gap-3">
-          <button
-            type="button"
-            onClick={onBack}
-            className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
+          <IconButton
+            className="mt-0.5 h-7 w-7"
             aria-label="오늘 화면으로 돌아가기"
+            tooltip="오늘 화면"
+            onClick={onBack}
           >
             <ArrowLeft className="h-4 w-4" />
-          </button>
+          </IconButton>
 
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -112,38 +118,42 @@ export function WorkspaceHeader({
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
-          <HeaderButton
-            aria-label="주의 표시"
+          <IconButton
+            aria-label={patient.attention ? '주의 표시 해제' : '주의 표시'}
+            tooltip={patient.attention ? '주의 표시 해제' : '주의 표시'}
             active={patient.attention}
             disabled={attentionPending}
             aria-busy={attentionPending}
             onClick={onToggleAttention}
           >
             <Bell className="h-4 w-4" />
-          </HeaderButton>
-          <HeaderButton aria-label="환자 정보 수정" onClick={onEdit}>
+          </IconButton>
+          <IconButton aria-label="환자 정보 수정" tooltip="환자 정보 수정" onClick={onEdit}>
             <Pencil className="h-4 w-4" />
-          </HeaderButton>
-          <HeaderButton
-            aria-label={isDischarged ? '퇴원 취소' : '퇴원'}
+          </IconButton>
+          <IconButton
+            aria-label={isDischarged ? '퇴원 취소' : '퇴원 처리'}
+            tooltip={isDischarged ? '퇴원 취소' : '퇴원 처리'}
             disabled={archivePending}
             aria-busy={archivePending}
             onClick={onArchive}
           >
             {isDischarged ? <RotateCcw className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
-          </HeaderButton>
+          </IconButton>
         </div>
       </div>
     </header>
   );
 }
 
-function HeaderButton({
+function IconButton({
   active,
   className,
+  tooltip,
+  children,
   ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean }) {
-  return (
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean; tooltip?: string }) {
+  const button = (
     <button
       type="button"
       {...props}
@@ -153,6 +163,21 @@ function HeaderButton({
         props.disabled && 'cursor-not-allowed opacity-50 hover:bg-white hover:text-zinc-500',
         className
       )}
-    />
+    >
+      {children}
+    </button>
+  );
+
+  if (!tooltip) return button;
+
+  return (
+    <TooltipProvider delayDuration={250}>
+      <Tooltip>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipContent>
+          <p>{tooltip}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
