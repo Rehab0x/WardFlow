@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { LogIn, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,13 @@ import { useSupabaseBackend } from '@/config/backend';
 
 const LoginPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login, isAuthenticated, isLoading, error, clearError } = useAuthStore();
+  const redirectTo =
+    (location.state as { from?: { pathname?: string; search?: string } } | null)?.from;
+  const redirectPath = redirectTo
+    ? `${redirectTo.pathname ?? '/'}${redirectTo.search ?? ''}`
+    : '/';
 
   const savedUsername = localStorage.getItem('wardflow-remember-username') || '';
   const savedRemember = localStorage.getItem('wardflow-remember-me') === 'true';
@@ -47,9 +53,9 @@ const LoginPage = () => {
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/', { replace: true });
+      navigate(redirectPath, { replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, redirectPath]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

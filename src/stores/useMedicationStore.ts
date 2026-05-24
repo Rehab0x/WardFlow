@@ -15,6 +15,8 @@ import {
   fromDomainMedication,
   toDomainMedicationCreateInput,
 } from '@/mappers/legacyClinical.mapper';
+import { formatUserFacingError } from '@/lib/errorMessages';
+import { mergeEntityListByUpdateStamp, removeById, replaceById, upsertById } from './storeUtils';
 
 interface MedicationStore {
   medications: Medication[];
@@ -39,8 +41,11 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       if (useSupabaseBackend) {
-        const medications = await listSupabaseMedicationsByPatient(patientId);
-        set({ medications: medications.map(fromDomainMedication), isLoading: false });
+        const medications = (await listSupabaseMedicationsByPatient(patientId)).map(fromDomainMedication);
+        set((state) => ({
+          medications: mergeEntityListByUpdateStamp(state.medications, medications),
+          isLoading: false,
+        }));
         return;
       }
 
@@ -65,10 +70,14 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
         });
       }
 
-      set({ medications: medications.reverse(), isLoading: false });
+      const nextMedications = medications.reverse();
+      set((state) => ({
+        medications: mergeEntityListByUpdateStamp(state.medications, nextMedications),
+        isLoading: false,
+      }));
     } catch (error) {
       set({
-        error: error instanceof Error ? error.message : 'Failed to fetch medications',
+        error: formatUserFacingError(error, '약제를 불러오지 못했습니다.'),
         isLoading: false,
       });
     }
@@ -78,13 +87,13 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
     try {
       if (useSupabaseBackend) {
         const { currentUser } = useAuthStore.getState();
-        if (!currentUser) throw new Error('User not authenticated');
+        if (!currentUser) throw new Error('로그인이 필요합니다.');
         const saved = await createSupabaseMedication(
           toDomainMedicationCreateInput(medication, currentUser.id)
         );
         const legacyMedication = fromDomainMedication(saved);
         set((state) => ({
-          medications: [legacyMedication, ...state.medications],
+          medications: upsertById(state.medications, legacyMedication),
         }));
         refreshSidebarFlags();
         return legacyMedication.id;
@@ -104,14 +113,14 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
 
       // Update local state
       set((state) => ({
-        medications: [newMedication, ...state.medications],
+        medications: upsertById(state.medications, newMedication),
       }));
       refreshSidebarFlags();
 
       return id;
     } catch (error) {
       set({
-        error: error instanceof Error ? error.message : 'Failed to add medication',
+        error: formatUserFacingError(error, '약제를 추가하지 못했습니다.'),
       });
       throw error;
     }
@@ -121,13 +130,16 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
     try {
       if (useSupabaseBackend) {
         const { currentUser } = useAuthStore.getState();
-        if (!currentUser) throw new Error('User not authenticated');
+        if (!currentUser) throw new Error('로그인이 필요합니다.');
         const saved = await createSupabaseMedications(
           medications.map((medication) => toDomainMedicationCreateInput(medication, currentUser.id))
         );
         const legacyMedications = saved.map(fromDomainMedication);
         set((state) => ({
-          medications: [...legacyMedications, ...state.medications],
+          medications: legacyMedications.reduce(
+            (items, medication) => upsertById(items, medication),
+            state.medications
+          ),
         }));
         refreshSidebarFlags();
         return;
@@ -148,14 +160,17 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
 
       // Single state update
       set((state) => ({
-        medications: [...newMedications, ...state.medications],
+        medications: newMedications.reduce(
+          (items, medication) => upsertById(items, medication),
+          state.medications
+        ),
       }));
 
       // Single sidebar refresh
       refreshSidebarFlags();
     } catch (error) {
       set({
-        error: error instanceof Error ? error.message : 'Failed to add medications',
+        error: formatUserFacingError(error, '약제를 추가하지 못했습니다.'),
       });
       throw error;
     }
@@ -181,9 +196,7 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
         });
         const legacyMedication = fromDomainMedication(saved);
         set((state) => ({
-          medications: state.medications.map((med) =>
-            med.id === id ? legacyMedication : med
-          ),
+          medications: replaceById(state.medications, id, legacyMedication),
         }));
         refreshSidebarFlags();
         return;
@@ -205,7 +218,7 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
       refreshSidebarFlags();
     } catch (error) {
       set({
-        error: error instanceof Error ? error.message : 'Failed to update medication',
+        error: formatUserFacingError(error, '약제를 수정하지 못했습니다.'),
       });
       throw error;
     }
@@ -216,7 +229,7 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
       if (useSupabaseBackend) {
         await softDeleteSupabaseMedication(id);
         set((state) => ({
-          medications: state.medications.filter((med) => med.id !== id),
+          medications: removeById(state.medications, id),
         }));
         refreshSidebarFlags();
         return;
@@ -226,12 +239,12 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
 
       // Update local state
       set((state) => ({
-        medications: state.medications.filter((med) => med.id !== id),
+        medications: removeById(state.medications, id),
       }));
       refreshSidebarFlags();
     } catch (error) {
       set({
-        error: error instanceof Error ? error.message : 'Failed to delete medication',
+        error: formatUserFacingError(error, '약제를 삭제하지 못했습니다.'),
       });
       throw error;
     }
@@ -241,16 +254,14 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
     try {
       const medication = get().medications.find((med) => med.id === id);
       if (!medication) {
-        throw new Error('Medication not found');
+        throw new Error('약제를 찾을 수 없습니다.');
       }
 
       if (useSupabaseBackend) {
         const saved = await updateSupabaseMedication(id, { isActive: !medication.isActive });
         const legacyMedication = fromDomainMedication(saved);
         set((state) => ({
-          medications: state.medications.map((med) =>
-            med.id === id ? legacyMedication : med
-          ),
+          medications: replaceById(state.medications, id, legacyMedication),
         }));
         refreshSidebarFlags();
         return;
@@ -272,7 +283,7 @@ export const useMedicationStore = create<MedicationStore>((set, get) => ({
       refreshSidebarFlags();
     } catch (error) {
       set({
-        error: error instanceof Error ? error.message : 'Failed to toggle medication status',
+        error: formatUserFacingError(error, '약제 상태를 변경하지 못했습니다.'),
       });
       throw error;
     }

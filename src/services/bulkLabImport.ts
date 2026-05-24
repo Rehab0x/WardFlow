@@ -28,13 +28,15 @@ import type { Patient, LabItem } from '@/db/database';
 import { parseLabXls, type XlsPatientGroup, type ParsedLabItem } from './parser/labParser';
 import { parseLocalDate } from '@/utils/dateUtils';
 import { useSupabaseBackend } from '@/config/backend';
-import { createLabResult, listLabsByPatient, softDeleteLabResult } from '@/data/labs.repository';
-import { listPatients } from '@/data/patients.repository';
-import { supabase } from '@/lib/supabase';
 import {
-  fromDomainLabResult,
-  toDomainLabItemCreateInput,
-} from '@/mappers/legacyClinical.mapper';
+  createLabResult,
+  listNonCultureLabHeadersByPatients,
+  listLabsByPatientDateAndCategory,
+  softDeleteLabResult,
+} from '@/data/labs.repository';
+import { listActivePatients } from '@/data/patients.repository';
+import { supabase } from '@/lib/supabase';
+import { toDomainLabItemCreateInput } from '@/mappers/legacyClinical.mapper';
 import { fromDomainPatient } from '@/mappers/legacyPatient.mapper';
 
 // ─────────────────────────────────────────────────
@@ -78,8 +80,8 @@ async function processFile(buffer: ArrayBuffer): Promise<BulkImportPreview> {
 
   // Load all patients from the active backend
   const allPatients = useSupabaseBackend
-    ? (await listPatients()).map(fromDomainPatient)
-    : await db.patients.toArray();
+    ? (await listActivePatients()).map(fromDomainPatient)
+    : await db.patients.where('status').equals('active').toArray();
   const byRegNum = new Map<string, Patient>();
   for (const p of allPatients) {
     if (p.registrationNumber) {
@@ -202,12 +204,13 @@ async function savePatient(match: MatchedPatient): Promise<void> {
       if (userError) throw userError;
       if (!user) throw new Error('User not authenticated.');
 
-      const existing = await listLabsByPatient(patient.id);
+      const existing = await listLabsByPatientDateAndCategory({
+        patientId: patient.id,
+        testDate,
+        category,
+      });
       for (const lab of existing) {
-        const labDateKey = `${lab.testDate.getFullYear()}-${String(lab.testDate.getMonth() + 1).padStart(2, '0')}-${String(lab.testDate.getDate()).padStart(2, '0')}`;
-        if (lab.category === category && labDateKey === dateKey) {
-          await softDeleteLabResult(lab.id);
-        }
+        await softDeleteLabResult(lab.id);
       }
 
       await createLabResult({
@@ -275,39 +278,40 @@ export interface RecentLabStatus {
  */
 async function getRecentLabStatus(): Promise<RecentLabStatus[]> {
   if (useSupabaseBackend) {
-    const patients = (await listPatients())
-      .map(fromDomainPatient)
-      .filter((patient) => patient.status === 'active');
+    const patients = (await listActivePatients()).map(fromDomainPatient);
+    const labs = await listNonCultureLabHeadersByPatients(patients.map((patient) => patient.id));
+    const latestByPatient = new Map<string, Date>();
+
+    for (const lab of labs) {
+      const existing = latestByPatient.get(lab.patientId);
+      if (!existing || lab.testDate > existing) {
+        latestByPatient.set(lab.patientId, lab.testDate);
+      }
+    }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const toDateStr = (d: Date) =>
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-    const result = await Promise.all(
-      patients.map(async (patient): Promise<RecentLabStatus> => {
-        const labs = (await listLabsByPatient(patient.id)).map(fromDomainLabResult);
-        const latest = labs
-          .filter((lab) => lab.category !== 'Culture')
-          .map((lab) => lab.testDate)
-          .sort((a, b) => b.getTime() - a.getTime())[0];
+    const result = patients.map((patient): RecentLabStatus => {
+      const latest = latestByPatient.get(patient.id);
+      let daysSince: number | null = null;
+      if (latest) {
+        const latestStart = new Date(latest.getFullYear(), latest.getMonth(), latest.getDate());
+        daysSince = Math.floor((today.getTime() - latestStart.getTime()) / (1000 * 60 * 60 * 24));
+      }
 
-        let daysSince: number | null = null;
-        if (latest) {
-          const latestStart = new Date(latest.getFullYear(), latest.getMonth(), latest.getDate());
-          daysSince = Math.floor((today.getTime() - latestStart.getTime()) / (1000 * 60 * 60 * 24));
-        }
-
-        return {
-          patientId: patient.id,
-          patientName: patient.name,
-          roomBed: patient.roomBed,
-          patientType: patient.patientType,
-          registrationNumber: patient.registrationNumber ?? '',
-          latestLabDate: latest ? toDateStr(latest) : null,
-          daysSinceLatest: daysSince,
-        };
-      })
-    );
+      return {
+        patientId: patient.id,
+        patientName: patient.name,
+        roomBed: patient.roomBed,
+        patientType: patient.patientType,
+        registrationNumber: patient.registrationNumber ?? '',
+        latestLabDate: latest ? toDateStr(latest) : null,
+        daysSinceLatest: daysSince,
+      };
+    });
 
     return result.sort((a, b) => {
       if (a.latestLabDate === null && b.latestLabDate !== null) return -1;

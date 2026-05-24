@@ -5,6 +5,7 @@
  * 서버 동기화: Supabase
  */
 import { db } from '@/db/database';
+import { useSupabaseBackend } from '@/config/backend';
 import { supabase } from './supabaseClient';
 
 // --- Daily backup reminder ---
@@ -61,6 +62,11 @@ const SETTINGS_KEYS = [
   'wardflow-ai-settings',
   'wardflow-auth',
 ];
+
+function assertLegacyBackupAllowed() {
+  if (!useSupabaseBackend) return;
+  throw new Error('Supabase 모드에서는 기존 IndexedDB 백업/복원을 사용할 수 없습니다. 서버 데이터를 덮지 않도록 v2 snapshot 백업을 사용해야 합니다.');
+}
 
 function collectSettings(): Record<string, string> {
   const settings: Record<string, string> = {};
@@ -138,6 +144,8 @@ async function decrypt(buffer: ArrayBuffer, password: string): Promise<string> {
 // --- Export ---
 
 export async function exportBackup(password: string): Promise<Blob> {
+  assertLegacyBackupAllowed();
+
   const [users, authCredentials, patients, labResults, medications, notes, schedules, labCategories, templates] =
     await Promise.all([
       db.users.toArray(),
@@ -167,6 +175,8 @@ export async function exportBackup(password: string): Promise<Blob> {
 // --- Text export/import (clipboard transfer) ---
 
 export async function exportBackupAsText(password: string): Promise<string> {
+  assertLegacyBackupAllowed();
+
   const [users, authCredentials, patients, labResults, medications, notes, schedules, labCategories, templates] =
     await Promise.all([
       db.users.toArray(),
@@ -201,6 +211,8 @@ export async function exportBackupAsText(password: string): Promise<string> {
 }
 
 export async function importBackupFromText(text: string, password: string): Promise<{ patientCount: number; noteCount: number }> {
+  assertLegacyBackupAllowed();
+
   const trimmed = text.trim();
   if (!trimmed.startsWith('WARDFLOW:')) {
     throw new Error('WardFlow 백업 텍스트가 아닙니다.');
@@ -262,6 +274,8 @@ export function downloadBlob(blob: Blob, filename: string) {
 // --- Import (file) ---
 
 export async function importBackup(file: File, password: string): Promise<{ patientCount: number; noteCount: number }> {
+  assertLegacyBackupAllowed();
+
   const buffer = await file.arrayBuffer();
   return importBackupFromBuffer(buffer, password);
 }
@@ -321,6 +335,8 @@ async function restoreFromBackup(backup: BackupData): Promise<void> {
 // --- Server backup/restore (Supabase) ---
 
 export async function uploadBackupToServer(password: string, userKey: string): Promise<{ success: boolean; updatedAt: string }> {
+  assertLegacyBackupAllowed();
+
   // 1. Collect all data
   const [users, authCredentials, patients, labResults, medications, notes, schedules, labCategories, templates] =
     await Promise.all([
@@ -372,6 +388,8 @@ export async function uploadBackupToServer(password: string, userKey: string): P
 }
 
 export async function downloadBackupFromServer(password: string, userKey: string): Promise<{ patientCount: number; noteCount: number; updatedAt: string }> {
+  assertLegacyBackupAllowed();
+
   // 1. Fetch from Supabase
   const { data, error } = await supabase
     .from('backups')
@@ -404,6 +422,10 @@ export async function downloadBackupFromServer(password: string, userKey: string
 }
 
 export async function getServerBackupInfo(userKey: string): Promise<{ exists: boolean; updatedAt?: string }> {
+  if (useSupabaseBackend) {
+    return { exists: false };
+  }
+
   const { data, error } = await supabase
     .from('backups')
     .select('updated_at')

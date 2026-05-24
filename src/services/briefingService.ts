@@ -2,12 +2,22 @@ import { db } from '@/db/database';
 import type { Patient, LabResult } from '@/db/database';
 import { formatDate, daysBetween } from '@/utils/dateUtils';
 import { useSupabaseBackend } from '@/config/backend';
-import { listPatients as listSupabasePatients } from '@/data/patients.repository';
-import { listActiveAntibiotics } from '@/data/medications.repository';
-import { listLabsByPatient } from '@/data/labs.repository';
-import { listProgressNotesCreatedBetween, listReminderNotesByAlertDate } from '@/data/notes.repository';
-import { listSchedulesByDate } from '@/data/schedules.repository';
-import type { Patient as DomainPatient } from '@/domain/patient';
+import {
+  listActivePatientBriefingRows,
+  type ActivePatientBriefingRow,
+} from '@/data/patients.repository';
+import { listActiveAntibioticsByPatientIds } from '@/data/medications.repository';
+import { listLabSummaryRowsByPatientIdsDateRange } from '@/data/labs.repository';
+import {
+  listProgressNotesByPatientIdsCreatedBetween,
+  listReminderNotesByPatientIdsAndAlertDate,
+} from '@/data/notes.repository';
+import { listSchedulesByPatientIdsAndDate } from '@/data/schedules.repository';
+
+type BriefingPatient = {
+  patientType: 'admitted' | 'consult';
+  status: string;
+};
 
 // --- Types ---
 
@@ -97,6 +107,18 @@ export async function fetchBriefingData(userId: string, userRole: string): Promi
   const activePatients = patients.filter(p => p.status === 'active');
   const patientMap = new Map(activePatients.map(p => [p.id, p]));
   const patientIds = activePatients.map(p => p.id);
+  const patientSummary = buildPatientSummary(activePatients);
+
+  if (patientIds.length === 0) {
+    return {
+      reminders: [],
+      progressNotes: [],
+      antibiotics: [],
+      recentLabs: [],
+      todaySchedules: [],
+      patientSummary,
+    };
+  }
 
   // 2. 병렬로 데이터 조회
   const [reminders, progressNotes, antibiotics, recentLabs, todaySchedules] = await Promise.all([
@@ -113,29 +135,37 @@ export async function fetchBriefingData(userId: string, userRole: string): Promi
     antibiotics,
     recentLabs,
     todaySchedules,
-    patientSummary: {
-      total: activePatients.length,
-      admitted: activePatients.filter(p => p.patientType === 'admitted').length,
-      consult: activePatients.filter(p => p.patientType === 'consult').length,
-    },
+    patientSummary,
   };
 }
 
 async function fetchSupabaseBriefingData(_userId: string, _userRole: string): Promise<BriefingData> {
-  const patients = await listSupabasePatients();
-  const activePatients = patients.filter((patient) => patient.status === 'active');
+  const activePatients = await listActivePatientBriefingRows();
   const patientMap = new Map(activePatients.map((patient) => [patient.id, patient]));
+  const activePatientIds = activePatients.map((patient) => patient.id);
+  const patientSummary = buildPatientSummary(activePatients);
+
+  if (activePatientIds.length === 0) {
+    return {
+      reminders: [],
+      progressNotes: [],
+      antibiotics: [],
+      recentLabs: [],
+      todaySchedules: [],
+      patientSummary,
+    };
+  }
 
   const today = new Date();
   const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
 
   const [reminderNotes, progressNotes, antibiotics, schedules, recentLabs] = await Promise.all([
-    listReminderNotesByAlertDate(today),
-    listProgressNotesCreatedBetween(todayStart, todayEnd),
-    listActiveAntibiotics(),
-    listSchedulesByDate(today),
-    fetchSupabaseRecentLabs(activePatients, patientMap),
+    listReminderNotesByPatientIdsAndAlertDate(activePatientIds, today),
+    listProgressNotesByPatientIdsCreatedBetween(activePatientIds, todayStart, todayEnd),
+    listActiveAntibioticsByPatientIds(activePatientIds),
+    listSchedulesByPatientIdsAndDate(activePatientIds, today),
+    fetchSupabaseRecentLabs(patientMap),
   ]);
 
   return {
@@ -204,76 +234,84 @@ async function fetchSupabaseBriefingData(_userId: string, _userRole: string): Pr
       })
       .filter((item): item is ScheduleItem => item !== null)
       .sort((a, b) => (a.scheduledTime || '').localeCompare(b.scheduledTime || '')),
-    patientSummary: {
-      total: activePatients.length,
-      admitted: activePatients.filter((patient) => patient.patientType === 'admitted').length,
-      consult: activePatients.filter((patient) => patient.patientType === 'consult').length,
-    },
+    patientSummary,
   };
 }
 
-async function fetchSupabaseRecentLabs(
-  patients: DomainPatient[],
-  patientMap: Map<string, DomainPatient>
-): Promise<LabSummaryItem[]> {
+async function fetchSupabaseRecentLabs(patientMap: Map<string, ActivePatientBriefingRow>): Promise<LabSummaryItem[]> {
   const today = new Date();
   const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
   const startOfYesterday = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate());
   const endOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
   const summaries: LabSummaryItem[] = [];
 
-  const labsByPatient = await Promise.all(
-    patients.map(async (patient) => ({
-      patientId: patient.id,
-      labs: await listLabsByPatient(patient.id),
-    }))
+  const recentLabs = await listLabSummaryRowsByPatientIdsDateRange(
+    Array.from(patientMap.keys()),
+    startOfYesterday,
+    endOfToday
   );
+  const grouped = new Map<string, { patientId: string; dateKey: string; labs: typeof recentLabs }>();
 
-  for (const { patientId, labs } of labsByPatient) {
+  for (const lab of recentLabs) {
+    const patient = patientMap.get(lab.patientId);
+    if (!patient) continue;
+    if (lab.category === 'Culture') continue;
+
+    const dateKey = formatDate(lab.testDate);
+    const groupKey = `${lab.patientId}|${dateKey}`;
+    const group = grouped.get(groupKey) ?? { patientId: lab.patientId, dateKey, labs: [] };
+    group.labs.push(lab);
+    grouped.set(groupKey, group);
+  }
+
+  for (const { patientId, dateKey, labs } of grouped.values()) {
     const patient = patientMap.get(patientId);
     if (!patient) continue;
 
-    const grouped = new Map<string, typeof labs>();
+    let abnormalCount = 0;
+    let totalItems = 0;
+    const abnormalItems: string[] = [];
+
     for (const lab of labs) {
-      if (lab.category === 'Culture') continue;
-      if (lab.testDate < startOfYesterday || lab.testDate > endOfToday) continue;
-      const dateKey = formatDate(lab.testDate);
-      const existing = grouped.get(dateKey) ?? [];
-      existing.push(lab);
-      grouped.set(dateKey, existing);
-    }
-
-    for (const [dateKey, group] of grouped) {
-      let abnormalCount = 0;
-      let totalItems = 0;
-      const abnormalItems: string[] = [];
-
-      for (const lab of group) {
-        for (const item of lab.items) {
-          totalItems++;
-          if (!item.isAbnormal) continue;
-          abnormalCount++;
-          const flag = item.hlFlag ? ` ${item.hlFlag}` : '';
-          abnormalItems.push(`${item.name}${flag}`);
-        }
+      for (const item of lab.items) {
+        totalItems++;
+        if (!item.isAbnormal) continue;
+        abnormalCount++;
+        const flag = item.hlFlag ? ` ${item.hlFlag}` : '';
+        abnormalItems.push(`${item.name}${flag}`);
       }
-
-      summaries.push({
-        patientId,
-        patientName: patient.name,
-        roomBed: patient.roomBed,
-        dateKey,
-        abnormalCount,
-        abnormalItems: abnormalItems.slice(0, 5),
-        totalItems,
-      });
     }
+
+    summaries.push({
+      patientId,
+      patientName: patient.name,
+      roomBed: patient.roomBed,
+      dateKey,
+      abnormalCount,
+      abnormalItems: abnormalItems.slice(0, 5),
+      totalItems,
+    });
   }
 
   return summaries.sort((a, b) => {
     if (a.dateKey !== b.dateKey) return b.dateKey.localeCompare(a.dateKey);
     return a.roomBed.localeCompare(b.roomBed);
   });
+}
+
+function buildPatientSummary(patients: Array<Pick<BriefingPatient, 'status' | 'patientType'>>) {
+  let total = 0;
+  let admitted = 0;
+  let consult = 0;
+
+  for (const patient of patients) {
+    if (patient.status !== 'active') continue;
+    total++;
+    if (patient.patientType === 'admitted') admitted++;
+    if (patient.patientType === 'consult') consult++;
+  }
+
+  return { total, admitted, consult };
 }
 
 async function fetchUserPatients(userId: string, userRole: string): Promise<Patient[]> {
@@ -358,24 +396,28 @@ async function fetchTodayProgressNotes(
 }
 
 async function fetchActiveAntibiotics(
-  _patientIds: string[],
+  patientIds: string[],
   patientMap: Map<string, Patient>,
 ): Promise<AntibioticItem[]> {
+  if (patientIds.length === 0) return [];
+
   const today = new Date();
   const antibiotics: AntibioticItem[] = [];
 
-  // 전체 투약에서 활성 항생제 필터링 + endDate 지난 건 자동 비활성화
+  // 활성 환자 ID로 먼저 좁혀 조회한 뒤 항생제/활성 상태 필터링.
   const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const allAntibiotics = await db.medications
-    .filter(med => med.category === 'antibiotic' && med.isActive)
-    .toArray();
+  const medicationRows = await db.medications.where('patientId').anyOf(patientIds).toArray();
+  const antibioticRows = medicationRows.filter(
+    (medication) => medication.category === 'antibiotic' && medication.isActive
+  );
 
   // Auto-deactivate past endDate
-  const expired = allAntibiotics.filter(m => m.endDate && new Date(m.endDate) < todayStart);
+  const expired = antibioticRows.filter(m => m.endDate && new Date(m.endDate) < todayStart);
   for (const m of expired) {
     await db.medications.update(m.id, { isActive: false, updatedAt: new Date() });
   }
-  const activeAntibiotics = allAntibiotics.filter(m => !expired.includes(m));
+  const expiredIds = new Set(expired.map((medication) => medication.id));
+  const activeAntibiotics = antibioticRows.filter(m => !expiredIds.has(m.id));
 
   for (const med of activeAntibiotics) {
     const patient = patientMap.get(med.patientId);
@@ -487,30 +529,30 @@ async function fetchTodaySchedules(
   const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
 
-  const items: ScheduleItem[] = [];
+  const scheduleRows = await db.schedules
+    .where('scheduledDate')
+    .between(todayStart, todayEnd, true, true)
+    .toArray();
 
-  for (const pid of patientIds) {
-    const schedules = await db.schedules
-      .where('[patientId+scheduledDate]')
-      .between([pid, todayStart], [pid, todayEnd], true, true)
-      .toArray();
+  const patientIdSet = new Set(patientIds);
+  const items = scheduleRows
+    .filter((schedule) => patientIdSet.has(schedule.patientId))
+    .map((schedule): ScheduleItem | null => {
+      const patient = patientMap.get(schedule.patientId);
+      if (!patient) return null;
 
-    const p = patientMap.get(pid);
-    if (!p) continue;
-
-    for (const s of schedules) {
-      items.push({
-        patientId: pid,
-        patientName: p.name,
-        roomBed: p.roomBed,
-        scheduleId: s.id,
-        title: s.title,
-        category: s.category,
-        scheduledTime: s.scheduledTime,
-        isCompleted: s.isCompleted,
-      });
-    }
-  }
+      return {
+        patientId: schedule.patientId,
+        patientName: patient.name,
+        roomBed: patient.roomBed,
+        scheduleId: schedule.id,
+        title: schedule.title,
+        category: schedule.category,
+        scheduledTime: schedule.scheduledTime,
+        isCompleted: schedule.isCompleted,
+      };
+    })
+    .filter((item): item is ScheduleItem => item !== null);
 
   // 시간순 정렬
   items.sort((a, b) => (a.scheduledTime || '').localeCompare(b.scheduledTime || ''));

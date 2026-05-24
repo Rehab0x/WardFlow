@@ -1,5 +1,11 @@
 import { db } from '@/db/database';
 import type { LabDisplayCategory } from '@/db/database';
+import { useSupabaseBackend } from '@/config/backend';
+import {
+  listLabCategories,
+  replaceOwnLabCategories,
+  resetOwnLabCategories,
+} from '@/data/labCategories.repository';
 
 /** Default categories matching the hospital's common lab panels */
 export const DEFAULT_LAB_CATEGORIES: LabDisplayCategory[] = [
@@ -61,6 +67,11 @@ export const DEFAULT_LAB_CATEGORIES: LabDisplayCategory[] = [
 export const labCategoryService = {
   /** Load categories from DB. If empty, return defaults (without seeding DB). */
   async getAll(): Promise<LabDisplayCategory[]> {
+    if (useSupabaseBackend) {
+      const stored = await listLabCategories();
+      return stored.length > 0 ? stored : DEFAULT_LAB_CATEGORIES;
+    }
+
     const stored = await db.labCategories.orderBy('order').toArray();
     if (stored.length > 0) return stored;
     return DEFAULT_LAB_CATEGORIES;
@@ -68,6 +79,11 @@ export const labCategoryService = {
 
   /** Save all categories (replaces existing). */
   async saveAll(categories: LabDisplayCategory[]): Promise<void> {
+    if (useSupabaseBackend) {
+      await replaceOwnLabCategories(categories);
+      return;
+    }
+
     await db.transaction('rw', db.labCategories, async () => {
       await db.labCategories.clear();
       for (let i = 0; i < categories.length; i++) {
@@ -85,6 +101,11 @@ export const labCategoryService = {
 
   /** Reset to defaults. */
   async resetToDefaults(): Promise<void> {
+    if (useSupabaseBackend) {
+      await resetOwnLabCategories();
+      return;
+    }
+
     await db.labCategories.clear();
   },
 

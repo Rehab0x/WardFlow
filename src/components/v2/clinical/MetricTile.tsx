@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import type { ClinicalTone } from './ClinicalPill';
 
@@ -12,12 +13,34 @@ interface MetricTileProps {
   label: string;
   value: number | string;
   tone?: ClinicalTone;
+  selected?: boolean;
   className?: string;
+  onClick?: () => void;
 }
 
-export function MetricTile({ label, value, tone = 'default', className }: MetricTileProps) {
+export const MetricTile = memo(function MetricTile({
+  label,
+  value,
+  tone = 'default',
+  selected,
+  className,
+  onClick,
+}: MetricTileProps) {
+  const Component = onClick ? 'button' : 'div';
+
   return (
-    <div className={cn('rounded-lg border border-zinc-200 bg-white px-3 py-2.5', className)}>
+    <Component
+      type={onClick ? 'button' : undefined}
+      aria-pressed={onClick ? selected : undefined}
+      aria-label={onClick ? `${label} ${value}` : undefined}
+      onClick={onClick}
+      className={cn(
+        'w-full rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-left',
+        onClick && 'transition-colors hover:bg-zinc-50',
+        selected && 'border-zinc-900 ring-1 ring-zinc-900',
+        className
+      )}
+    >
       <div className="text-[11px] text-zinc-400">{label}</div>
       <div
         className={cn(
@@ -27,7 +50,7 @@ export function MetricTile({ label, value, tone = 'default', className }: Metric
       >
         {value}
       </div>
-    </div>
+    </Component>
   );
-}
+});
 

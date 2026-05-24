@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { db } from '@/db/database';
 import { useSupabaseBackend } from '@/config/backend';
-import { listActiveAntibiotics } from '@/data/medications.repository';
-import { listReminderNotesByAlertDate } from '@/data/notes.repository';
+import { listActiveAntibioticsByPatientIds } from '@/data/medications.repository';
+import { listReminderNotesByPatientIdsAndAlertDate } from '@/data/notes.repository';
 
 export interface PatientFlags {
   hasAntibiotic: boolean;
@@ -12,39 +12,55 @@ export interface PatientFlags {
 
 let _refreshCounter = 0;
 let _listeners: Array<() => void> = [];
+let _refreshTimer: number | null = null;
 
 export function refreshSidebarFlags() {
-  _refreshCounter++;
-  _listeners.forEach((fn) => fn());
+  if (_listeners.length === 0) return;
+  if (_refreshTimer) return;
+  _refreshTimer = window.setTimeout(() => {
+    _refreshTimer = null;
+    _refreshCounter++;
+    _listeners.forEach((fn) => fn());
+  }, 100);
 }
 
 export function useSidebarFlags(patientIds: string[]) {
   const [flags, setFlags] = useState<Map<string, PatientFlags>>(new Map());
   const [, setRefresh] = useState(0);
+  const loadSeqRef = useRef(0);
+  const patientIdsKey = patientIds.join('\u001f');
+  const stablePatientIds = useMemo(() => patientIds, [patientIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const handler = () => setRefresh((count) => count + 1);
     _listeners.push(handler);
     return () => {
       _listeners = _listeners.filter((fn) => fn !== handler);
+      if (_listeners.length === 0 && _refreshTimer) {
+        window.clearTimeout(_refreshTimer);
+        _refreshTimer = null;
+      }
     };
   }, []);
 
   const load = useCallback(async () => {
-    if (patientIds.length === 0) {
+    const loadSeq = loadSeqRef.current + 1;
+    loadSeqRef.current = loadSeq;
+
+    if (stablePatientIds.length === 0) {
       setFlags(new Map());
       return;
     }
 
     const map = new Map<string, PatientFlags>();
-    for (const id of patientIds) {
+    for (const id of stablePatientIds) {
       map.set(id, { hasAntibiotic: false, hasReminder: false, hasAttention: false });
     }
 
     if (useSupabaseBackend) {
       const [activeAntibiotics, todayNotes] = await Promise.all([
-        listActiveAntibiotics(),
-        listReminderNotesByAlertDate(new Date()),
+        listActiveAntibioticsByPatientIds(stablePatientIds),
+        listReminderNotesByPatientIdsAndAlertDate(stablePatientIds, new Date()),
       ]);
 
       for (const med of activeAntibiotics) {
@@ -57,12 +73,17 @@ export function useSidebarFlags(patientIds: string[]) {
         if (flag) flag.hasReminder = true;
       }
 
-      setFlags(new Map(map));
+      if (loadSeqRef.current === loadSeq) {
+        setFlags(new Map(map));
+      }
       return;
     }
 
+    const patientIdSet = new Set(stablePatientIds);
     const allMeds = await db.medications
-      .filter((med) => med.category === 'antibiotic' && med.isActive)
+      .where('patientId')
+      .anyOf(stablePatientIds)
+      .filter((med) => patientIdSet.has(med.patientId) && med.category === 'antibiotic' && med.isActive)
       .toArray();
 
     for (const med of allMeds) {
@@ -75,21 +96,29 @@ export function useSidebarFlags(patientIds: string[]) {
     const endOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
 
     const todayNotes = await db.notes
-      .where('alertDate')
-      .between(startOfToday, endOfToday, true, true)
+      .where('patientId')
+      .anyOf(stablePatientIds)
+      .filter((note) => {
+        if (note.type !== 'reminder' || !note.alertDate) return false;
+        const alertDate = new Date(note.alertDate);
+        return alertDate >= startOfToday && alertDate <= endOfToday;
+      })
       .toArray();
 
     for (const note of todayNotes) {
-      if (note.type !== 'reminder') continue;
       const flag = map.get(note.patientId);
       if (flag) flag.hasReminder = true;
     }
 
-    setFlags(new Map(map));
-  }, [patientIds]);
+    if (loadSeqRef.current === loadSeq) {
+      setFlags(new Map(map));
+    }
+  }, [stablePatientIds]);
 
   useEffect(() => {
-    load();
+    void load().catch(() => {
+      setFlags(new Map());
+    });
   }, [load, _refreshCounter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return flags;

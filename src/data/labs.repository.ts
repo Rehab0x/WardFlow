@@ -1,6 +1,8 @@
 import { supabase } from '@/lib/supabase';
 import type { LabResult, LabResultCreateInput } from '@/domain/lab';
 import { fromLabResultRow, toLabItemInsert, toLabResultInsert } from '@/mappers/lab.mapper';
+import { toDateOnly } from '@/mappers/date';
+import { chunkArray } from './chunk';
 
 type LabResultWithItems = {
   lab_items?: Array<{
@@ -21,12 +23,73 @@ type LabResultWithItems = {
   }>;
 } & Parameters<typeof fromLabResultRow>[0];
 
+export type LabSummaryRow = {
+  id: string;
+  patientId: string;
+  testDate: Date;
+  category: string;
+  items: Array<{
+    name: string;
+    isAbnormal: boolean;
+    hlFlag?: 'H' | 'L';
+  }>;
+};
+
 const PURE_NUMERIC = /^-?\d+(\.\d+)?$/;
+
+const labResultColumns = `
+  id,
+  patient_id,
+  test_date,
+  category,
+  source,
+  raw_text,
+  created_by,
+  created_at,
+  updated_at,
+  deleted_at
+`;
+
+const labItemColumns = `
+  id,
+  lab_result_id,
+  code,
+  name,
+  value_text,
+  value_numeric,
+  unit,
+  reference_min,
+  reference_max,
+  is_abnormal,
+  hl_flag,
+  display_order,
+  created_at,
+  updated_at
+`;
+
+const labResultWithItemsColumns = `
+  ${labResultColumns},
+  lab_items (
+    ${labItemColumns}
+  )
+`;
+
+const labSummaryColumns = `
+  id,
+  patient_id,
+  test_date,
+  category,
+  lab_items (
+    name,
+    is_abnormal,
+    hl_flag
+  )
+`;
 
 export async function listLabsByPatient(patientId: string): Promise<LabResult[]> {
   const { data, error } = await supabase
     .from('lab_results')
-    .select('*, lab_items(*)')
+    .select(labResultWithItemsColumns)
     .eq('patient_id', patientId)
     .is('deleted_at', null)
     .order('test_date', { ascending: false });
@@ -38,31 +101,182 @@ export async function listLabsByPatient(patientId: string): Promise<LabResult[]>
   );
 }
 
+export async function listLabsByDateRange(startDate: Date, endDate: Date): Promise<LabResult[]> {
+  const { data, error } = await supabase
+    .from('lab_results')
+    .select(labResultWithItemsColumns)
+    .gte('test_date', toDateOnly(startDate))
+    .lte('test_date', toDateOnly(endDate))
+    .is('deleted_at', null)
+    .order('test_date', { ascending: false });
+
+  if (error) throw error;
+
+  return (data as LabResultWithItems[]).map((row) =>
+    fromLabResultRow(row, (row.lab_items ?? []) as Parameters<typeof fromLabResultRow>[1])
+  );
+}
+
+export async function listLabsByPatientIdsDateRange(
+  patientIds: string[],
+  startDate: Date,
+  endDate: Date
+): Promise<LabResult[]> {
+  if (patientIds.length === 0) return [];
+
+  const chunkQueries = chunkArray(patientIds, 100).map(async (chunk) => {
+    const { data, error } = await supabase
+      .from('lab_results')
+      .select(labResultWithItemsColumns)
+      .in('patient_id', chunk)
+      .gte('test_date', toDateOnly(startDate))
+      .lte('test_date', toDateOnly(endDate))
+      .is('deleted_at', null)
+      .order('test_date', { ascending: false });
+
+    if (error) throw error;
+
+    return (data as LabResultWithItems[]).map((row) =>
+      fromLabResultRow(row, (row.lab_items ?? []) as Parameters<typeof fromLabResultRow>[1])
+    );
+  });
+
+  const rows = (await Promise.all(chunkQueries)).flat();
+  return rows.sort((a, b) => b.testDate.getTime() - a.testDate.getTime());
+}
+
+export async function listLabSummaryRowsByPatientIdsDateRange(
+  patientIds: string[],
+  startDate: Date,
+  endDate: Date
+): Promise<LabSummaryRow[]> {
+  if (patientIds.length === 0) return [];
+
+  const chunkQueries = chunkArray(patientIds, 100).map(async (chunk) => {
+    const { data, error } = await supabase
+      .from('lab_results')
+      .select(labSummaryColumns)
+      .in('patient_id', chunk)
+      .gte('test_date', toDateOnly(startDate))
+      .lte('test_date', toDateOnly(endDate))
+      .is('deleted_at', null)
+      .order('test_date', { ascending: false });
+
+    if (error) throw error;
+
+    return data.map((row) => ({
+      id: row.id,
+      patientId: row.patient_id,
+      testDate: new Date(`${row.test_date}T00:00:00`),
+      category: row.category,
+      items: (row.lab_items ?? []).map((item) => ({
+        name: item.name,
+        isAbnormal: item.is_abnormal,
+        hlFlag: item.hl_flag ?? undefined,
+      })),
+    }));
+  });
+
+  const rows = (await Promise.all(chunkQueries)).flat();
+  return rows.sort((a, b) => b.testDate.getTime() - a.testDate.getTime());
+}
+
+export async function listLabsByPatientDateAndCategory(input: {
+  patientId: string;
+  testDate: Date;
+  category: string;
+}): Promise<LabResult[]> {
+  const { data, error } = await supabase
+    .from('lab_results')
+    .select(labResultWithItemsColumns)
+    .eq('patient_id', input.patientId)
+    .eq('test_date', toDateOnly(input.testDate))
+    .eq('category', input.category)
+    .is('deleted_at', null);
+
+  if (error) throw error;
+
+  return (data as LabResultWithItems[]).map((row) =>
+    fromLabResultRow(row, (row.lab_items ?? []) as Parameters<typeof fromLabResultRow>[1])
+  );
+}
+
+export async function listLabsByPatientAndDate(input: {
+  patientId: string;
+  testDate: Date;
+}): Promise<LabResult[]> {
+  const { data, error } = await supabase
+    .from('lab_results')
+    .select(labResultWithItemsColumns)
+    .eq('patient_id', input.patientId)
+    .eq('test_date', toDateOnly(input.testDate))
+    .is('deleted_at', null);
+
+  if (error) throw error;
+
+  return (data as LabResultWithItems[]).map((row) =>
+    fromLabResultRow(row, (row.lab_items ?? []) as Parameters<typeof fromLabResultRow>[1])
+  );
+}
+
+export async function getLabById(id: string): Promise<LabResult | null> {
+  const { data, error } = await supabase
+    .from('lab_results')
+    .select(labResultWithItemsColumns)
+    .eq('id', id)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  const row = data as LabResultWithItems;
+  return fromLabResultRow(row, (row.lab_items ?? []) as Parameters<typeof fromLabResultRow>[1]);
+}
+
+export async function listNonCultureLabHeadersByPatients(patientIds: string[]): Promise<LabResult[]> {
+  if (patientIds.length === 0) return [];
+
+  const chunkQueries = chunkArray(patientIds, 100).map(async (chunk) => {
+    const { data, error } = await supabase
+      .from('lab_results')
+      .select(labResultColumns)
+      .in('patient_id', chunk)
+      .neq('category', 'Culture')
+      .is('deleted_at', null)
+      .order('test_date', { ascending: false });
+
+    if (error) throw error;
+
+    return data.map((row) => fromLabResultRow(row, []));
+  });
+
+  const rows = (await Promise.all(chunkQueries)).flat();
+  return rows.sort((a, b) => b.testDate.getTime() - a.testDate.getTime());
+}
+
 export async function createLabResult(input: LabResultCreateInput): Promise<LabResult> {
   const { data: result, error: resultError } = await supabase
     .from('lab_results')
     .insert(toLabResultInsert(input))
-    .select('*')
+    .select(labResultColumns)
     .single();
 
   if (resultError) throw resultError;
 
   const itemInputs = input.items.map((item) => toLabItemInsert(result.id, item));
-  if (itemInputs.length > 0) {
-    const { error: itemError } = await supabase.from('lab_items').insert(itemInputs);
-    if (itemError) throw itemError;
+  if (itemInputs.length === 0) {
+    return fromLabResultRow(result, []);
   }
 
-  const { data: hydrated, error: hydrateError } = await supabase
-    .from('lab_results')
-    .select('*, lab_items(*)')
-    .eq('id', result.id)
-    .single();
+  const { data: items, error: itemError } = await supabase
+    .from('lab_items')
+    .insert(itemInputs)
+    .select(labItemColumns);
 
-  if (hydrateError) throw hydrateError;
+  if (itemError) throw itemError;
 
-  const row = hydrated as LabResultWithItems;
-  return fromLabResultRow(row, (row.lab_items ?? []) as Parameters<typeof fromLabResultRow>[1]);
+  return fromLabResultRow(result, items);
 }
 
 export async function softDeleteLabResult(id: string): Promise<void> {
@@ -79,14 +293,14 @@ export async function updateLabItemValue(input: {
   date: string;
   itemName: string;
   newValue: string | number;
-}): Promise<void> {
+}): Promise<LabResult | null> {
   const valueText = typeof input.newValue === 'string' ? input.newValue.trim() : String(input.newValue);
   const isNumeric = PURE_NUMERIC.test(valueText);
   const valueNumeric = isNumeric ? Number(valueText) : null;
 
   const { data, error } = await supabase
     .from('lab_results')
-    .select('*, lab_items(*)')
+    .select(labResultWithItemsColumns)
     .eq('patient_id', input.patientId)
     .eq('test_date', input.date)
     .is('deleted_at', null);
@@ -110,13 +324,15 @@ export async function updateLabItemValue(input: {
   }
 
   if (targetItem) {
+    if (!targetResult) return null;
+
     if (valueText === '') {
       const { error: deleteError } = await supabase
         .from('lab_items')
         .delete()
         .eq('id', targetItem.id);
       if (deleteError) throw deleteError;
-      return;
+      return getLabById(targetResult.id);
     }
 
     const referenceMin = targetItem.reference_min;
@@ -144,10 +360,10 @@ export async function updateLabItemValue(input: {
       .eq('id', targetItem.id);
 
     if (updateError) throw updateError;
-    return;
+    return getLabById(targetResult.id);
   }
 
-  if (valueText === '') return;
+  if (valueText === '') return null;
 
   if (targetResult) {
     const displayOrder = targetResult.lab_items?.length ?? 0;
@@ -162,7 +378,7 @@ export async function updateLabItemValue(input: {
     });
 
     if (insertItemError) throw insertItemError;
-    return;
+    return getLabById(targetResult.id);
   }
 
   const {
@@ -172,7 +388,7 @@ export async function updateLabItemValue(input: {
     error: userError,
   } = await supabase.auth.getUser();
   if (userError) throw userError;
-  if (!user) throw new Error('User not authenticated.');
+  if (!user) throw new Error('로그인이 필요합니다.');
 
   const { data: newResult, error: resultError } = await supabase
     .from('lab_results')
@@ -183,7 +399,7 @@ export async function updateLabItemValue(input: {
       source: 'manual',
       created_by: user.id,
     })
-    .select('*')
+    .select(labResultColumns)
     .single();
 
   if (resultError) throw resultError;
@@ -199,4 +415,5 @@ export async function updateLabItemValue(input: {
   });
 
   if (itemError) throw itemError;
+  return getLabById(newResult.id);
 }

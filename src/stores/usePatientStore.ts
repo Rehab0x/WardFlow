@@ -6,6 +6,7 @@ import { useSupabaseBackend } from '@/config/backend';
 import {
   archivePatient as archiveSupabasePatient,
   createPatient as createSupabasePatient,
+  getPatient as getSupabasePatient,
   listPatients as listSupabasePatients,
   updatePatient as updateSupabasePatient,
 } from '@/data/patients.repository';
@@ -14,14 +15,21 @@ import {
   toDomainPatientCreateInput,
   toDomainPatientUpdateInput,
 } from '@/mappers/legacyPatient.mapper';
+import { formatUserFacingError } from '@/lib/errorMessages';
+import { mergeEntityListByUpdateStamp, removeById, replaceById, upsertById } from './storeUtils';
+
+let patientListFetchPromise: Promise<void> | null = null;
+const patientReadPromises = new Map<string, Promise<Patient | undefined>>();
 
 interface PatientStore {
   patients: Patient[];
+  patientById: Map<string, Patient>;
   isLoading: boolean;
   error: string | null;
 
   // Actions
   fetchPatients: () => Promise<void>;
+  fetchPatientById: (id: string) => Promise<Patient | undefined>;
   addPatient: (patient: Omit<Patient, 'id' | 'createdAt' | 'updatedAt'>) => Promise<string>;
   updatePatient: (id: string, updates: Partial<Patient>) => Promise<void>;
   deletePatient: (id: string) => Promise<void>;
@@ -31,62 +39,132 @@ interface PatientStore {
 
 export const usePatientStore = create<PatientStore>((set, get) => ({
   patients: [],
+  patientById: new Map(),
   isLoading: false,
   error: null,
 
   fetchPatients: async () => {
-    set({ isLoading: true, error: null });
+    if (patientListFetchPromise) return patientListFetchPromise;
+
+    const fetchPromise = (async () => {
+      set({ isLoading: true, error: null });
+      try {
+        if (useSupabaseBackend) {
+          const patients = (await listSupabasePatients()).map(fromDomainPatient);
+          set((state) => ({
+            ...buildPatientCollectionState(
+              state,
+              mergeEntityListByUpdateStamp(state.patients, patients)
+            ),
+            isLoading: false,
+          }));
+          return;
+        }
+
+        const { currentUser } = useAuthStore.getState();
+
+        let patients: Patient[];
+
+        if (!currentUser) {
+          // No user logged in - return empty
+          set({ patients: [], patientById: new Map(), isLoading: false });
+          return;
+        }
+
+        if (currentUser.role === 'doctor') {
+          // Doctor: Only own patients (createdBy) - both active and discharged
+          patients = await db.patients
+            .where('createdBy')
+            .equals(currentUser.id)
+            .toArray();
+
+          // Also get shared patients
+          const sharedPatients = await db.patients
+            .where('sharedWith')
+            .equals(currentUser.id)
+            .toArray();
+
+          // Combine and deduplicate
+          const patientMap = new Map<string, Patient>();
+          [...patients, ...sharedPatients].forEach((p) => patientMap.set(p.id, p));
+          patients = Array.from(patientMap.values());
+        } else if (currentUser.role === 'therapist') {
+          // Therapist: Only shared patients
+          patients = await db.patients
+            .where('sharedWith')
+            .equals(currentUser.id)
+            .toArray();
+        } else {
+          // Admin & Nurse: All patients (active and discharged)
+          patients = await db.patients.toArray();
+        }
+
+        set((state) => ({
+          ...buildPatientCollectionState(
+            state,
+            mergeEntityListByUpdateStamp(state.patients, patients)
+          ),
+          isLoading: false,
+        }));
+      } catch (error) {
+        set({
+          error: formatUserFacingError(error, '환자 목록을 불러오지 못했습니다.'),
+          isLoading: false,
+        });
+      }
+    })();
+
+    patientListFetchPromise = fetchPromise;
     try {
-      if (useSupabaseBackend) {
-        const patients = await listSupabasePatients();
-        set({ patients: patients.map(fromDomainPatient), isLoading: false });
-        return;
+      await fetchPromise;
+    } finally {
+      if (patientListFetchPromise === fetchPromise) patientListFetchPromise = null;
+    }
+  },
+
+  fetchPatientById: async (id: string) => {
+    const existingRead = patientReadPromises.get(id);
+    if (existingRead) return existingRead;
+
+    const readPromise = (async () => {
+      try {
+        if (useSupabaseBackend) {
+          const patient = await getSupabasePatient(id);
+          if (!patient) {
+            set((state) => buildPatientCollectionState(state, removeById(state.patients, id)));
+            return undefined;
+          }
+
+          const legacyPatient = fromDomainPatient(patient);
+          set((state) =>
+            buildPatientCollectionState(state, upsertById(state.patients, legacyPatient, 'append'))
+          );
+          return legacyPatient;
+        }
+
+        const patient = await db.patients.get(id);
+        if (!patient) {
+          set((state) => buildPatientCollectionState(state, removeById(state.patients, id)));
+          return undefined;
+        }
+
+        set((state) =>
+          buildPatientCollectionState(state, upsertById(state.patients, patient, 'append'))
+        );
+        return patient;
+      } catch (error) {
+        set({
+          error: formatUserFacingError(error, '환자 정보를 불러오지 못했습니다.'),
+        });
+        throw error;
       }
+    })();
 
-      const { currentUser } = useAuthStore.getState();
-
-      let patients: Patient[];
-
-      if (!currentUser) {
-        // No user logged in - return empty
-        set({ patients: [], isLoading: false });
-        return;
-      }
-
-      if (currentUser.role === 'doctor') {
-        // Doctor: Only own patients (createdBy) - both active and discharged
-        patients = await db.patients
-          .where('createdBy')
-          .equals(currentUser.id)
-          .toArray();
-
-        // Also get shared patients
-        const sharedPatients = await db.patients
-          .where('sharedWith')
-          .equals(currentUser.id)
-          .toArray();
-
-        // Combine and deduplicate
-        const patientMap = new Map<string, Patient>();
-        [...patients, ...sharedPatients].forEach((p) => patientMap.set(p.id, p));
-        patients = Array.from(patientMap.values());
-      } else if (currentUser.role === 'therapist') {
-        // Therapist: Only shared patients
-        patients = await db.patients
-          .where('sharedWith')
-          .equals(currentUser.id)
-          .toArray();
-      } else {
-        // Admin & Nurse: All patients (active and discharged)
-        patients = await db.patients.toArray();
-      }
-
-      set({ patients, isLoading: false });
-    } catch (error) {
-      set({
-        error: error instanceof Error ? error.message : 'Failed to fetch patients',
-        isLoading: false,
-      });
+    patientReadPromises.set(id, readPromise);
+    try {
+      return await readPromise;
+    } finally {
+      if (patientReadPromises.get(id) === readPromise) patientReadPromises.delete(id);
     }
   },
 
@@ -95,7 +173,7 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
       const { currentUser } = useAuthStore.getState();
 
       if (!currentUser) {
-        throw new Error('User not authenticated');
+        throw new Error('로그인이 필요합니다.');
       }
 
       if (useSupabaseBackend) {
@@ -107,9 +185,9 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
           })
         );
         const legacyPatient = fromDomainPatient(patient);
-        set((state) => ({
-          patients: [...state.patients, legacyPatient],
-        }));
+        set((state) =>
+          buildPatientCollectionState(state, upsertById(state.patients, legacyPatient, 'append'))
+        );
         return legacyPatient.id;
       }
 
@@ -128,14 +206,17 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
       await db.patients.add(patient);
 
       // Update local state
-      set((state) => ({
-        patients: [...state.patients, patient],
-      }));
+      set((state) =>
+        buildPatientCollectionState(state, upsertById(state.patients, patient, 'append'))
+      );
 
       return id;
     } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error('Failed to add patient:', error);
+      }
       set({
-        error: error instanceof Error ? error.message : 'Failed to add patient',
+        error: formatUserFacingError(error, '환자를 추가하지 못했습니다.'),
       });
       throw error;
     }
@@ -146,9 +227,9 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
       if (useSupabaseBackend) {
         const patient = await updateSupabasePatient(id, toDomainPatientUpdateInput(updates));
         const legacyPatient = fromDomainPatient(patient);
-        set((state) => ({
-          patients: state.patients.map((p) => (p.id === id ? legacyPatient : p)),
-        }));
+        set((state) =>
+          buildPatientCollectionState(state, replaceById(state.patients, id, legacyPatient))
+        );
         return;
       }
 
@@ -160,12 +241,17 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
       await db.patients.update(id, updatedData);
 
       // Update local state
-      set((state) => ({
-        patients: state.patients.map((p) => (p.id === id ? { ...p, ...updatedData } : p)),
-      }));
+      set((state) => {
+        const currentPatient = state.patientById.get(id);
+        if (!currentPatient) return state;
+        return buildPatientCollectionState(
+          state,
+          replaceById(state.patients, id, { ...currentPatient, ...updatedData })
+        );
+      });
     } catch (error) {
       set({
-        error: error instanceof Error ? error.message : 'Failed to update patient',
+        error: formatUserFacingError(error, '환자 정보를 수정하지 못했습니다.'),
       });
       throw error;
     }
@@ -175,28 +261,24 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
     try {
       if (useSupabaseBackend) {
         await archiveSupabasePatient(id);
-        set((state) => ({
-          patients: state.patients.filter((p) => p.id !== id),
-        }));
+        set((state) => buildPatientCollectionState(state, removeById(state.patients, id)));
         return;
       }
 
       await db.patients.delete(id);
 
       // Update local state
-      set((state) => ({
-        patients: state.patients.filter((p) => p.id !== id),
-      }));
+      set((state) => buildPatientCollectionState(state, removeById(state.patients, id)));
     } catch (error) {
       set({
-        error: error instanceof Error ? error.message : 'Failed to delete patient',
+        error: formatUserFacingError(error, '환자를 삭제하지 못했습니다.'),
       });
       throw error;
     }
   },
 
   getPatientById: (id) => {
-    return get().patients.find((p) => p.id === id);
+    return get().patientById.get(id);
   },
 
   dischargePatient: async (id, dischargeDate) => {
@@ -207,9 +289,9 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
           dischargeDate,
         });
         const legacyPatient = fromDomainPatient(patient);
-        set((state) => ({
-          patients: state.patients.map((p) => (p.id === id ? legacyPatient : p)),
-        }));
+        set((state) =>
+          buildPatientCollectionState(state, replaceById(state.patients, id, legacyPatient))
+        );
         return;
       }
 
@@ -220,16 +302,32 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
       });
 
       // Update local state
-      set((state) => ({
-        patients: state.patients.map((p) =>
-          p.id === id ? { ...p, status: 'discharged' as const, dischargeDate } : p
-        ),
-      }));
+      set((state) => {
+        const currentPatient = state.patientById.get(id);
+        if (!currentPatient) return state;
+        return buildPatientCollectionState(
+          state,
+          replaceById(state.patients, id, {
+            ...currentPatient,
+            status: 'discharged' as const,
+            dischargeDate,
+            updatedAt: new Date(),
+          })
+        );
+      });
     } catch (error) {
       set({
-        error: error instanceof Error ? error.message : 'Failed to discharge patient',
+        error: formatUserFacingError(error, '환자 퇴원 처리를 하지 못했습니다.'),
       });
       throw error;
     }
   },
 }));
+
+function buildPatientCollectionState(
+  state: Pick<PatientStore, 'patients' | 'patientById'>,
+  patients: Patient[]
+) {
+  if (patients === state.patients) return { patients, patientById: state.patientById };
+  return { patients, patientById: new Map(patients.map((patient) => [patient.id, patient])) };
+}

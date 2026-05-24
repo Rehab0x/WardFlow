@@ -8,6 +8,8 @@ import { Card } from '@/components/ui/card';
 import { CloudDownload, Loader2, Database, Eye, EyeOff, Cloud, FolderOpen } from 'lucide-react';
 import { db } from '@/db/database';
 import { useToast } from '@/hooks/use-toast';
+import { useSupabaseBackend } from '@/config/backend';
+import { listActivePatients } from '@/data/patients.repository';
 
 type ImportMode = 'storage' | 'local';
 
@@ -30,10 +32,15 @@ const LabImportPage = () => {
   const [mode, setMode] = useState<ImportMode>('storage');
 
   useEffect(() => {
-    db.patients.count().then((c) => {
+    const loadPatientCount = async () => {
+      const c = useSupabaseBackend
+        ? (await listActivePatients()).length
+        : await db.patients.where('status').equals('active').count();
       setPatientCount(c);
       if (c > 0) setSetupDone(true);
-    });
+    };
+
+    loadPatientCount();
   }, []);
 
   const saveSettings = () => {
@@ -50,7 +57,9 @@ const LabImportPage = () => {
     setSyncing(true);
     try {
       await downloadBackupFromServer(serverPw, serverKey.trim());
-      const count = await db.patients.count();
+      const count = useSupabaseBackend
+        ? (await listActivePatients()).length
+        : await db.patients.where('status').equals('active').count();
       setPatientCount(count);
       setSetupDone(true);
       toast({ title: '데이터 가져오기 완료', description: `환자 ${count}명 로드됨` });

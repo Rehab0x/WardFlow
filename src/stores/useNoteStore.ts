@@ -12,6 +12,8 @@ import {
   updateNote as updateSupabaseNote,
 } from '@/data/notes.repository';
 import { fromDomainNote } from '@/mappers/legacyClinical.mapper';
+import { formatUserFacingError } from '@/lib/errorMessages';
+import { mergeEntityListByUpdateStamp, removeById, replaceById, upsertById } from './storeUtils';
 
 // Extended type for adding/updating notes (accepts string dates from forms)
 type NoteInput = Omit<Note, 'id' | 'createdAt' | 'updatedAt' | 'alertDate'> & {
@@ -45,8 +47,11 @@ export const useNoteStore = create<NoteStore>((set) => ({
     set({ isLoading: true, error: null });
     try {
       if (useSupabaseBackend) {
-        const notes = await listSupabaseNotesByPatient(patientId);
-        set({ notes: notes.map(fromDomainNote), isLoading: false });
+        const notes = (await listSupabaseNotesByPatient(patientId)).map(fromDomainNote);
+        set((state) => ({
+          notes: mergeEntityListByUpdateStamp(state.notes, notes),
+          isLoading: false,
+        }));
         return;
       }
 
@@ -56,10 +61,13 @@ export const useNoteStore = create<NoteStore>((set) => ({
         .reverse() // Most recent first
         .sortBy('createdAt');
 
-      set({ notes, isLoading: false });
+      set((state) => ({
+        notes: mergeEntityListByUpdateStamp(state.notes, notes),
+        isLoading: false,
+      }));
     } catch (error) {
       set({
-        error: error instanceof Error ? error.message : 'Failed to fetch notes',
+        error: formatUserFacingError(error, '메모를 불러오지 못했습니다.'),
         isLoading: false,
       });
     }
@@ -69,7 +77,7 @@ export const useNoteStore = create<NoteStore>((set) => ({
     try {
       if (useSupabaseBackend) {
         const { currentUser } = useAuthStore.getState();
-        if (!currentUser) throw new Error('User not authenticated');
+        if (!currentUser) throw new Error('로그인이 필요합니다.');
 
         const now = new Date();
         const createdAt = noteData.date ? parseLocalDate(noteData.date) : now;
@@ -82,7 +90,7 @@ export const useNoteStore = create<NoteStore>((set) => ({
           createdBy: currentUser.id,
         });
         const legacyNote = { ...fromDomainNote(note), createdAt };
-        set((state) => ({ notes: [legacyNote, ...state.notes] }));
+        set((state) => ({ notes: upsertById(state.notes, legacyNote) }));
         refreshSidebarFlags();
         return legacyNote.id;
       }
@@ -114,14 +122,14 @@ export const useNoteStore = create<NoteStore>((set) => ({
 
       // Update local state
       set((state) => ({
-        notes: [note, ...state.notes], // Add to beginning (most recent first)
+        notes: upsertById(state.notes, note), // Add to beginning (most recent first)
       }));
       refreshSidebarFlags();
 
       return id;
     } catch (error) {
       set({
-        error: error instanceof Error ? error.message : 'Failed to add note',
+        error: formatUserFacingError(error, '메모를 추가하지 못했습니다.'),
       });
       throw error;
     }
@@ -137,7 +145,7 @@ export const useNoteStore = create<NoteStore>((set) => ({
         });
         const legacyNote = fromDomainNote(note);
         set((state) => ({
-          notes: state.notes.map((n) => (n.id === id ? legacyNote : n)),
+          notes: replaceById(state.notes, id, legacyNote),
         }));
         refreshSidebarFlags();
         return;
@@ -170,7 +178,7 @@ export const useNoteStore = create<NoteStore>((set) => ({
       refreshSidebarFlags();
     } catch (error) {
       set({
-        error: error instanceof Error ? error.message : 'Failed to update note',
+        error: formatUserFacingError(error, '메모를 수정하지 못했습니다.'),
       });
       throw error;
     }
@@ -181,7 +189,7 @@ export const useNoteStore = create<NoteStore>((set) => ({
       if (useSupabaseBackend) {
         await softDeleteSupabaseNote(id);
         set((state) => ({
-          notes: state.notes.filter((n) => n.id !== id),
+          notes: removeById(state.notes, id),
         }));
         refreshSidebarFlags();
         return;
@@ -191,12 +199,12 @@ export const useNoteStore = create<NoteStore>((set) => ({
 
       // Update local state
       set((state) => ({
-        notes: state.notes.filter((n) => n.id !== id),
+        notes: removeById(state.notes, id),
       }));
       refreshSidebarFlags();
     } catch (error) {
       set({
-        error: error instanceof Error ? error.message : 'Failed to delete note',
+        error: formatUserFacingError(error, '메모를 삭제하지 못했습니다.'),
       });
       throw error;
     }

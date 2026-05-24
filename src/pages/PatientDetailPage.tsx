@@ -32,6 +32,10 @@ import { cn } from '@/utils/cn';
 import { db } from '@/db/database';
 import type { Patient } from '@/db/database';
 import { formatDate } from '@/utils/dateUtils';
+import { useSupabaseBackend } from '@/config/backend';
+import { getPatient as getSupabasePatient } from '@/data/patients.repository';
+import { listLabsByPatientAndDate } from '@/data/labs.repository';
+import { fromDomainPatient } from '@/mappers/legacyPatient.mapper';
 
 const PatientDetailPage = () => {
   const { patientId } = useParams<{ patientId: string }>();
@@ -81,6 +85,13 @@ const PatientDetailPage = () => {
       return;
     }
     // Store에 없으면 DB 직접 조회
+    if (useSupabaseBackend) {
+      getSupabasePatient(patientId).then((p) => {
+        setDirectPatient(p ? fromDomainPatient(p) : null);
+      });
+      return;
+    }
+
     db.patients.get(patientId).then((p) => {
       if (p) setDirectPatient(p);
     });
@@ -420,6 +431,16 @@ const PatientDetailPage = () => {
     if (!patientId) return;
     if (!window.confirm(`${dateStr} 날짜의 모든 Lab 결과를 삭제하시겠습니까?`)) return;
     try {
+      if (useSupabaseBackend) {
+        const testDate = parseLocalDate(dateStr);
+        const patientLabs = await listLabsByPatientAndDate({ patientId, testDate });
+        for (const lab of patientLabs) {
+          await deleteLabResult(lab.id);
+        }
+        await fetchLabsByPatient(patientId);
+        return;
+      }
+
       const patientLabs = await db.labResults
         .where('patientId')
         .equals(patientId)

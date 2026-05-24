@@ -10,6 +10,20 @@ begin
 end;
 $$;
 
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  username text unique,
+  display_name text not null,
+  department text,
+  role text not null default 'doctor' check (role in ('admin', 'doctor', 'nurse', 'therapist')),
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  modules text[] not null default array['wardflow'],
+  approved_by uuid references public.profiles(id),
+  approved_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create or replace function public.is_approved_profile(user_id uuid)
 returns boolean
 language sql
@@ -41,21 +55,7 @@ as $$
   );
 $$;
 
-create table public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  username text unique,
-  display_name text not null,
-  department text,
-  role text not null default 'doctor' check (role in ('admin', 'doctor', 'nurse', 'therapist')),
-  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
-  modules text[] not null default array['wardflow'],
-  approved_by uuid references public.profiles(id),
-  approved_at timestamptz,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table public.patients (
+create table if not exists public.patients (
   id uuid primary key default gen_random_uuid(),
   registration_number text not null,
   name text not null,
@@ -85,7 +85,7 @@ create table public.patients (
   deleted_at timestamptz
 );
 
-create table public.patient_shares (
+create table if not exists public.patient_shares (
   patient_id uuid not null references public.patients(id) on delete cascade,
   user_id uuid not null references public.profiles(id) on delete cascade,
   access_level text not null check (access_level in ('read', 'write')),
@@ -93,7 +93,7 @@ create table public.patient_shares (
   primary key (patient_id, user_id)
 );
 
-create table public.notes (
+create table if not exists public.notes (
   id uuid primary key default gen_random_uuid(),
   patient_id uuid not null references public.patients(id) on delete cascade,
   content text not null,
@@ -105,7 +105,7 @@ create table public.notes (
   deleted_at timestamptz
 );
 
-create table public.schedules (
+create table if not exists public.schedules (
   id uuid primary key default gen_random_uuid(),
   patient_id uuid not null references public.patients(id) on delete cascade,
   title text not null,
@@ -120,7 +120,7 @@ create table public.schedules (
   deleted_at timestamptz
 );
 
-create table public.medications (
+create table if not exists public.medications (
   id uuid primary key default gen_random_uuid(),
   patient_id uuid not null references public.patients(id) on delete cascade,
   category text not null check (category in ('hospital', 'personal', 'antibiotic')),
@@ -142,7 +142,7 @@ create table public.medications (
   deleted_at timestamptz
 );
 
-create table public.lab_results (
+create table if not exists public.lab_results (
   id uuid primary key default gen_random_uuid(),
   patient_id uuid not null references public.patients(id) on delete cascade,
   test_date date not null,
@@ -155,7 +155,7 @@ create table public.lab_results (
   deleted_at timestamptz
 );
 
-create table public.lab_items (
+create table if not exists public.lab_items (
   id uuid primary key default gen_random_uuid(),
   lab_result_id uuid not null references public.lab_results(id) on delete cascade,
   code text,
@@ -172,7 +172,7 @@ create table public.lab_items (
   updated_at timestamptz not null default now()
 );
 
-create table public.templates (
+create table if not exists public.templates (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid references public.profiles(id) on delete cascade,
   field text not null,
@@ -183,7 +183,7 @@ create table public.templates (
   updated_at timestamptz not null default now()
 );
 
-create table public.lab_categories (
+create table if not exists public.lab_categories (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid references public.profiles(id) on delete cascade,
   name text not null,
@@ -193,7 +193,7 @@ create table public.lab_categories (
   updated_at timestamptz not null default now()
 );
 
-create table public.user_settings (
+create table if not exists public.user_settings (
   user_id uuid not null references public.profiles(id) on delete cascade,
   key text not null,
   value jsonb not null,
@@ -201,7 +201,7 @@ create table public.user_settings (
   primary key (user_id, key)
 );
 
-create table public.backup_snapshots (
+create table if not exists public.backup_snapshots (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references public.profiles(id) on delete cascade,
   kind text not null check (kind in ('manual', 'automatic', 'migration')),
@@ -213,13 +213,13 @@ create table public.backup_snapshots (
 );
 
 -- Legacy compatibility for the current backupService. v2 should move to backup_snapshots.
-create table public.backups (
+create table if not exists public.backups (
   user_key text primary key,
   encrypted_data text not null,
   updated_at timestamptz not null default now()
 );
 
-create table public.audit_logs (
+create table if not exists public.audit_logs (
   id uuid primary key default gen_random_uuid(),
   actor_id uuid references public.profiles(id),
   entity_type text not null,
@@ -267,6 +267,7 @@ begin
 end;
 $$;
 
+drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
@@ -322,50 +323,60 @@ as $$
   );
 $$;
 
-create index patients_status_room_bed_idx on public.patients (status, room_bed);
-create index patients_created_by_status_room_bed_idx on public.patients (created_by, status, room_bed);
-create index patients_registration_number_idx on public.patients (registration_number);
-create index patients_name_idx on public.patients (name);
-create index patients_tags_idx on public.patients using gin (tags);
+create index if not exists patients_status_room_bed_idx on public.patients (status, room_bed);
+create index if not exists patients_created_by_status_room_bed_idx on public.patients (created_by, status, room_bed);
+create index if not exists patients_registration_number_idx on public.patients (registration_number);
+create index if not exists patients_name_idx on public.patients (name);
+create index if not exists patients_tags_idx on public.patients using gin (tags);
 
-create index notes_patient_created_at_idx on public.notes (patient_id, created_at desc);
-create index notes_alert_date_idx on public.notes (alert_date);
+create index if not exists notes_patient_created_at_idx on public.notes (patient_id, created_at desc);
+create index if not exists notes_alert_date_idx on public.notes (alert_date);
 
-create index schedules_patient_date_idx on public.schedules (patient_id, scheduled_date);
-create index schedules_date_completed_idx on public.schedules (scheduled_date, is_completed);
+create index if not exists schedules_patient_date_idx on public.schedules (patient_id, scheduled_date);
+create index if not exists schedules_date_completed_idx on public.schedules (scheduled_date, is_completed);
 
-create index medications_patient_active_idx on public.medications (patient_id, is_active);
-create index medications_category_active_idx on public.medications (category, is_active);
-create index medications_patient_start_date_idx on public.medications (patient_id, start_date desc);
+create index if not exists medications_patient_active_idx on public.medications (patient_id, is_active);
+create index if not exists medications_category_active_idx on public.medications (category, is_active);
+create index if not exists medications_patient_start_date_idx on public.medications (patient_id, start_date desc);
 
-create index lab_results_patient_test_date_idx on public.lab_results (patient_id, test_date desc);
-create index lab_results_patient_category_idx on public.lab_results (patient_id, category);
-create unique index lab_results_patient_test_date_category_active_uidx
+create index if not exists lab_results_patient_test_date_idx on public.lab_results (patient_id, test_date desc);
+create index if not exists lab_results_patient_category_idx on public.lab_results (patient_id, category);
+create unique index if not exists lab_results_patient_test_date_category_active_uidx
   on public.lab_results (patient_id, test_date, category)
   where deleted_at is null;
 
-create index lab_items_result_order_idx on public.lab_items (lab_result_id, display_order);
-create index lab_items_name_idx on public.lab_items (name);
-create index lab_items_code_idx on public.lab_items (code);
+create index if not exists lab_items_result_order_idx on public.lab_items (lab_result_id, display_order);
+create index if not exists lab_items_name_idx on public.lab_items (name);
+create index if not exists lab_items_code_idx on public.lab_items (code);
 
+drop trigger if exists profiles_set_updated_at on public.profiles;
 create trigger profiles_set_updated_at before update on public.profiles
   for each row execute function public.set_updated_at();
+drop trigger if exists patients_set_updated_at on public.patients;
 create trigger patients_set_updated_at before update on public.patients
   for each row execute function public.set_updated_at();
+drop trigger if exists notes_set_updated_at on public.notes;
 create trigger notes_set_updated_at before update on public.notes
   for each row execute function public.set_updated_at();
+drop trigger if exists schedules_set_updated_at on public.schedules;
 create trigger schedules_set_updated_at before update on public.schedules
   for each row execute function public.set_updated_at();
+drop trigger if exists medications_set_updated_at on public.medications;
 create trigger medications_set_updated_at before update on public.medications
   for each row execute function public.set_updated_at();
+drop trigger if exists lab_results_set_updated_at on public.lab_results;
 create trigger lab_results_set_updated_at before update on public.lab_results
   for each row execute function public.set_updated_at();
+drop trigger if exists lab_items_set_updated_at on public.lab_items;
 create trigger lab_items_set_updated_at before update on public.lab_items
   for each row execute function public.set_updated_at();
+drop trigger if exists templates_set_updated_at on public.templates;
 create trigger templates_set_updated_at before update on public.templates
   for each row execute function public.set_updated_at();
+drop trigger if exists lab_categories_set_updated_at on public.lab_categories;
 create trigger lab_categories_set_updated_at before update on public.lab_categories
   for each row execute function public.set_updated_at();
+drop trigger if exists user_settings_set_updated_at on public.user_settings;
 create trigger user_settings_set_updated_at before update on public.user_settings
   for each row execute function public.set_updated_at();
 
@@ -384,27 +395,32 @@ alter table public.backup_snapshots enable row level security;
 alter table public.backups enable row level security;
 alter table public.audit_logs enable row level security;
 
+drop policy if exists "profiles read approved users" on public.profiles;
 create policy "profiles read approved users"
 on public.profiles for select
 to authenticated
 using (public.is_approved_profile(auth.uid()) or id = auth.uid());
 
+drop policy if exists "profiles insert self" on public.profiles;
 create policy "profiles insert self"
 on public.profiles for insert
 to authenticated
 with check (id = auth.uid());
 
+drop policy if exists "profiles update admin only" on public.profiles;
 create policy "profiles update admin only"
 on public.profiles for update
 to authenticated
 using (public.is_admin(auth.uid()))
 with check (public.is_admin(auth.uid()));
 
+drop policy if exists "patients read accessible" on public.patients;
 create policy "patients read accessible"
 on public.patients for select
 to authenticated
 using (public.can_read_patient(id, auth.uid()));
 
+drop policy if exists "patients insert own" on public.patients;
 create policy "patients insert own"
 on public.patients for insert
 to authenticated
@@ -413,12 +429,14 @@ with check (
   and public.is_approved_profile(auth.uid())
 );
 
+drop policy if exists "patients update accessible writers" on public.patients;
 create policy "patients update accessible writers"
 on public.patients for update
 to authenticated
 using (public.can_write_patient(id, auth.uid()))
 with check (public.can_write_patient(id, auth.uid()));
 
+drop policy if exists "patient shares read related" on public.patient_shares;
 create policy "patient shares read related"
 on public.patient_shares for select
 to authenticated
@@ -428,6 +446,7 @@ using (
   or public.can_write_patient(patient_id, auth.uid())
 );
 
+drop policy if exists "patient shares manage owner or admin" on public.patient_shares;
 create policy "patient shares manage owner or admin"
 on public.patient_shares for all
 to authenticated
@@ -440,6 +459,7 @@ with check (
   or public.can_write_patient(patient_id, auth.uid())
 );
 
+drop policy if exists "notes read accessible patient" on public.notes;
 create policy "notes read accessible patient"
 on public.notes for select
 to authenticated
@@ -448,6 +468,7 @@ using (
   and public.can_read_patient(patient_id, auth.uid())
 );
 
+drop policy if exists "notes write accessible patient" on public.notes;
 create policy "notes write accessible patient"
 on public.notes for all
 to authenticated
@@ -459,6 +480,7 @@ with check (
   and public.is_approved_profile(auth.uid())
 );
 
+drop policy if exists "schedules read accessible patient" on public.schedules;
 create policy "schedules read accessible patient"
 on public.schedules for select
 to authenticated
@@ -467,6 +489,7 @@ using (
   and public.can_read_patient(patient_id, auth.uid())
 );
 
+drop policy if exists "schedules write accessible patient" on public.schedules;
 create policy "schedules write accessible patient"
 on public.schedules for all
 to authenticated
@@ -478,6 +501,7 @@ with check (
   and public.is_approved_profile(auth.uid())
 );
 
+drop policy if exists "medications read accessible patient" on public.medications;
 create policy "medications read accessible patient"
 on public.medications for select
 to authenticated
@@ -486,6 +510,7 @@ using (
   and public.can_read_patient(patient_id, auth.uid())
 );
 
+drop policy if exists "medications write accessible patient" on public.medications;
 create policy "medications write accessible patient"
 on public.medications for all
 to authenticated
@@ -497,6 +522,7 @@ with check (
   and public.is_approved_profile(auth.uid())
 );
 
+drop policy if exists "lab results read accessible patient" on public.lab_results;
 create policy "lab results read accessible patient"
 on public.lab_results for select
 to authenticated
@@ -505,6 +531,7 @@ using (
   and public.can_read_patient(patient_id, auth.uid())
 );
 
+drop policy if exists "lab results write accessible patient" on public.lab_results;
 create policy "lab results write accessible patient"
 on public.lab_results for all
 to authenticated
@@ -516,6 +543,7 @@ with check (
   and public.is_approved_profile(auth.uid())
 );
 
+drop policy if exists "lab items read accessible lab result" on public.lab_items;
 create policy "lab items read accessible lab result"
 on public.lab_items for select
 to authenticated
@@ -529,6 +557,7 @@ using (
   )
 );
 
+drop policy if exists "lab items write accessible lab result" on public.lab_items;
 create policy "lab items write accessible lab result"
 on public.lab_items for all
 to authenticated
@@ -549,6 +578,7 @@ with check (
   )
 );
 
+drop policy if exists "templates read visible" on public.templates;
 create policy "templates read visible"
 on public.templates for select
 to authenticated
@@ -558,41 +588,48 @@ using (
   or public.is_admin(auth.uid())
 );
 
+drop policy if exists "templates manage own or admin" on public.templates;
 create policy "templates manage own or admin"
 on public.templates for all
 to authenticated
 using (owner_id = auth.uid() or public.is_admin(auth.uid()))
 with check (owner_id = auth.uid() or public.is_admin(auth.uid()));
 
+drop policy if exists "lab categories read visible" on public.lab_categories;
 create policy "lab categories read visible"
 on public.lab_categories for select
 to authenticated
 using (owner_id is null or owner_id = auth.uid() or public.is_admin(auth.uid()));
 
+drop policy if exists "lab categories manage own or admin" on public.lab_categories;
 create policy "lab categories manage own or admin"
 on public.lab_categories for all
 to authenticated
 using (owner_id = auth.uid() or public.is_admin(auth.uid()))
 with check (owner_id = auth.uid() or public.is_admin(auth.uid()));
 
+drop policy if exists "user settings manage own" on public.user_settings;
 create policy "user settings manage own"
 on public.user_settings for all
 to authenticated
 using (user_id = auth.uid())
 with check (user_id = auth.uid());
 
+drop policy if exists "backup snapshots manage own" on public.backup_snapshots;
 create policy "backup snapshots manage own"
 on public.backup_snapshots for all
 to authenticated
 using (owner_id = auth.uid())
 with check (owner_id = auth.uid());
 
+drop policy if exists "legacy backups manage by user key" on public.backups;
 create policy "legacy backups manage by user key"
 on public.backups for all
 to authenticated
 using (user_key = auth.uid()::text)
 with check (user_key = auth.uid()::text);
 
+drop policy if exists "audit logs admin read" on public.audit_logs;
 create policy "audit logs admin read"
 on public.audit_logs for select
 to authenticated

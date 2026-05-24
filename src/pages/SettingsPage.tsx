@@ -1,26 +1,75 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Plus, Trash2, GripVertical, ChevronDown, ChevronRight, RotateCcw, Save, UserCheck, UserX, Shield, Lock, Unlock, Stethoscope, FlaskConical, FileText, Calendar, Download, Upload, Eye, EyeOff, HardDrive, Bell, Cloud, CloudUpload, CloudDownload, Pencil, X, Bot } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  ArrowLeft,
+  Bell,
+  Bot,
+  Calendar,
+  ChevronDown,
+  ChevronRight,
+  Cloud,
+  CloudDownload,
+  CloudUpload,
+  Download,
+  Eye,
+  EyeOff,
+  FileText,
+  FlaskConical,
+  GripVertical,
+  HardDrive,
+  Lock,
+  Plus,
+  RotateCcw,
+  Save,
+  Shield,
+  Stethoscope,
+  Trash2,
+  Unlock,
+  Upload,
+  UserCheck,
+  UserX,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/utils/cn';
-import { Input } from '@/components/ui/input';
-import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { labCategoryService, DEFAULT_LAB_CATEGORIES } from '@/services/labCategoryService';
-import { useAuthStore } from '@/stores/useAuthStore';
-import { useToast } from '@/hooks/use-toast';
-import { usePinLockStore, checkHasPin, setPin as savePinToDB, removePin, verifyPin } from '@/hooks/usePinLock';
-import { useChartingSettingsStore } from '@/stores/useChartingSettingsStore';
-import { useScheduleCategoryStore, COLOR_OPTIONS } from '@/stores/useScheduleCategoryStore';
-import { useCalendarColorStore, COLOR_PRESETS, PRESET_KEYS, type CalendarEventType } from '@/stores/useCalendarColorStore';
-import { useLabReferenceStore } from '@/stores/useLabReferenceStore';
-import { useAIStore, LLM_PROVIDERS, type LLMProvider } from '@/stores/useAIStore';
-import { testConnection } from '@/services/aiService';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { LabImportInbox } from '@/components/lab/LabImportInbox';
+import { useSupabaseBackend } from '@/config/backend';
+import { listPatients as listSupabasePatients } from '@/data/patients.repository';
 import { db } from '@/db/database';
 import type { LabDisplayCategory, Patient } from '@/db/database';
+import { useToast } from '@/hooks/use-toast';
+import { checkHasPin, removePin, setPin as savePinToDB, usePinLockStore, verifyPin } from '@/hooks/usePinLock';
+import { fromDomainPatient } from '@/mappers/legacyPatient.mapper';
+import {
+  createSupabaseBackupSnapshot,
+  listSupabaseBackupSnapshots,
+  previewSupabaseBackupSnapshot,
+  type SnapshotPreview,
+} from '@/services/backupSnapshotService';
+import {
+  downloadBackupFromServer,
+  downloadBlob,
+  exportBackup,
+  exportBackupAsText,
+  getServerBackupInfo,
+  importBackup,
+  importBackupFromText,
+  isDailyBackupEnabled,
+  setDailyBackupEnabled,
+  uploadBackupToServer,
+} from '@/services/backupService';
+import { DEFAULT_LAB_CATEGORIES, labCategoryService } from '@/services/labCategoryService';
+import { testConnection } from '@/services/aiService';
+import { COLOR_PRESETS, PRESET_KEYS, type CalendarEventType, useCalendarColorStore } from '@/stores/useCalendarColorStore';
+import { useChartingSettingsStore } from '@/stores/useChartingSettingsStore';
+import { useLabReferenceStore } from '@/stores/useLabReferenceStore';
+import { COLOR_OPTIONS, useScheduleCategoryStore } from '@/stores/useScheduleCategoryStore';
+import { useAIStore, LLM_PROVIDERS, type LLMProvider } from '@/stores/useAIStore';
+import { useAuthStore } from '@/stores/useAuthStore';
+import { cn } from '@/utils/cn';
+import type { BackupSnapshotSummary } from '@/data/backupSnapshots.repository';
 import type { User, UserRole, WardLinkModule } from '@/types/user';
-import { exportBackup, downloadBlob, importBackup, isDailyBackupEnabled, setDailyBackupEnabled, exportBackupAsText, importBackupFromText, uploadBackupToServer, downloadBackupFromServer, getServerBackupInfo } from '@/services/backupService';
-import { LabImportInbox } from '@/components/lab/LabImportInbox';
 
 const AVAILABLE_ROLES: { value: UserRole; label: string }[] = [
   { value: 'doctor', label: '의사' },
@@ -33,944 +82,503 @@ const AVAILABLE_MODULES: { value: WardLinkModule; label: string; description: st
   { value: 'wardcare', label: 'WardCare', description: '간호 기록 (준비 중)' },
 ];
 
-const SettingsPage = () => {
-  const { currentUser, getPendingUsers, getAllUsers, approveUser, rejectUser, deleteUser } = useAuthStore();
-  const { toast } = useToast();
-  const isAdmin = currentUser?.role === 'admin';
+type SectionId =
+  | 'pin'
+  | 'admin'
+  | 'charting'
+  | 'schedule-cat'
+  | 'calendar-color'
+  | 'lab-cat'
+  | 'lab-ref'
+  | 'lab-import'
+  | 'ai'
+  | 'backup';
 
-  // Admin: pending users
+const KNOWN_SECTIONS: SectionId[] = [
+  'pin',
+  'admin',
+  'charting',
+  'schedule-cat',
+  'calendar-color',
+  'lab-cat',
+  'lab-ref',
+  'lab-import',
+  'ai',
+  'backup',
+];
+
+function isSectionId(value: string | null): value is SectionId {
+  return !!value && KNOWN_SECTIONS.includes(value as SectionId);
+}
+
+const SettingsPage = () => {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { currentUser } = useAuthStore();
+  const hasPin = usePinLockStore((state) => state.hasPin);
+  const isAdmin = currentUser?.role === 'admin';
+  const requestedSection = searchParams.get('section');
+  const [activeSection, setActiveSection] = useState<SectionId>(isSectionId(requestedSection) ? requestedSection : 'pin');
+
+  const sections = useMemo(
+    () => [
+      { id: 'pin' as const, label: 'PIN 잠금', icon: hasPin ? Lock : Unlock, group: '계정' },
+      ...(isAdmin ? [{ id: 'admin' as const, label: '사용자 관리', icon: Shield, group: '계정' }] : []),
+      { id: 'charting' as const, label: '차팅 설정', icon: FileText, group: '업무' },
+      { id: 'schedule-cat' as const, label: '일정 카테고리', icon: Calendar, group: '업무' },
+      { id: 'calendar-color' as const, label: '캘린더 색상', icon: Calendar, group: '업무' },
+      { id: 'lab-cat' as const, label: 'Lab 카테고리', icon: FlaskConical, group: 'Lab' },
+      { id: 'lab-ref' as const, label: 'Lab 참조범위', icon: FlaskConical, group: 'Lab' },
+      { id: 'lab-import' as const, label: 'Lab Import', icon: FlaskConical, group: 'Lab' },
+      { id: 'ai' as const, label: 'AI 설정', icon: Bot, group: '시스템' },
+      { id: 'backup' as const, label: useSupabaseBackend ? 'Supabase 백업' : '백업 / 복원', icon: HardDrive, group: '시스템' },
+    ],
+    [hasPin, isAdmin]
+  );
+
+  useEffect(() => {
+    if (isSectionId(requestedSection) && requestedSection !== activeSection) {
+      setActiveSection(requestedSection);
+    }
+  }, [activeSection, requestedSection]);
+
+  const selectSection = (id: SectionId) => {
+    setActiveSection(id);
+    setSearchParams({ section: id }, { replace: true });
+  };
+
+  const sectionClass = (id: SectionId) => (activeSection === id ? 'block' : 'hidden');
+
+  return (
+    <div className="min-h-screen bg-zinc-50">
+      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-zinc-200 bg-white/95 px-3 backdrop-blur sm:px-6">
+        <div className="flex min-w-0 items-center gap-2">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate('/')}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div className="min-w-0">
+            <h1 className="truncate text-sm font-semibold text-zinc-950">WardFlow 설정</h1>
+            <p className="hidden text-xs text-muted-foreground sm:block">
+              {useSupabaseBackend ? 'Supabase v2 환경' : 'Legacy IndexedDB 환경'}
+            </p>
+          </div>
+        </div>
+        <Badge variant={useSupabaseBackend ? 'default' : 'outline'} className="text-[11px]">
+          {useSupabaseBackend ? 'Supabase' : 'Legacy'}
+        </Badge>
+      </header>
+
+      <div className="flex min-h-[calc(100vh-3.5rem)]">
+        <nav className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-52 shrink-0 overflow-y-auto border-r border-zinc-200 bg-white p-3 md:block xl:w-60">
+          <div className="mb-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+            <div className="text-xs font-medium text-zinc-500">현재 사용자</div>
+            <div className="mt-1 truncate text-sm font-semibold text-zinc-950">{currentUser?.name ?? '-'}</div>
+            <div className="mt-0.5 text-xs text-zinc-500">{useSupabaseBackend ? 'Supabase' : 'Legacy'} 모드</div>
+          </div>
+          {['계정', '업무', 'Lab', '시스템'].map((group) => {
+            const items = sections.filter((section) => section.group === group);
+            if (items.length === 0) return null;
+            return (
+              <div key={group} className="mb-4">
+                <h2 className="mb-1.5 px-2 text-[11px] font-semibold text-zinc-400">{group}</h2>
+                <div className="space-y-1">
+                  {items.map((section) => {
+                    const Icon = section.icon;
+                    return (
+                      <button
+                        key={section.id}
+                        onClick={() => selectSection(section.id)}
+                        className={cn(
+                          'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+                          activeSection === section.id
+                            ? 'bg-zinc-900 font-medium text-white'
+                            : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950'
+                        )}
+                      >
+                        <Icon className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{section.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </nav>
+
+        <div className="fixed left-0 right-0 top-14 z-20 overflow-x-auto border-b border-zinc-200 bg-white md:hidden">
+          <div className="flex min-w-max gap-1 p-2">
+            {sections.map((section) => (
+              <button
+                key={section.id}
+                onClick={() => selectSection(section.id)}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-xs whitespace-nowrap transition-colors',
+                  activeSection === section.id ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-600'
+                )}
+              >
+                {section.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <main className="min-w-0 flex-1 p-3 pt-16 sm:p-6 sm:pt-20 md:pt-6">
+          <div className="mx-auto max-w-3xl space-y-4">
+            <div className={sectionClass('pin')}>
+              <PinSettings />
+            </div>
+            <div className={sectionClass('admin')}>
+              {isAdmin ? <AdminSettings /> : <EmptySection title="사용자 관리" message="관리자 계정에서만 접근할 수 있습니다." />}
+            </div>
+            <div className={sectionClass('charting')}>
+              <ChartingSettings />
+            </div>
+            <div className={sectionClass('schedule-cat')}>
+              <ScheduleCategorySettings />
+            </div>
+            <div className={sectionClass('calendar-color')}>
+              <CalendarColorSettings />
+            </div>
+            <div className={sectionClass('lab-cat')}>
+              <LabCategorySettings />
+            </div>
+            <div className={sectionClass('lab-ref')}>
+              <LabReferenceSettings />
+            </div>
+            <div className={sectionClass('lab-import')}>
+              <LabImportSettings />
+            </div>
+            <div className={sectionClass('ai')}>
+              <AISettings />
+            </div>
+            <div className={sectionClass('backup')}>
+              <BackupSettings />
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+};
+
+function EmptySection({ title, message }: { title: string; message: string }) {
+  return (
+    <Card className="p-6">
+      <h2 className="text-lg font-semibold">{title}</h2>
+      <p className="mt-2 text-sm text-muted-foreground">{message}</p>
+    </Card>
+  );
+}
+
+function PinSettings() {
+  const { currentUser } = useAuthStore();
+  const { toast } = useToast();
+  const { hasPin, autoLockMinutes, setAutoLockMinutes, setHasPin } = usePinLockStore();
+  const [mode, setMode] = useState<'idle' | 'set' | 'change' | 'remove'>('idle');
+  const [currentPin, setCurrentPin] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    checkHasPin(currentUser.id).then(setHasPin);
+  }, [currentUser, setHasPin]);
+
+  const resetForm = () => {
+    setMode('idle');
+    setCurrentPin('');
+    setNewPin('');
+    setConfirmPin('');
+    setError('');
+  };
+
+  const savePin = async () => {
+    if (!currentUser) return;
+    setError('');
+    setLoading(true);
+
+    try {
+      if (mode === 'change' || mode === 'remove') {
+        const valid = await verifyPin(currentUser.id, currentPin);
+        if (!valid) {
+          setError('현재 PIN이 일치하지 않습니다.');
+          return;
+        }
+      }
+
+      if (mode === 'remove') {
+        await removePin(currentUser.id);
+        setHasPin(false);
+        toast({ title: 'PIN 해제 완료', description: 'PIN 잠금이 비활성화되었습니다.' });
+      } else {
+        if (!/^\d{4}$/.test(newPin)) {
+          setError('PIN은 4자리 숫자여야 합니다.');
+          return;
+        }
+        if (newPin !== confirmPin) {
+          setError('새 PIN과 확인 PIN이 일치하지 않습니다.');
+          return;
+        }
+        await savePinToDB(currentUser.id, newPin);
+        setHasPin(true);
+        toast({ title: 'PIN 설정 완료', description: '이 기기에서 PIN 잠금이 활성화되었습니다.' });
+      }
+      resetForm();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'PIN 설정 중 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Card className="space-y-4 p-6">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          {hasPin ? <Lock className="h-5 w-5 text-primary" /> : <Unlock className="h-5 w-5 text-muted-foreground" />}
+          <h2 className="text-lg font-semibold">PIN 잠금</h2>
+          {hasPin && <Badge variant="secondary">활성</Badge>}
+        </div>
+        {mode === 'idle' && (
+          <div className="flex gap-2">
+            {hasPin ? (
+              <>
+                <Button variant="outline" size="sm" onClick={() => setMode('change')}>변경</Button>
+                <Button variant="outline" size="sm" onClick={() => setMode('remove')}>해제</Button>
+              </>
+            ) : (
+              <Button size="sm" onClick={() => setMode('set')}>PIN 설정</Button>
+            )}
+          </div>
+        )}
+      </div>
+      <p className="text-sm text-muted-foreground">
+        {hasPin ? `${autoLockMinutes}분 동안 입력이 없으면 자동 잠금됩니다.` : 'PIN은 이 기기에 저장되는 로컬 잠금 기능입니다.'}
+      </p>
+
+      {hasPin && mode === 'idle' && (
+        <div className="flex items-center gap-3">
+          <span className="text-sm">자동 잠금 시간</span>
+          <select
+            value={autoLockMinutes}
+            onChange={(event) => setAutoLockMinutes(Number(event.target.value))}
+            className="rounded-md border bg-background px-2 py-1 text-sm"
+          >
+            {[1, 3, 5, 10, 15, 30].map((minute) => (
+              <option key={minute} value={minute}>{minute}분</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {mode !== 'idle' && (
+        <div className="space-y-3 border-t pt-4">
+          <h3 className="text-sm font-medium">
+            {mode === 'set' && 'PIN 설정'}
+            {mode === 'change' && 'PIN 변경'}
+            {mode === 'remove' && 'PIN 해제'}
+          </h3>
+          {(mode === 'change' || mode === 'remove') && (
+            <PinInput label="현재 PIN" value={currentPin} onChange={setCurrentPin} />
+          )}
+          {mode !== 'remove' && (
+            <>
+              <PinInput label="새 PIN" value={newPin} onChange={setNewPin} />
+              <PinInput label="새 PIN 확인" value={confirmPin} onChange={setConfirmPin} />
+            </>
+          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <div className="flex gap-2">
+            <Button size="sm" onClick={savePin} disabled={loading}>{mode === 'remove' ? '해제' : '저장'}</Button>
+            <Button variant="outline" size="sm" onClick={resetForm}>취소</Button>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function PinInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <div>
+      <label className="text-xs text-muted-foreground">{label}</label>
+      <Input
+        type="password"
+        maxLength={4}
+        inputMode="numeric"
+        pattern="[0-9]*"
+        value={value}
+        onChange={(event) => onChange(event.target.value.replace(/\D/g, ''))}
+        placeholder="4자리 숫자"
+        className="mt-1 w-40"
+      />
+    </div>
+  );
+}
+
+function AdminSettings() {
+  const { getPendingUsers, getAllUsers, approveUser, rejectUser, deleteUser } = useAuthStore();
+  const { toast } = useToast();
+  const [tab, setTab] = useState<'approval' | 'members' | 'patients'>('approval');
   const [pendingUsers, setPendingUsers] = useState<User[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [allPatients, setAllPatients] = useState<Patient[]>([]);
   const [approvalState, setApprovalState] = useState<Record<string, { role: UserRole; modules: WardLinkModule[] }>>({});
   const [processingId, setProcessingId] = useState<string | null>(null);
 
-  // Admin: all users
-  const [allUsers, setAllUsers] = useState<User[]>([]);
-
-  // Admin: all patients (for doctor-patient overview)
-  const [allPatients, setAllPatients] = useState<Patient[]>([]);
-
-  // Backup/Restore
-  const [backupPassword, setBackupPassword] = useState('');
-  const [backupShowPw, setBackupShowPw] = useState(false);
-  const [backupLoading, setBackupLoading] = useState(false);
-  const [restorePassword, setRestorePassword] = useState('');
-  const [restoreShowPw, setRestoreShowPw] = useState(false);
-  const [restoreLoading, setRestoreLoading] = useState(false);
-  const [restoreFile, setRestoreFile] = useState<File | null>(null);
-  const restoreInputRef = useRef<HTMLInputElement>(null);
-  const backupSectionRef = useRef<HTMLDivElement>(null);
-  const [dailyBackup, setDailyBackup] = useState(isDailyBackupEnabled);
-
-  // Text transfer
-  const [textExportPw, setTextExportPw] = useState('');
-  const [textExportShowPw, setTextExportShowPw] = useState(false);
-  const [textExportLoading, setTextExportLoading] = useState(false);
-  const [textExportResult, setTextExportResult] = useState('');
-  const [textImportPw, setTextImportPw] = useState('');
-  const [textImportShowPw, setTextImportShowPw] = useState(false);
-  const [textImportLoading, setTextImportLoading] = useState(false);
-  const [textImportData, setTextImportData] = useState('');
-
-  // Server sync (persist to localStorage for lab-import page)
-  const [serverPw, setServerPwState] = useState(() => localStorage.getItem('wardflow-server-pw') || '');
-  const [serverShowPw, setServerShowPw] = useState(false);
-  const [serverKey, setServerKeyState] = useState(() => localStorage.getItem('wardflow-server-key') || '');
-
-  const setServerPw = (v: string) => { setServerPwState(v); localStorage.setItem('wardflow-server-pw', v); };
-  const setServerKey = (v: string) => { setServerKeyState(v); localStorage.setItem('wardflow-server-key', v); };
-  const [serverLoading, setServerLoading] = useState(false);
-  const [serverInfo, setServerInfo] = useState<{ exists: boolean; updatedAt?: string } | null>(null);
-
-  const handleServerUpload = async () => {
-    if (!serverPw || serverPw.length < 4) {
-      toast({ title: '비밀번호는 4자 이상이어야 합니다.', variant: 'destructive' });
-      return;
-    }
-    if (!serverKey.trim()) {
-      toast({ title: '동기화 키를 입력해주세요.', variant: 'destructive' });
-      return;
-    }
-    setServerLoading(true);
-    try {
-      const result = await uploadBackupToServer(serverPw, serverKey.trim());
-      toast({ title: '서버 업로드 완료', description: `업로드 시간: ${new Date(result.updatedAt).toLocaleString()}` });
-      setServerInfo({ exists: true, updatedAt: result.updatedAt });
-    } catch (err) {
-      toast({ title: '업로드 실패', description: err instanceof Error ? err.message : '알 수 없는 오류', variant: 'destructive' });
-    } finally {
-      setServerLoading(false);
-    }
-  };
-
-  const handleServerDownload = async () => {
-    if (!serverPw) {
-      toast({ title: '비밀번호를 입력해주세요.', variant: 'destructive' });
-      return;
-    }
-    if (!serverKey.trim()) {
-      toast({ title: '동기화 키를 입력해주세요.', variant: 'destructive' });
-      return;
-    }
-    if (!confirm('서버 데이터로 현재 모든 데이터가 교체됩니다. 계속하시겠습니까?')) return;
-    setServerLoading(true);
-    try {
-      const result = await downloadBackupFromServer(serverPw, serverKey.trim());
-      toast({ title: '서버 복원 완료', description: `환자 ${result.patientCount}명, 메모 ${result.noteCount}건 복원됨` });
-    } catch (err) {
-      toast({ title: '복원 실패', description: err instanceof Error ? err.message : '알 수 없는 오류', variant: 'destructive' });
-    } finally {
-      setServerLoading(false);
-    }
-  };
-
-  const handleCheckServerInfo = async () => {
-    if (!serverKey.trim()) {
-      toast({ title: '동기화 키를 입력해주세요.', variant: 'destructive' });
-      return;
-    }
-    try {
-      const info = await getServerBackupInfo(serverKey.trim());
-      setServerInfo(info);
-      if (!info.exists) {
-        toast({ title: '서버에 저장된 데이터가 없습니다.' });
-      }
-    } catch {
-      toast({ title: '서버 확인 실패', variant: 'destructive' });
-    }
-  };
-
-  const handleTextExport = async () => {
-    if (!textExportPw || textExportPw.length < 4) {
-      toast({ title: '비밀번호는 4자 이상이어야 합니다.', variant: 'destructive' });
-      return;
-    }
-    setTextExportLoading(true);
-    try {
-      const text = await exportBackupAsText(textExportPw);
-      setTextExportResult(text);
-      await navigator.clipboard.writeText(text);
-      toast({ title: '클립보드에 복사되었습니다!', description: '카톡이나 메모에 붙여넣기 하세요.' });
-      setTextExportPw('');
-    } catch (err) {
-      toast({ title: '텍스트 백업 실패', description: String(err), variant: 'destructive' });
-    } finally {
-      setTextExportLoading(false);
-    }
-  };
-
-  const handleTextImport = async () => {
-    if (!textImportData.trim()) {
-      toast({ title: '백업 텍스트를 붙여넣어 주세요.', variant: 'destructive' });
-      return;
-    }
-    if (!textImportPw) {
-      toast({ title: '비밀번호를 입력해주세요.', variant: 'destructive' });
-      return;
-    }
-    setTextImportLoading(true);
-    try {
-      const result = await importBackupFromText(textImportData, textImportPw);
-      toast({ title: '복원 완료', description: `환자 ${result.patientCount}명, 메모 ${result.noteCount}건이 복원되었습니다.` });
-      setTextImportPw('');
-      setTextImportData('');
-      setTimeout(() => window.location.reload(), 1500);
-    } catch (err) {
-      toast({ title: '복원 실패', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
-    } finally {
-      setTextImportLoading(false);
-    }
-  };
-  const [searchParams] = useSearchParams();
-
-  // section=backup 쿼리 파라미터 시 자동 스크롤
-  useEffect(() => {
-    if (searchParams.get('section') === 'backup' && backupSectionRef.current) {
-      setTimeout(() => {
-        backupSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 300);
-    }
-  }, [searchParams]);
-
-  const handleExportBackup = async () => {
-    if (!backupPassword || backupPassword.length < 4) {
-      toast({ title: '비밀번호는 4자 이상이어야 합니다.', variant: 'destructive' });
-      return;
-    }
-    setBackupLoading(true);
-    try {
-      const blob = await exportBackup(backupPassword);
-      const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      downloadBlob(blob, `wardflow_backup_${date}.wardflow`);
-      toast({ title: '백업 완료', description: '암호화된 백업 파일이 다운로드되었습니다.' });
-      setBackupPassword('');
-    } catch (err) {
-      toast({ title: '백업 실패', description: String(err), variant: 'destructive' });
-    } finally {
-      setBackupLoading(false);
-    }
-  };
-
-  const handleImportBackup = async () => {
-    if (!restoreFile) {
-      toast({ title: '파일을 선택해주세요.', variant: 'destructive' });
-      return;
-    }
-    if (!restorePassword) {
-      toast({ title: '비밀번호를 입력해주세요.', variant: 'destructive' });
-      return;
-    }
-    setRestoreLoading(true);
-    try {
-      const result = await importBackup(restoreFile, restorePassword);
-      toast({ title: '복원 완료', description: `환자 ${result.patientCount}명, 메모 ${result.noteCount}건이 복원되었습니다. 페이지를 새로고침합니다.` });
-      setRestorePassword('');
-      setRestoreFile(null);
-      setTimeout(() => window.location.reload(), 1500);
-    } catch (err) {
-      toast({ title: '복원 실패', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
-    } finally {
-      setRestoreLoading(false);
-    }
-  };
-
-  const loadPendingUsers = useCallback(async () => {
-    if (!isAdmin) return;
-    const users = await getPendingUsers();
-    setPendingUsers(users);
-    // Initialize approval state for each user
-    const state: Record<string, { role: UserRole; modules: WardLinkModule[] }> = {};
-    for (const u of users) {
-      state[u.id] = { role: 'doctor', modules: ['wardflow'] };
-    }
-    setApprovalState(state);
-  }, [isAdmin, getPendingUsers]);
-
-  const loadAllUsers = useCallback(async () => {
-    if (!isAdmin) return;
-    const users = await getAllUsers();
+  const loadUsers = useCallback(async () => {
+    const [pending, users] = await Promise.all([getPendingUsers(), getAllUsers()]);
+    setPendingUsers(pending);
     setAllUsers(users);
-  }, [isAdmin, getAllUsers]);
+    setApprovalState((current) => {
+      const next = { ...current };
+      for (const user of pending) {
+        if (!next[user.id]) next[user.id] = { role: 'doctor', modules: ['wardflow'] };
+      }
+      return next;
+    });
+  }, [getAllUsers, getPendingUsers]);
 
-  const loadAllPatients = useCallback(async () => {
-    if (!isAdmin) return;
-    const patients = await db.patients.toArray();
+  const loadPatients = useCallback(async () => {
+    const patients = useSupabaseBackend
+      ? (await listSupabasePatients()).map(fromDomainPatient)
+      : await db.patients.toArray();
     setAllPatients(patients);
-  }, [isAdmin]);
+  }, []);
 
   useEffect(() => {
-    loadPendingUsers();
-    loadAllUsers();
-    loadAllPatients();
-  }, [loadPendingUsers, loadAllUsers, loadAllPatients]);
+    loadUsers();
+    loadPatients();
+  }, [loadPatients, loadUsers]);
 
-  const handleApprove = async (userId: string) => {
+  const toggleModule = (userId: string, module: WardLinkModule) => {
+    setApprovalState((current) => {
+      const state = current[userId] ?? { role: 'doctor', modules: ['wardflow'] };
+      const modules = state.modules.includes(module)
+        ? state.modules.filter((item) => item !== module)
+        : [...state.modules, module];
+      return { ...current, [userId]: { ...state, modules } };
+    });
+  };
+
+  const approve = async (userId: string) => {
     const state = approvalState[userId];
-    if (!state) return;
-    if (state.modules.length === 0) {
-      toast({ title: '모듈을 1개 이상 선택하세요.', variant: 'destructive' });
+    if (!state || state.modules.length === 0) {
+      toast({ title: '모듈을 하나 이상 선택해주세요.', variant: 'destructive' });
       return;
     }
     setProcessingId(userId);
     try {
       await approveUser(userId, state.role, state.modules);
       toast({ title: '승인 완료', description: '사용자가 승인되었습니다.' });
-      await loadPendingUsers();
-      await loadAllUsers();
+      await loadUsers();
     } catch (err) {
-      toast({ title: '승인 실패', description: err instanceof Error ? err.message : '오류', variant: 'destructive' });
+      toast({ title: '승인 실패', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
     } finally {
       setProcessingId(null);
     }
   };
 
-  const handleReject = async (userId: string) => {
-    if (!confirm('이 가입 요청을 거절하시겠습니까?')) return;
+  const reject = async (userId: string) => {
+    if (!window.confirm('가입 요청을 거절하시겠습니까?')) return;
     setProcessingId(userId);
     try {
       await rejectUser(userId);
-      toast({ title: '거절 완료', description: '가입 요청이 거절되었습니다.' });
-      await loadPendingUsers();
-      await loadAllUsers();
+      toast({ title: '거절 완료', description: '가입 요청을 거절했습니다.' });
+      await loadUsers();
     } catch (err) {
-      toast({ title: '거절 실패', description: err instanceof Error ? err.message : '오류', variant: 'destructive' });
+      toast({ title: '거절 실패', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
     } finally {
       setProcessingId(null);
     }
   };
 
-  const handleDeleteUser = async (userId: string, userName: string) => {
-    if (!confirm(`"${userName}" 회원을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) return;
-    setProcessingId(userId);
+  const removeUser = async (user: User) => {
+    if (!window.confirm(`"${user.name}" 회원을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) return;
+    setProcessingId(user.id);
     try {
-      await deleteUser(userId);
-      toast({ title: '삭제 완료', description: `${userName} 회원이 삭제되었습니다.` });
-      await loadAllUsers();
-      await loadPendingUsers();
+      await deleteUser(user.id);
+      toast({ title: '삭제 완료', description: `${user.name} 회원을 삭제했습니다.` });
+      await loadUsers();
     } catch (err) {
-      toast({ title: '삭제 실패', description: err instanceof Error ? err.message : '오류', variant: 'destructive' });
+      toast({ title: '삭제 실패', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
     } finally {
       setProcessingId(null);
     }
-  };
-
-  const toggleModule = (userId: string, module: WardLinkModule) => {
-    setApprovalState((prev) => {
-      const current = prev[userId];
-      if (!current) return prev;
-      const modules = current.modules.includes(module)
-        ? current.modules.filter((m) => m !== module)
-        : [...current.modules, module];
-      return { ...prev, [userId]: { ...current, modules } };
-    });
-  };
-
-  // Admin tab
-  const [adminTab, setAdminTab] = useState<'approval' | 'members' | 'patients'>('approval');
-
-  // Schedule category settings
-  const scheduleCatStore = useScheduleCategoryStore();
-  const [newSchedLabel, setNewSchedLabel] = useState('');
-  const [newSchedColor, setNewSchedColor] = useState('gray');
-
-  // Charting settings
-  const {
-    problemListStyle, setProblemListStyle,
-    includeFieldNames, setIncludeFieldNames,
-    excludeEmptySections, setExcludeEmptySections,
-    sectionSeparator, setSectionSeparator,
-    sectionNames, setSectionName, resetSectionNames,
-  } = useChartingSettingsStore();
-
-  // PIN settings
-  const { hasPin, autoLockMinutes, setAutoLockMinutes } = usePinLockStore();
-  const [pinMode, setPinMode] = useState<'idle' | 'set' | 'change' | 'remove'>('idle');
-  const [pinCurrent, setPinCurrent] = useState('');
-  const [pinNew, setPinNew] = useState('');
-  const [pinConfirm, setPinConfirm] = useState('');
-  const [pinError, setPinError] = useState('');
-  const [pinLoading, setPinLoading] = useState(false);
-
-  useEffect(() => {
-    if (currentUser) {
-      checkHasPin(currentUser.id).then((result) => {
-        usePinLockStore.getState().setHasPin(result);
-      });
-    }
-  }, [currentUser]);
-
-  const handlePinSave = async () => {
-    if (!currentUser) return;
-    setPinError('');
-    setPinLoading(true);
-
-    try {
-      // 변경/삭제 시 현재 PIN 확인
-      if (pinMode === 'change' || pinMode === 'remove') {
-        const valid = await verifyPin(currentUser.id, pinCurrent);
-        if (!valid) {
-          setPinError('현재 PIN이 일치하지 않습니다.');
-          setPinLoading(false);
-          return;
-        }
-      }
-
-      if (pinMode === 'remove') {
-        await removePin(currentUser.id);
-        toast({ title: 'PIN 해제됨', description: 'PIN 잠금이 비활성화되었습니다.' });
-      } else {
-        // set or change
-        if (pinNew.length !== 4 || !/^\d{4}$/.test(pinNew)) {
-          setPinError('PIN은 4자리 숫자여야 합니다.');
-          setPinLoading(false);
-          return;
-        }
-        if (pinNew !== pinConfirm) {
-          setPinError('PIN이 일치하지 않습니다.');
-          setPinLoading(false);
-          return;
-        }
-        await savePinToDB(currentUser.id, pinNew);
-        toast({ title: 'PIN 설정 완료', description: 'PIN이 설정되었습니다.' });
-      }
-
-      setPinMode('idle');
-      setPinCurrent('');
-      setPinNew('');
-      setPinConfirm('');
-    } catch (err) {
-      setPinError('오류가 발생했습니다.');
-    } finally {
-      setPinLoading(false);
-    }
-  };
-
-  // Lab categories
-  const [categories, setCategories] = useState<LabDisplayCategory[]>([]);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const [newItemInputs, setNewItemInputs] = useState<Record<string, string>>({});
-  const [newCatName, setNewCatName] = useState('');
-
-  useEffect(() => {
-    labCategoryService.getAll().then(setCategories);
-  }, []);
-
-  const handleSave = async () => {
-    await labCategoryService.saveAll(categories);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
-
-  const handleReset = async () => {
-    if (!confirm('기본값으로 초기화하시겠습니까?')) return;
-    await labCategoryService.resetToDefaults();
-    setCategories(DEFAULT_LAB_CATEGORIES);
-  };
-
-  const moveCategory = (idx: number, dir: 'up' | 'down') => {
-    const newCats = [...categories];
-    const targetIdx = dir === 'up' ? idx - 1 : idx + 1;
-    if (targetIdx < 0 || targetIdx >= newCats.length) return;
-    [newCats[idx], newCats[targetIdx]] = [newCats[targetIdx]!, newCats[idx]!];
-    setCategories(newCats);
-  };
-
-  const deleteCategory = (id: string) => {
-    setCategories((prev) => prev.filter((c) => c.id !== id));
-  };
-
-  const addCategory = () => {
-    if (!newCatName.trim()) return;
-    setCategories((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), name: newCatName.trim(), order: prev.length, items: [] },
-    ]);
-    setNewCatName('');
-  };
-
-  const addItem = (catId: string) => {
-    const val = newItemInputs[catId]?.trim();
-    if (!val) return;
-    setCategories((prev) =>
-      prev.map((c) => c.id === catId ? { ...c, items: [...c.items, val] } : c)
-    );
-    setNewItemInputs((prev) => ({ ...prev, [catId]: '' }));
-  };
-
-  const removeItem = (catId: string, item: string) => {
-    setCategories((prev) =>
-      prev.map((c) => c.id === catId ? { ...c, items: c.items.filter((i) => i !== item) } : c)
-    );
-  };
-
-  const settingsSections = [
-    { id: 'pin', label: 'PIN 잠금', icon: hasPin ? Lock : Unlock },
-    { id: 'charting', label: '차팅 설정', icon: FileText },
-    { id: 'schedule-cat', label: '일정 카테고리', icon: Calendar },
-    ...(isAdmin ? [{ id: 'admin', label: '관리자', icon: Shield }] : []),
-    { id: 'lab-cat', label: 'Lab 카테고리', icon: FlaskConical },
-    { id: 'lab-ref', label: 'Lab 참조범위', icon: FlaskConical },
-    { id: 'calendar-color', label: '캘린더 색상', icon: Calendar },
-    { id: 'lab-import', label: 'Lab Import', icon: FlaskConical },
-    { id: 'ai', label: 'AI 설정', icon: Bot },
-    { id: 'backup', label: '백업 / 복원', icon: HardDrive },
-  ];
-
-  const [activeSection, setActiveSection] = useState(searchParams.get('section') || 'pin');
-
-  const scrollToSection = (id: string) => {
-    setActiveSection(id);
-    const el = document.getElementById(`settings-${id}`);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   return (
-    <div className="flex h-full">
-      {/* Settings Side Navigation — Desktop */}
-      <nav className="hidden lg:block w-48 shrink-0 border-r bg-muted/20 overflow-y-auto p-3 space-y-1 sticky top-0 h-[calc(100vh-3.5rem)]">
-        <h2 className="text-sm font-semibold text-muted-foreground mb-3 px-2">설정</h2>
-        {settingsSections.map((s) => {
-          const Icon = s.icon;
-          return (
-            <button
-              key={s.id}
-              onClick={() => scrollToSection(s.id)}
-              className={cn(
-                'flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-sm transition-colors',
-                activeSection === s.id
-                  ? 'bg-primary/10 text-primary font-medium'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-              )}
-            >
-              <Icon className="h-3.5 w-3.5 shrink-0" />
-              {s.label}
-            </button>
-          );
-        })}
-      </nav>
-
-      {/* Mobile: Horizontal scroll tabs */}
-      <div className="lg:hidden fixed top-14 left-0 right-0 z-20 bg-background border-b overflow-x-auto">
-        <div className="flex gap-1 p-2 min-w-max">
-          {settingsSections.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => scrollToSection(s.id)}
-              className={cn(
-                'px-3 py-1.5 text-xs rounded-md whitespace-nowrap transition-colors',
-                activeSection === s.id
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground'
-              )}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
+    <Card className="overflow-hidden p-0">
+      <div className="flex items-center gap-2 px-4 pt-4 pb-3 sm:px-6 sm:pt-6">
+        <Shield className="h-5 w-5 text-primary" />
+        <h2 className="text-lg font-semibold">사용자 관리</h2>
       </div>
-
-      {/* Content */}
-      <div className="flex-1 p-3 sm:p-6 max-w-2xl mx-auto space-y-4 sm:space-y-6 lg:pt-6 pt-16">
-
-      {/* PIN Lock Settings */}
-      <div id="settings-pin">
-      <Card className="p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {hasPin ? <Lock className="h-5 w-5 text-primary" /> : <Unlock className="h-5 w-5 text-muted-foreground" />}
-            <h2 className="text-lg font-semibold">PIN 잠금</h2>
-            {hasPin && <Badge variant="secondary" className="text-xs">활성</Badge>}
-          </div>
-          {pinMode === 'idle' && (
-            <div className="flex gap-2">
-              {hasPin ? (
-                <>
-                  <Button variant="outline" size="sm" onClick={() => setPinMode('change')}>변경</Button>
-                  <Button variant="outline" size="sm" onClick={() => setPinMode('remove')}>해제</Button>
-                </>
-              ) : (
-                <Button size="sm" onClick={() => setPinMode('set')}>PIN 설정</Button>
-              )}
-            </div>
-          )}
-        </div>
-
-        <p className="text-sm text-muted-foreground">
-          {hasPin
-            ? `${autoLockMinutes}분 비활동 시 자동 잠금됩니다.`
-            : 'PIN을 설정하면 비활동 시 자동으로 화면이 잠깁니다.'
-          }
-        </p>
-
-        {/* Auto-lock time setting */}
-        {hasPin && pinMode === 'idle' && (
-          <div className="flex items-center gap-3">
-            <span className="text-sm">자동 잠금 시간:</span>
-            <select
-              value={autoLockMinutes}
-              onChange={(e) => setAutoLockMinutes(Number(e.target.value))}
-              className="rounded-md border px-2 py-1 text-sm bg-background"
-            >
-              <option value={1}>1분</option>
-              <option value={3}>3분</option>
-              <option value={5}>5분</option>
-              <option value={10}>10분</option>
-              <option value={15}>15분</option>
-              <option value={30}>30분</option>
-            </select>
-          </div>
-        )}
-
-        {/* PIN Form */}
-        {pinMode !== 'idle' && (
-          <div className="space-y-3 border-t pt-4">
-            <h3 className="text-sm font-medium">
-              {pinMode === 'set' && 'PIN 설정'}
-              {pinMode === 'change' && 'PIN 변경'}
-              {pinMode === 'remove' && 'PIN 해제'}
-            </h3>
-
-            {(pinMode === 'change' || pinMode === 'remove') && (
-              <div>
-                <label className="text-xs text-muted-foreground">현재 PIN</label>
-                <Input
-                  type="password"
-                  maxLength={4}
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={pinCurrent}
-                  onChange={(e) => setPinCurrent(e.target.value.replace(/\D/g, ''))}
-                  placeholder="현재 4자리 PIN"
-                  className="mt-1 w-40"
-                />
-              </div>
-            )}
-
-            {pinMode !== 'remove' && (
-              <>
-                <div>
-                  <label className="text-xs text-muted-foreground">새 PIN</label>
-                  <Input
-                    type="password"
-                    maxLength={4}
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={pinNew}
-                    onChange={(e) => setPinNew(e.target.value.replace(/\D/g, ''))}
-                    placeholder="4자리 숫자"
-                    className="mt-1 w-40"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">새 PIN 확인</label>
-                  <Input
-                    type="password"
-                    maxLength={4}
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={pinConfirm}
-                    onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, ''))}
-                    placeholder="4자리 숫자 재입력"
-                    className="mt-1 w-40"
-                  />
-                </div>
-              </>
-            )}
-
-            {pinError && <p className="text-sm text-red-500">{pinError}</p>}
-
-            <div className="flex gap-2">
-              <Button size="sm" onClick={handlePinSave} disabled={pinLoading}>
-                {pinMode === 'remove' ? '해제' : '저장'}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setPinMode('idle');
-                  setPinCurrent('');
-                  setPinNew('');
-                  setPinConfirm('');
-                  setPinError('');
-                }}
-              >
-                취소
-              </Button>
-            </div>
-          </div>
-        )}
-      </Card>
-
+      <div className="flex border-b px-4 sm:px-6">
+        <AdminTabButton active={tab === 'approval'} onClick={() => setTab('approval')} label="가입 승인" count={pendingUsers.length} />
+        <AdminTabButton active={tab === 'members'} onClick={() => setTab('members')} label="회원 관리" count={allUsers.filter((user) => user.status === 'approved' && user.role !== 'admin').length} />
+        <AdminTabButton active={tab === 'patients'} onClick={() => setTab('patients')} label="환자 현황" count={allPatients.filter((patient) => patient.status === 'active').length} />
       </div>
-      <div id="settings-charting">
-      {/* Charting Settings */}
-      <Card className="p-4 sm:p-6 space-y-5">
-        <div className="flex items-center gap-2">
-          <FileText className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold">차팅 복사 설정</h2>
-        </div>
-
-        {/* Problem List style */}
-        <div className="flex items-center gap-3">
-          <span className="text-sm w-40 shrink-0">Problem List 형식</span>
-          <select
-            value={problemListStyle}
-            onChange={(e) => setProblemListStyle(e.target.value as 'numbered' | 'numbered_simple' | 'bulleted' | 'plain')}
-            className="rounded-md border px-2 py-1 text-sm bg-background"
-          >
-            <option value="numbered_simple">#. (기본)</option>
-            <option value="numbered">#1. #2. #3.</option>
-            <option value="bulleted">• (bullet)</option>
-            <option value="plain">없음</option>
-          </select>
-        </div>
-
-        {/* Section separator */}
-        <div className="flex items-center gap-3">
-          <span className="text-sm w-40 shrink-0">섹션 간격</span>
-          <select
-            value={sectionSeparator === '\n\n' ? '2' : '1'}
-            onChange={(e) => setSectionSeparator(e.target.value === '2' ? '\n\n' : '\n')}
-            className="rounded-md border px-2 py-1 text-sm bg-background"
-          >
-            <option value="2">빈 줄 포함 (기본)</option>
-            <option value="1">줄바꿈만</option>
-          </select>
-        </div>
-
-        {/* Toggle options */}
-        <div className="space-y-2">
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={includeFieldNames}
-              onChange={(e) => setIncludeFieldNames(e.target.checked)}
-              className="rounded border-gray-300"
-            />
-            <span className="text-sm">필드명 포함 (C/C, PI, Plan 등)</span>
-          </label>
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={excludeEmptySections}
-              onChange={(e) => setExcludeEmptySections(e.target.checked)}
-              className="rounded border-gray-300"
-            />
-            <span className="text-sm">빈 섹션 제외</span>
-          </label>
-        </div>
-
-        {/* Section names customization */}
-        {includeFieldNames && (
-          <div className="space-y-2 border-t pt-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">섹션 이름 커스텀</span>
-              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={resetSectionNames}>
-                <RotateCcw className="h-3 w-3 mr-1" />
-                기본값
-              </Button>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {(Object.entries(sectionNames) as [keyof typeof sectionNames, string][]).map(([key, value]) => (
-                <div key={key} className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground w-20 shrink-0 truncate">{key}</span>
-                  <Input
-                    className="h-7 text-xs"
-                    value={value}
-                    onChange={(e) => setSectionName(key, e.target.value)}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </Card>
-
-      </div>
-      <div id="settings-schedule-cat">
-      {/* Schedule Category Settings */}
-      <Card className="p-4 sm:p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Calendar className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold">일정 카테고리</h2>
-          </div>
-          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={scheduleCatStore.resetCategories}>
-            <RotateCcw className="h-3 w-3 mr-1" />
-            기본값
-          </Button>
-        </div>
-
-        <div className="space-y-2">
-          {scheduleCatStore.categories.map((cat) => (
-            <div key={cat.id} className="flex items-center gap-2">
-              <select
-                value={cat.color}
-                onChange={(e) => scheduleCatStore.updateCategory(cat.id, { color: e.target.value })}
-                className="rounded-md border px-1.5 py-1 text-xs bg-background w-20"
-              >
-                {COLOR_OPTIONS.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-              <Input
-                className="h-8 text-sm flex-1"
-                value={cat.label}
-                onChange={(e) => scheduleCatStore.updateCategory(cat.id, { label: e.target.value })}
-              />
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 text-destructive hover:text-destructive shrink-0"
-                onClick={() => scheduleCatStore.removeCategory(cat.id)}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          ))}
-        </div>
-
-        <div className="flex gap-2">
-          <select
-            value={newSchedColor}
-            onChange={(e) => setNewSchedColor(e.target.value)}
-            className="rounded-md border px-1.5 py-1 text-xs bg-background w-20"
-          >
-            {COLOR_OPTIONS.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-          <Input
-            className="h-8 text-sm flex-1"
-            placeholder="새 카테고리 이름"
-            value={newSchedLabel}
-            onChange={(e) => setNewSchedLabel(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && newSchedLabel.trim()) {
-                scheduleCatStore.addCategory(newSchedLabel.trim(), newSchedColor);
-                setNewSchedLabel('');
-              }
-            }}
-          />
-          <Button
-            size="sm"
-            className="h-8"
-            onClick={() => {
-              if (newSchedLabel.trim()) {
-                scheduleCatStore.addCategory(newSchedLabel.trim(), newSchedColor);
-                setNewSchedLabel('');
-              }
-            }}
-          >
-            <Plus className="h-3.5 w-3.5 mr-1" />
-            추가
-          </Button>
-        </div>
-      </Card>
-
-      </div>
-      {/* Admin Section */}
-      <div id="settings-admin">
-      {isAdmin && (
-        <Card className="p-0 overflow-hidden">
-          {/* Admin header */}
-          <div className="flex items-center gap-2 px-4 sm:px-6 pt-4 sm:pt-6 pb-3">
-            <Shield className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold">관리자</h2>
-          </div>
-
-          {/* Admin tabs */}
-          <div className="flex border-b px-4 sm:px-6">
-            <button
-              onClick={() => setAdminTab('approval')}
-              className={`relative px-3 py-2 text-sm font-medium transition-colors ${
-                adminTab === 'approval' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              가입 승인
-              {pendingUsers.length > 0 && (
-                <Badge variant="destructive" className="text-[10px] px-1.5 py-0 ml-1.5 absolute -top-0.5 -right-1">
-                  {pendingUsers.length}
-                </Badge>
-              )}
-              {adminTab === 'approval' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />}
-            </button>
-            <button
-              onClick={() => setAdminTab('members')}
-              className={`relative px-3 py-2 text-sm font-medium transition-colors ${
-                adminTab === 'members' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              회원 관리
-              <span className="text-xs text-muted-foreground ml-1">
-                ({allUsers.filter((u) => u.status === 'approved' && u.role !== 'admin').length})
-              </span>
-              {adminTab === 'members' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />}
-            </button>
-            <button
-              onClick={() => setAdminTab('patients')}
-              className={`relative px-3 py-2 text-sm font-medium transition-colors ${
-                adminTab === 'patients' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              환자 현황
-              <span className="text-xs text-muted-foreground ml-1">
-                ({allPatients.filter((p) => p.status === 'active').length})
-              </span>
-              {adminTab === 'patients' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />}
-            </button>
-          </div>
-
-          {/* Tab content */}
-          <div className="p-4 sm:p-6">
-            {/* Approval tab */}
-            {adminTab === 'approval' && (
-              <div className="space-y-3">
-                {pendingUsers.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-4 text-center">승인 대기 중인 가입 요청이 없습니다.</p>
-                ) : (
-                  pendingUsers.map((user) => {
-                    const state = approvalState[user.id];
-                    const isProcessing = processingId === user.id;
-                    return (
-                      <Card key={user.id} className="p-4 space-y-3">
-                        {/* User info */}
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <div className="font-medium">{user.name}</div>
-                            <div className="text-sm text-muted-foreground">
-                              @{user.username} · {user.department}
-                            </div>
-                            <div className="text-xs text-muted-foreground mt-1">
-                              가입 신청: {user.createdAt.toLocaleDateString('ko-KR')}
-                            </div>
-                          </div>
-                      <Badge variant="outline" className="text-amber-600 border-amber-300">
-                        대기 중
-                      </Badge>
+      <div className="p-4 sm:p-6">
+        {tab === 'approval' && (
+          <div className="space-y-3">
+            {pendingUsers.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">승인 대기 중인 가입 요청이 없습니다.</p>
+            ) : (
+              pendingUsers.map((user) => {
+                const state = approvalState[user.id] ?? { role: 'doctor', modules: ['wardflow'] };
+                return (
+                  <Card key={user.id} className="space-y-3 p-4">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="font-medium">{user.name}</div>
+                        <div className="text-sm text-muted-foreground">@{user.username} · {user.department || '-'}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">가입 요청: {user.createdAt.toLocaleDateString('ko-KR')}</div>
+                      </div>
+                      <Badge variant="outline" className="border-amber-300 text-amber-600">대기 중</Badge>
                     </div>
-
-                    {/* Role selection */}
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-muted-foreground">역할</label>
-                      <div className="flex gap-2">
-                        {AVAILABLE_ROLES.map((r) => (
+                      <div className="flex flex-wrap gap-2">
+                        {AVAILABLE_ROLES.map((role) => (
                           <Button
-                            key={r.value}
-                            variant={state?.role === r.value ? 'default' : 'outline'}
+                            key={role.value}
+                            variant={state.role === role.value ? 'default' : 'outline'}
                             size="sm"
                             className="h-7 text-xs"
-                            onClick={() =>
-                              setApprovalState((prev) => ({
-                                ...prev,
-                                [user.id]: { ...prev[user.id]!, role: r.value },
-                              }))
-                            }
+                            onClick={() => setApprovalState((current) => ({ ...current, [user.id]: { ...state, role: role.value } }))}
                           >
-                            {r.label}
+                            {role.label}
                           </Button>
                         ))}
                       </div>
                     </div>
-
-                    {/* Module selection */}
                     <div className="space-y-1.5">
                       <label className="text-xs font-medium text-muted-foreground">모듈 권한</label>
-                      <div className="flex gap-2">
-                        {AVAILABLE_MODULES.map((m) => (
+                      <div className="flex flex-wrap gap-2">
+                        {AVAILABLE_MODULES.map((module) => (
                           <Button
-                            key={m.value}
-                            variant={state?.modules.includes(m.value) ? 'default' : 'outline'}
+                            key={module.value}
+                            variant={state.modules.includes(module.value) ? 'default' : 'outline'}
                             size="sm"
                             className="h-7 text-xs"
-                            onClick={() => toggleModule(user.id, m.value)}
+                            onClick={() => toggleModule(user.id, module.value)}
                           >
-                            {m.label}
-                            <span className="ml-1 text-[10px] opacity-70">({m.description})</span>
+                            {module.label}
+                            <span className="ml-1 text-[10px] opacity-70">({module.description})</span>
                           </Button>
                         ))}
                       </div>
                     </div>
-
-                    {/* Action buttons */}
                     <div className="flex gap-2 pt-1">
-                      <Button
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => handleApprove(user.id)}
-                        disabled={isProcessing}
-                      >
-                        <UserCheck className="h-3.5 w-3.5 mr-1.5" />
+                      <Button size="sm" className="flex-1" onClick={() => approve(user.id)} disabled={processingId === user.id}>
+                        <UserCheck className="mr-1.5 h-3.5 w-3.5" />
                         승인
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => handleReject(user.id)}
-                        disabled={isProcessing}
-                      >
-                        <UserX className="h-3.5 w-3.5 mr-1.5" />
+                      <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => reject(user.id)} disabled={processingId === user.id}>
+                        <UserX className="mr-1.5 h-3.5 w-3.5" />
                         거절
                       </Button>
                     </div>
@@ -981,690 +589,493 @@ const SettingsPage = () => {
           </div>
         )}
 
-            {/* Members tab */}
-            {adminTab === 'members' && (
-              <div className="rounded-lg border overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-muted/50 text-left">
-                      <th className="px-3 py-2 font-medium">이름</th>
-                      <th className="px-3 py-2 font-medium">아이디</th>
-                      <th className="px-3 py-2 font-medium hidden sm:table-cell">진료과</th>
-                      <th className="px-3 py-2 font-medium">역할</th>
-                      <th className="px-3 py-2 font-medium hidden sm:table-cell">모듈</th>
-                      <th className="px-3 py-2 font-medium hidden sm:table-cell">상태</th>
-                      <th className="px-3 py-2 font-medium hidden md:table-cell">가입일</th>
-                      <th className="px-3 py-2 font-medium w-10"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {allUsers
-                      .filter((u) => u.role !== 'admin')
-                      .sort((a, b) => {
-                        const statusOrder = { approved: 0, pending: 1, rejected: 2 };
-                        const diff = statusOrder[a.status] - statusOrder[b.status];
-                        if (diff !== 0) return diff;
-                        return a.name.localeCompare(b.name, 'ko');
-                      })
-                      .map((user) => (
-                        <tr key={user.id} className="border-t hover:bg-muted/20">
-                          <td className="px-3 py-2 font-medium">{user.name}</td>
-                          <td className="px-3 py-2 text-muted-foreground text-xs">@{user.username}</td>
-                          <td className="px-3 py-2 hidden sm:table-cell">{user.department || '-'}</td>
-                          <td className="px-3 py-2 text-xs">
-                            {AVAILABLE_ROLES.find((r) => r.value === user.role)?.label || user.role}
-                          </td>
-                          <td className="px-3 py-2 hidden sm:table-cell">
-                            <div className="flex gap-1">
-                              {user.modules?.map((m) => (
-                                <Badge key={m} variant="secondary" className="text-[10px] px-1.5 py-0">
-                                  {m === 'wardflow' ? 'WF' : m === 'wardcare' ? 'WC' : m}
-                                </Badge>
-                              ))}
-                              {(!user.modules || user.modules.length === 0) && (
-                                <span className="text-muted-foreground text-xs">-</span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2 hidden sm:table-cell">
-                            <Badge
-                              variant={user.status === 'approved' ? 'default' : user.status === 'pending' ? 'outline' : 'destructive'}
-                              className={`text-[10px] ${user.status === 'approved' ? 'bg-green-600' : user.status === 'pending' ? 'text-amber-600 border-amber-300' : ''}`}
-                            >
-                              {user.status === 'approved' ? '승인' : user.status === 'pending' ? '대기' : '거절'}
-                            </Badge>
-                          </td>
-                          <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell">
-                            {user.createdAt instanceof Date
-                              ? user.createdAt.toLocaleDateString('ko-KR')
-                              : new Date(user.createdAt).toLocaleDateString('ko-KR')}
-                          </td>
-                          <td className="px-3 py-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-destructive hover:text-destructive"
-                              onClick={() => handleDeleteUser(user.id, user.name)}
-                              disabled={processingId === user.id}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    {allUsers.filter((u) => u.role !== 'admin').length === 0 && (
-                      <tr>
-                        <td colSpan={8} className="px-3 py-6 text-center text-muted-foreground text-sm">
-                          등록된 회원이 없습니다.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* Patients tab */}
-            {adminTab === 'patients' && (() => {
-              const grouped = new Map<string, { active: Patient[]; discharged: Patient[] }>();
-              for (const p of allPatients) {
-                if (!grouped.has(p.createdBy)) {
-                  grouped.set(p.createdBy, { active: [], discharged: [] });
-                }
-                const group = grouped.get(p.createdBy)!;
-                if (p.status === 'active') {
-                  group.active.push(p);
-                } else {
-                  group.discharged.push(p);
-                }
-              }
-
-              const doctorEntries = Array.from(grouped.entries()).map(([doctorId, group]) => {
-                const user = allUsers.find((u) => u.id === doctorId);
-                return {
-                  doctorId,
-                  doctorName: user?.name ?? doctorId,
-                  department: user?.department ?? '',
-                  active: group.active.sort((a, b) => a.roomBed.localeCompare(b.roomBed, undefined, { numeric: true })),
-                  discharged: group.discharged.sort((a, b) => {
-                    const da = a.dischargeDate ? new Date(a.dischargeDate).getTime() : 0;
-                    const db2 = b.dischargeDate ? new Date(b.dischargeDate).getTime() : 0;
-                    return db2 - da;
-                  }),
-                };
-              }).sort((a, b) => a.doctorName.localeCompare(b.doctorName, 'ko'));
-
-              if (doctorEntries.length === 0) {
-                return <p className="text-sm text-muted-foreground py-4 text-center">등록된 환자가 없습니다.</p>;
-              }
-
-              return (
-                <div className="space-y-3">
-                  {doctorEntries.map(({ doctorId, doctorName, department, active, discharged }) => (
-                    <Card key={doctorId} className="p-3 sm:p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Stethoscope className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-semibold">{doctorName}</span>
-                        {department && (
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0">{department}</Badge>
-                        )}
-                        <span className="text-xs text-muted-foreground ml-auto">
-                          입원 {active.filter((p) => p.patientType === 'admitted').length}명
-                          {active.some((p) => p.patientType === 'consult') &&
-                            ` / 컨설트 ${active.filter((p) => p.patientType === 'consult').length}명`}
-                          {discharged.length > 0 && ` / 퇴원 ${discharged.length}명`}
-                        </span>
-                      </div>
-
-                      {active.length > 0 && (
-                        <div className="space-y-1">
-                          {active.map((p) => (
-                            <div key={p.id} className="flex items-center gap-2 text-sm px-2 py-1 rounded hover:bg-muted/50">
-                              <Badge
-                                variant={p.patientType === 'admitted' ? 'default' : 'outline'}
-                                className={`text-[10px] px-1.5 py-0 w-12 justify-center ${p.patientType === 'admitted' ? 'bg-blue-600' : 'text-violet-600 border-violet-300'}`}
-                              >
-                                {p.patientType === 'admitted' ? '입원' : '컨설트'}
-                              </Badge>
-                              <span className="text-muted-foreground w-14 text-xs">{p.roomBed}</span>
-                              <span className="font-medium">{p.name}</span>
-                              <span className="text-xs text-muted-foreground">{p.sex}/{new Date().getFullYear() - new Date(p.birthDate).getFullYear()}</span>
-                              {p.attention && (
-                                <span className="text-red-500 text-xs">⚠️</span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {discharged.length > 0 && (
-                        <details className="mt-1">
-                          <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
-                            퇴원환자 {discharged.length}명
-                          </summary>
-                          <div className="mt-1 space-y-1 opacity-60">
-                            {discharged.map((p) => (
-                              <div key={p.id} className="flex items-center gap-2 text-sm px-2 py-1">
-                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 w-12 justify-center">퇴원</Badge>
-                                <span className="font-medium">{p.name}</span>
-                                <span className="text-xs text-muted-foreground">
-                                  {p.dischargeDate instanceof Date
-                                    ? p.dischargeDate.toLocaleDateString('ko-KR')
-                                    : p.dischargeDate ? new Date(p.dischargeDate).toLocaleDateString('ko-KR') : ''}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </details>
-                      )}
-                    </Card>
-                  ))}
-                </div>
-              );
-            })()}
+        {tab === 'members' && (
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-muted/50 text-left">
+                  <th className="px-3 py-2 font-medium">이름</th>
+                  <th className="px-3 py-2 font-medium">아이디</th>
+                  <th className="hidden px-3 py-2 font-medium sm:table-cell">진료과</th>
+                  <th className="px-3 py-2 font-medium">역할</th>
+                  <th className="hidden px-3 py-2 font-medium sm:table-cell">상태</th>
+                  <th className="w-10 px-3 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {allUsers.filter((user) => user.role !== 'admin').map((user) => (
+                  <tr key={user.id} className="border-t hover:bg-muted/20">
+                    <td className="px-3 py-2 font-medium">{user.name}</td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">@{user.username}</td>
+                    <td className="hidden px-3 py-2 sm:table-cell">{user.department || '-'}</td>
+                    <td className="px-3 py-2 text-xs">{AVAILABLE_ROLES.find((role) => role.value === user.role)?.label || user.role}</td>
+                    <td className="hidden px-3 py-2 sm:table-cell">
+                      <Badge variant={user.status === 'approved' ? 'default' : user.status === 'pending' ? 'outline' : 'destructive'} className="text-[10px]">
+                        {user.status === 'approved' ? '승인' : user.status === 'pending' ? '대기' : '거절'}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-2">
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeUser(user)} disabled={processingId === user.id}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+        )}
+
+        {tab === 'patients' && <PatientOwnershipList patients={allPatients} users={allUsers} />}
+      </div>
+    </Card>
+  );
+}
+
+function AdminTabButton({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count: number }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn('relative px-3 py-2 text-sm font-medium transition-colors', active ? 'text-primary' : 'text-muted-foreground hover:text-foreground')}
+    >
+      {label}
+      <span className="ml-1 text-xs text-muted-foreground">({count})</span>
+      {active && <div className="absolute right-0 bottom-0 left-0 h-0.5 rounded-full bg-primary" />}
+    </button>
+  );
+}
+
+function PatientOwnershipList({ patients, users }: { patients: Patient[]; users: User[] }) {
+  const entries = useMemo(() => {
+    const grouped = new Map<string, { active: Patient[]; discharged: Patient[] }>();
+    for (const patient of patients) {
+      if (!grouped.has(patient.createdBy)) grouped.set(patient.createdBy, { active: [], discharged: [] });
+      const group = grouped.get(patient.createdBy)!;
+      if (patient.status === 'active') group.active.push(patient);
+      else group.discharged.push(patient);
+    }
+    return Array.from(grouped.entries()).map(([doctorId, group]) => {
+      const user = users.find((item) => item.id === doctorId);
+      return {
+        doctorId,
+        doctorName: user?.name ?? doctorId,
+        department: user?.department ?? '',
+        active: group.active.sort((a, b) => a.roomBed.localeCompare(b.roomBed, undefined, { numeric: true })),
+        discharged: group.discharged,
+      };
+    });
+  }, [patients, users]);
+
+  if (entries.length === 0) {
+    return <p className="py-4 text-center text-sm text-muted-foreground">등록된 환자가 없습니다.</p>;
+  }
+
+  return (
+    <div className="space-y-3">
+      {entries.map(({ doctorId, doctorName, department, active, discharged }) => (
+        <Card key={doctorId} className="p-3 sm:p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <Stethoscope className="h-4 w-4 text-muted-foreground" />
+            <span className="font-semibold">{doctorName}</span>
+            {department && <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{department}</Badge>}
+            <span className="ml-auto text-xs text-muted-foreground">활성 {active.length}명 / 퇴원 {discharged.length}명</span>
+          </div>
+          <div className="space-y-1">
+            {active.map((patient) => (
+              <div key={patient.id} className="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted/50">
+                <Badge variant={patient.patientType === 'admitted' ? 'default' : 'outline'} className="w-12 justify-center px-1.5 py-0 text-[10px]">
+                  {patient.patientType === 'admitted' ? '입원' : '협진'}
+                </Badge>
+                <span className="w-14 text-xs text-muted-foreground">{patient.roomBed}</span>
+                <span className="font-medium">{patient.name}</span>
+                {patient.attention && <span className="text-xs text-red-500">주의</span>}
+              </div>
+            ))}
+          </div>
+          {discharged.length > 0 && (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">퇴원 환자 {discharged.length}명</summary>
+              <div className="mt-1 space-y-1 opacity-70">
+                {discharged.map((patient) => (
+                  <div key={patient.id} className="flex items-center gap-2 px-2 py-1 text-sm">
+                    <Badge variant="secondary" className="w-12 justify-center px-1.5 py-0 text-[10px]">퇴원</Badge>
+                    <span className="font-medium">{patient.name}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
         </Card>
-      )}
-
-      </div>
-      <div id="settings-lab-cat">
-      {/* Lab Category Settings */}
-      <Card className="p-4 sm:p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <FlaskConical className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold">Lab 카테고리</h2>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={handleReset}>
-              <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-              기본값
-            </Button>
-            <Button size="sm" onClick={handleSave}>
-              <Save className="h-3.5 w-3.5 mr-1.5" />
-              {saved ? '저장됨!' : '저장'}
-            </Button>
-          </div>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          Lab 결과 표시 순서와 카테고리를 설정합니다. 상하 버튼으로 카테고리 순서를 변경할 수 있습니다.
-        </p>
-
-        <div className="space-y-2">
-          {categories.map((cat, idx) => (
-            <Card key={cat.id} className="p-0 overflow-hidden">
-              <div className="flex items-center gap-2 px-3 py-2 bg-muted/30">
-                <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
-                <span className="font-medium text-sm flex-1">{cat.name}</span>
-                <span className="text-xs text-muted-foreground">{cat.items.length}개 항목</span>
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => moveCategory(idx, 'up')} disabled={idx === 0}>↑</Button>
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => moveCategory(idx, 'down')} disabled={idx === categories.length - 1}>↓</Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={() => setExpandedId(expandedId === cat.id ? null : cat.id)}
-                  >
-                    {expandedId === cat.id ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => deleteCategory(cat.id)}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </div>
-              {expandedId === cat.id && (
-                <div className="p-3 space-y-2 border-t">
-                  <div className="flex flex-wrap gap-1.5">
-                    {cat.items.map((item) => (
-                      <span
-                        key={item}
-                        className="inline-flex items-center gap-1 rounded-full border bg-background px-2.5 py-0.5 text-xs"
-                      >
-                        {item}
-                        <button onClick={() => removeItem(cat.id, item)} className="text-muted-foreground hover:text-destructive">×</button>
-                      </span>
-                    ))}
-                  </div>
-                  <div className="flex gap-2">
-                    <Input
-                      className="h-7 text-xs flex-1"
-                      placeholder="항목명 추가 (예: WBC, Hb)"
-                      value={newItemInputs[cat.id] ?? ''}
-                      onChange={(e) => setNewItemInputs((prev) => ({ ...prev, [cat.id]: e.target.value }))}
-                      onKeyDown={(e) => e.key === 'Enter' && addItem(cat.id)}
-                    />
-                    <Button size="sm" className="h-7 text-xs" onClick={() => addItem(cat.id)}>추가</Button>
-                  </div>
-                </div>
-              )}
-            </Card>
-          ))}
-        </div>
-
-        {/* Add new category */}
-        <div className="flex gap-2">
-          <Input
-            className="h-8 text-sm"
-            placeholder="새 카테고리 이름 (예: Thyroid, Cardiac)"
-            value={newCatName}
-            onChange={(e) => setNewCatName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addCategory()}
-          />
-          <Button size="sm" onClick={addCategory}>
-            <Plus className="h-3.5 w-3.5 mr-1" />
-            추가
-          </Button>
-        </div>
-      </Card>
-
-      </div>
-      <div id="settings-lab-ref">
-      {/* Lab Reference Ranges */}
-      <Card className="p-4 sm:p-6 space-y-4">
-        <div className="flex items-center gap-2">
-          <FlaskConical className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold">Lab 참조범위</h2>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          Lab 결과의 정상/비정상 색상 표시에 사용되는 참조범위를 설정합니다.
-        </p>
-        <LabReferenceSettings />
-      </Card>
-
-      </div>
-      <div id="settings-calendar-color">
-      {/* Calendar Event Colors */}
-      <Card className="p-4 sm:p-6 space-y-4">
-        <div className="flex items-center gap-2">
-          <Calendar className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold">캘린더 색상</h2>
-        </div>
-        <p className="text-sm text-muted-foreground">캘린더와 Today's Note에서 표시되는 이벤트 색상을 변경합니다.</p>
-        <CalendarColorSettings />
-      </Card>
-
-      </div>
-      <div id="settings-lab-import">
-      {/* Lab Import Inbox */}
-      <Card className="p-6 space-y-4">
-        <div className="flex items-center gap-2">
-          <FlaskConical className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold">Lab Import Inbox</h2>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          오픈클로가 XLS를 저장하는 폴더를 연결하면 Lab 결과를 자동으로 파싱하여 환자와 매칭, 저장합니다.
-        </p>
-        <LabImportInbox
-          onServerSync={serverKey && serverPw ? async () => {
-            await uploadBackupToServer(serverPw, serverKey.trim());
-          } : undefined}
-        />
-      </Card>
-
-      </div>
-      </div>
-      <div id="settings-ai">
-      {/* AI Settings */}
-      <Card className="p-4 sm:p-6 space-y-4">
-        <div className="flex items-center gap-2">
-          <Bot className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold">AI 설정</h2>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          AI 기능(SOAP 변환, Lab 요약 등)에 사용할 LLM API를 설정합니다.
-        </p>
-        <AISettings />
-      </Card>
-
-      <div id="settings-backup">
-      {/* Backup & Restore */}
-      <Card ref={backupSectionRef} className="p-6 space-y-5">
-        <div className="flex items-center gap-2">
-          <HardDrive className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold">데이터 백업 / 복원</h2>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          모든 데이터를 AES-256 암호화된 파일(.wardflow)로 내보내거나 복원합니다.
-        </p>
-
-        {/* Daily backup reminder toggle */}
-        <label className="flex items-center justify-between rounded-lg border p-3 cursor-pointer hover:bg-muted/50 transition-colors">
-          <div className="flex items-center gap-2">
-            <Bell className="h-4 w-4 text-amber-500" />
-            <span className="text-sm font-medium">매일 첫 실행 시 백업 알림</span>
-          </div>
-          <div
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${dailyBackup ? 'bg-primary' : 'bg-muted-foreground/30'}`}
-            onClick={() => {
-              const next = !dailyBackup;
-              setDailyBackup(next);
-              setDailyBackupEnabled(next);
-              toast({ title: next ? '매일 백업 알림이 활성화되었습니다.' : '매일 백업 알림이 비활성화되었습니다.' });
-            }}
-          >
-            <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${dailyBackup ? 'translate-x-6' : 'translate-x-1'}`} />
-          </div>
-        </label>
-
-        {/* Export */}
-        <div className="space-y-3 rounded-lg border p-4">
-          <div className="flex items-center gap-2">
-            <Download className="h-4 w-4 text-green-600" />
-            <h3 className="font-medium text-sm">백업 내보내기</h3>
-          </div>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Input
-                type={backupShowPw ? 'text' : 'password'}
-                placeholder="암호화 비밀번호 (4자 이상)"
-                value={backupPassword}
-                onChange={(e) => setBackupPassword(e.target.value)}
-                className="pr-9"
-              />
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                onClick={() => setBackupShowPw(!backupShowPw)}
-              >
-                {backupShowPw ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              </Button>
-            </div>
-            <Button onClick={handleExportBackup} disabled={backupLoading || !backupPassword}>
-              {backupLoading ? (
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              ) : (
-                <>
-                  <Download className="h-4 w-4 mr-1" />
-                  내보내기
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-
-        {/* Import */}
-        <div className="space-y-3 rounded-lg border p-4">
-          <div className="flex items-center gap-2">
-            <Upload className="h-4 w-4 text-blue-600" />
-            <h3 className="font-medium text-sm">백업 복원</h3>
-          </div>
-          <p className="text-xs text-destructive">
-            복원 시 현재 모든 데이터가 백업 파일의 내용으로 교체됩니다.
-          </p>
-          <div className="space-y-2">
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => restoreInputRef.current?.click()}
-              >
-                <Upload className="h-3.5 w-3.5 mr-1" />
-                {restoreFile ? restoreFile.name : '파일 선택 (.wardflow)'}
-              </Button>
-              <input
-                ref={restoreInputRef}
-                type="file"
-                accept=".wardflow"
-                className="hidden"
-                onChange={(e) => setRestoreFile(e.target.files?.[0] ?? null)}
-              />
-            </div>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Input
-                  type={restoreShowPw ? 'text' : 'password'}
-                  placeholder="백업 시 설정한 비밀번호"
-                  value={restorePassword}
-                  onChange={(e) => setRestorePassword(e.target.value)}
-                  className="pr-9"
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                  onClick={() => setRestoreShowPw(!restoreShowPw)}
-                >
-                  {restoreShowPw ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                </Button>
-              </div>
-              <Button variant="destructive" onClick={handleImportBackup} disabled={restoreLoading || !restoreFile || !restorePassword}>
-                {restoreLoading ? (
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                ) : (
-                  <>
-                    <Upload className="h-4 w-4 mr-1" />
-                    복원
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        {/* Divider */}
-        <div className="relative py-2">
-          <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
-          <div className="relative flex justify-center text-xs">
-            <span className="bg-card px-2 text-muted-foreground">또는 텍스트로 전송</span>
-          </div>
-        </div>
-
-        {/* Text Export */}
-        <div className="space-y-3 rounded-lg border p-4">
-          <div className="flex items-center gap-2">
-            <Download className="h-4 w-4 text-green-600" />
-            <h3 className="font-medium text-sm">텍스트로 복사 (다른 기기로 전송)</h3>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            암호화된 백업 텍스트를 클립보드에 복사합니다. 카톡 나에게 보내기 등으로 다른 기기에 전달하세요.
-          </p>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Input
-                type={textExportShowPw ? 'text' : 'password'}
-                placeholder="암호화 비밀번호 (4자 이상)"
-                value={textExportPw}
-                onChange={(e) => setTextExportPw(e.target.value)}
-                className="pr-9"
-              />
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                onClick={() => setTextExportShowPw(!textExportShowPw)}
-              >
-                {textExportShowPw ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              </Button>
-            </div>
-            <Button onClick={handleTextExport} disabled={textExportLoading || !textExportPw}>
-              {textExportLoading ? (
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              ) : (
-                <>
-                  <FileText className="h-4 w-4 mr-1" />
-                  복사
-                </>
-              )}
-            </Button>
-          </div>
-          {textExportResult && (
-            <div className="space-y-2">
-              <textarea
-                readOnly
-                value={textExportResult}
-                className="w-full h-20 rounded-md border bg-muted/50 p-2 text-[10px] font-mono resize-none"
-                onClick={(e) => (e.target as HTMLTextAreaElement).select()}
-              />
-              <p className="text-xs text-green-600">위 텍스트가 클립보드에 복사되었습니다.</p>
-            </div>
-          )}
-        </div>
-
-        {/* Text Import */}
-        <div className="space-y-3 rounded-lg border p-4">
-          <div className="flex items-center gap-2">
-            <Upload className="h-4 w-4 text-blue-600" />
-            <h3 className="font-medium text-sm">텍스트에서 복원 (다른 기기에서 받은 데이터)</h3>
-          </div>
-          <p className="text-xs text-destructive">
-            복원 시 현재 모든 데이터가 교체됩니다.
-          </p>
-          <textarea
-            placeholder="WARDFLOW:로 시작하는 백업 텍스트를 붙여넣으세요..."
-            value={textImportData}
-            onChange={(e) => setTextImportData(e.target.value)}
-            className="w-full h-20 rounded-md border bg-background p-2 text-xs font-mono resize-none placeholder:font-sans"
-          />
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Input
-                type={textImportShowPw ? 'text' : 'password'}
-                placeholder="백업 시 설정한 비밀번호"
-                value={textImportPw}
-                onChange={(e) => setTextImportPw(e.target.value)}
-                className="pr-9"
-              />
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                onClick={() => setTextImportShowPw(!textImportShowPw)}
-              >
-                {textImportShowPw ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              </Button>
-            </div>
-            <Button variant="destructive" onClick={handleTextImport} disabled={textImportLoading || !textImportData || !textImportPw}>
-              {textImportLoading ? (
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              ) : (
-                <>
-                  <Upload className="h-4 w-4 mr-1" />
-                  복원
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-
-        {/* Divider */}
-        <div className="relative py-2">
-          <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
-          <div className="relative flex justify-center text-xs">
-            <span className="bg-card px-2 text-muted-foreground">또는 서버 동기화</span>
-          </div>
-        </div>
-
-        {/* Server Sync */}
-        <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
-          <div className="flex items-center gap-2">
-            <Cloud className="h-4 w-4 text-primary" />
-            <h3 className="font-medium text-sm">서버 동기화 (Supabase)</h3>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            암호화된 데이터를 서버에 업로드/다운로드하여 기기 간 동기화할 수 있습니다.
-            동일한 동기화 키와 비밀번호를 사용해야 합니다.
-          </p>
-          <div className="space-y-2">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">동기화 키 (아이디 또는 고유 키)</label>
-              <Input
-                type="text"
-                placeholder="예: myward, doctor-kim"
-                value={serverKey}
-                onChange={(e) => setServerKey(e.target.value)}
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">암호화 비밀번호 (4자 이상)</label>
-              <div className="relative mt-1">
-                <Input
-                  type={serverShowPw ? 'text' : 'password'}
-                  placeholder="암호화 비밀번호"
-                  value={serverPw}
-                  onChange={(e) => setServerPw(e.target.value)}
-                  className="pr-9"
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                  onClick={() => setServerShowPw(!serverShowPw)}
-                >
-                  {serverShowPw ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {serverInfo && serverInfo.exists && (
-            <div className="rounded-md bg-green-50 dark:bg-green-950/20 p-2 text-xs text-green-700 dark:text-green-400">
-              마지막 업로드: {new Date(serverInfo.updatedAt!).toLocaleString()}
-            </div>
-          )}
-
-          <div className="flex gap-2 flex-wrap">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleCheckServerInfo}
-              disabled={serverLoading || !serverKey}
-            >
-              <Cloud className="h-3.5 w-3.5 mr-1" />
-              확인
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleServerUpload}
-              disabled={serverLoading || !serverKey || !serverPw}
-            >
-              {serverLoading ? (
-                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              ) : (
-                <>
-                  <CloudUpload className="h-3.5 w-3.5 mr-1" />
-                  서버 업로드
-                </>
-              )}
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={handleServerDownload}
-              disabled={serverLoading || !serverKey || !serverPw}
-            >
-              {serverLoading ? (
-                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              ) : (
-                <>
-                  <CloudDownload className="h-3.5 w-3.5 mr-1" />
-                  서버 다운로드
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-      </Card>
-      </div>
-      </div>
+      ))}
     </div>
   );
-};
+}
 
-// --- AI Settings Sub-component ---
+function ChartingSettings() {
+  const {
+    problemListStyle,
+    setProblemListStyle,
+    includeFieldNames,
+    setIncludeFieldNames,
+    excludeEmptySections,
+    setExcludeEmptySections,
+    sectionSeparator,
+    setSectionSeparator,
+    sectionNames,
+    setSectionName,
+    resetSectionNames,
+  } = useChartingSettingsStore();
+
+  return (
+    <Card className="space-y-5 p-4 sm:p-6">
+      <div className="flex items-center gap-2">
+        <FileText className="h-5 w-5 text-primary" />
+        <h2 className="text-lg font-semibold">차팅 복사 설정</h2>
+      </div>
+      <SettingRow label="Problem List 형식">
+        <select
+          value={problemListStyle}
+          onChange={(event) => setProblemListStyle(event.target.value as 'numbered' | 'numbered_simple' | 'bulleted' | 'plain')}
+          className="rounded-md border bg-background px-2 py-1 text-sm"
+        >
+          <option value="numbered_simple">#. 기본</option>
+          <option value="numbered">#1. #2. #3.</option>
+          <option value="bulleted">bullet</option>
+          <option value="plain">표시 없음</option>
+        </select>
+      </SettingRow>
+      <SettingRow label="섹션 간격">
+        <select
+          value={sectionSeparator === '\n\n' ? '2' : '1'}
+          onChange={(event) => setSectionSeparator(event.target.value === '2' ? '\n\n' : '\n')}
+          className="rounded-md border bg-background px-2 py-1 text-sm"
+        >
+          <option value="2">빈 줄 포함</option>
+          <option value="1">줄바꿈만</option>
+        </select>
+      </SettingRow>
+      <div className="space-y-2">
+        <label className="flex cursor-pointer items-center gap-3">
+          <input type="checkbox" checked={includeFieldNames} onChange={(event) => setIncludeFieldNames(event.target.checked)} />
+          <span className="text-sm">필드명 포함</span>
+        </label>
+        <label className="flex cursor-pointer items-center gap-3">
+          <input type="checkbox" checked={excludeEmptySections} onChange={(event) => setExcludeEmptySections(event.target.checked)} />
+          <span className="text-sm">빈 섹션 제외</span>
+        </label>
+      </div>
+      {includeFieldNames && (
+        <div className="space-y-2 border-t pt-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">섹션 이름</span>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={resetSectionNames}>
+              <RotateCcw className="mr-1 h-3 w-3" />
+              기본값
+            </Button>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(Object.entries(sectionNames) as [keyof typeof sectionNames, string][]).map(([key, value]) => (
+              <div key={key} className="flex items-center gap-2">
+                <span className="w-24 shrink-0 truncate text-xs text-muted-foreground">{key}</span>
+                <Input className="h-7 text-xs" value={value} onChange={(event) => setSectionName(key, event.target.value)} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function SettingRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <span className="w-40 shrink-0 text-sm">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function ScheduleCategorySettings() {
+  const store = useScheduleCategoryStore();
+  const [label, setLabel] = useState('');
+  const [color, setColor] = useState('gray');
+
+  const add = () => {
+    if (!label.trim()) return;
+    store.addCategory(label.trim(), color);
+    setLabel('');
+  };
+
+  return (
+    <Card className="space-y-4 p-4 sm:p-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Calendar className="h-5 w-5 text-primary" />
+          <h2 className="text-lg font-semibold">일정 카테고리</h2>
+        </div>
+        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={store.resetCategories}>
+          <RotateCcw className="mr-1 h-3 w-3" />
+          기본값
+        </Button>
+      </div>
+      <div className="space-y-2">
+        {store.categories.map((category) => (
+          <div key={category.id} className="flex items-center gap-2">
+            <select value={category.color} onChange={(event) => store.updateCategory(category.id, { color: event.target.value })} className="w-24 rounded-md border bg-background px-1.5 py-1 text-xs">
+              {COLOR_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+            <Input className="h-8 flex-1 text-sm" value={category.label} onChange={(event) => store.updateCategory(category.id, { label: event.target.value })} />
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => store.removeCategory(category.id)}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <select value={color} onChange={(event) => setColor(event.target.value)} className="w-24 rounded-md border bg-background px-1.5 py-1 text-xs">
+          {COLOR_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
+        </select>
+        <Input className="h-8 flex-1 text-sm" placeholder="새 카테고리 이름" value={label} onChange={(event) => setLabel(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && add()} />
+        <Button size="sm" className="h-8" onClick={add}>
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          추가
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function CalendarColorSettings() {
+  const { colors, setColor } = useCalendarColorStore();
+  const rows: { type: CalendarEventType; label: string }[] = [
+    { type: 'schedule', label: '일정' },
+    { type: 'global_alert', label: '전체 알림' },
+    { type: 'reminder', label: '리마인더' },
+  ];
+
+  return (
+    <Card className="space-y-4 p-4 sm:p-6">
+      <div className="flex items-center gap-2">
+        <Calendar className="h-5 w-5 text-primary" />
+        <h2 className="text-lg font-semibold">캘린더 색상</h2>
+      </div>
+      <p className="text-sm text-muted-foreground">캘린더와 오늘 화면에서 표시되는 이벤트 색상을 조정합니다.</p>
+      <div className="space-y-3">
+        {rows.map((row) => (
+          <div key={row.type} className="flex items-center justify-between gap-3 rounded-lg border p-3">
+            <span className="text-sm font-medium">{row.label}</span>
+            <div className="flex flex-wrap gap-1.5">
+              {PRESET_KEYS.map((key) => (
+                <button
+                  key={key}
+                  title={COLOR_PRESETS[key]?.name ?? key}
+                  onClick={() => setColor(row.type, key)}
+                  className={cn('h-6 w-6 rounded-full border-2', COLOR_PRESETS[key]?.dot, colors[row.type] === key ? 'border-zinc-950' : 'border-transparent')}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function LabCategorySettings() {
+  const { toast } = useToast();
+  const [categories, setCategories] = useState<LabDisplayCategory[]>([]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [newItemInputs, setNewItemInputs] = useState<Record<string, string>>({});
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    labCategoryService.getAll().then(setCategories).catch((error) => {
+      toast({ title: 'Lab 카테고리 로드 실패', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+    });
+  }, [toast]);
+
+  const save = async () => {
+    await labCategoryService.saveAll(categories.map((category, index) => ({ ...category, order: index })));
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const reset = async () => {
+    if (!window.confirm('Lab 카테고리를 기본값으로 초기화하시겠습니까?')) return;
+    await labCategoryService.resetToDefaults();
+    setCategories(DEFAULT_LAB_CATEGORIES);
+  };
+
+  const move = (index: number, direction: 'up' | 'down') => {
+    const target = direction === 'up' ? index - 1 : index + 1;
+    if (target < 0 || target >= categories.length) return;
+    const next = [...categories];
+    [next[index], next[target]] = [next[target]!, next[index]!];
+    setCategories(next);
+  };
+
+  const addCategory = () => {
+    if (!newCategoryName.trim()) return;
+    setCategories((current) => [...current, { id: crypto.randomUUID(), name: newCategoryName.trim(), order: current.length, items: [] }]);
+    setNewCategoryName('');
+  };
+
+  const addItem = (categoryId: string) => {
+    const value = newItemInputs[categoryId]?.trim();
+    if (!value) return;
+    setCategories((current) => current.map((category) => category.id === categoryId ? { ...category, items: [...category.items, value] } : category));
+    setNewItemInputs((current) => ({ ...current, [categoryId]: '' }));
+  };
+
+  return (
+    <Card className="space-y-4 p-4 sm:p-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <FlaskConical className="h-5 w-5 text-primary" />
+          <h2 className="text-lg font-semibold">Lab 카테고리</h2>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={reset}>
+            <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+            기본값
+          </Button>
+          <Button size="sm" onClick={save}>
+            <Save className="mr-1.5 h-3.5 w-3.5" />
+            {saved ? '저장됨' : '저장'}
+          </Button>
+        </div>
+      </div>
+      <p className="text-sm text-muted-foreground">Lab 결과 표시 순서와 묶음을 조정합니다. Supabase 모드에서는 사용자별 설정으로 저장됩니다.</p>
+      <div className="space-y-2">
+        {categories.map((category, index) => (
+          <Card key={category.id} className="overflow-hidden p-0">
+            <div className="flex items-center gap-2 bg-muted/30 px-3 py-2">
+              <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="flex-1 text-sm font-medium">{category.name}</span>
+              <span className="text-xs text-muted-foreground">{category.items.length}개 항목</span>
+              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => move(index, 'up')} disabled={index === 0}>↑</Button>
+              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => move(index, 'down')} disabled={index === categories.length - 1}>↓</Button>
+              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setExpandedId(expandedId === category.id ? null : category.id)}>
+                {expandedId === category.id ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              </Button>
+              <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => setCategories((current) => current.filter((item) => item.id !== category.id))}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            {expandedId === category.id && (
+              <div className="space-y-2 border-t p-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {category.items.map((item) => (
+                    <span key={item} className="inline-flex items-center gap-1 rounded-full border bg-background px-2.5 py-0.5 text-xs">
+                      {item}
+                      <button onClick={() => setCategories((current) => current.map((cat) => cat.id === category.id ? { ...cat, items: cat.items.filter((name) => name !== item) } : cat))} className="text-muted-foreground hover:text-destructive">×</button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    className="h-7 flex-1 text-xs"
+                    placeholder="항목명 추가"
+                    value={newItemInputs[category.id] ?? ''}
+                    onChange={(event) => setNewItemInputs((current) => ({ ...current, [category.id]: event.target.value }))}
+                    onKeyDown={(event) => event.key === 'Enter' && addItem(category.id)}
+                  />
+                  <Button size="sm" className="h-7 text-xs" onClick={() => addItem(category.id)}>추가</Button>
+                </div>
+              </div>
+            )}
+          </Card>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <Input className="h-8 text-sm" placeholder="새 카테고리 이름" value={newCategoryName} onChange={(event) => setNewCategoryName(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && addCategory()} />
+        <Button size="sm" onClick={addCategory}>
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          추가
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function LabReferenceSettings() {
+  const { getAllReferences, setOverride, removeOverride, resetAll } = useLabReferenceStore();
+  const [query, setQuery] = useState('');
+  const references = getAllReferences().filter((item) => item.name.toLowerCase().includes(query.toLowerCase()));
+
+  return (
+    <Card className="space-y-4 p-4 sm:p-6">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <FlaskConical className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold">Lab 참조범위</h2>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">비정상 Lab 표시 기준을 사용자별로 조정합니다.</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={resetAll}>전체 초기화</Button>
+      </div>
+      <Input placeholder="검사항목 검색" value={query} onChange={(event) => setQuery(event.target.value)} />
+      <div className="max-h-[520px] space-y-2 overflow-auto pr-1">
+        {references.map((item) => (
+          <div key={`${item.category}-${item.name}`} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_100px_100px_auto] sm:items-center">
+            <div>
+              <div className="text-sm font-medium">{item.name}</div>
+              <div className="text-xs text-muted-foreground">{item.category} {item.unit ? `· ${item.unit}` : ''}</div>
+            </div>
+            <Input
+              type="number"
+              className="h-8"
+              placeholder="min"
+              value={item.referenceMin ?? ''}
+              onChange={(event) => setOverride(item.name, event.target.value === '' ? undefined : Number(event.target.value), item.referenceMax)}
+            />
+            <Input
+              type="number"
+              className="h-8"
+              placeholder="max"
+              value={item.referenceMax ?? ''}
+              onChange={(event) => setOverride(item.name, item.referenceMin, event.target.value === '' ? undefined : Number(event.target.value))}
+            />
+            <Button variant="ghost" size="sm" onClick={() => removeOverride(item.name)} disabled={!item.isOverridden}>초기화</Button>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function LabImportSettings() {
+  const [serverPw] = useState(() => localStorage.getItem('wardflow-server-pw') || '');
+  const [serverKey] = useState(() => localStorage.getItem('wardflow-server-key') || '');
+
+  return (
+    <Card className="space-y-4 p-6">
+      <div className="flex items-center gap-2">
+        <FlaskConical className="h-5 w-5 text-primary" />
+        <h2 className="text-lg font-semibold">Lab Import Inbox</h2>
+      </div>
+      <p className="text-sm text-muted-foreground">오픈클로가 저장하는 XLS 폴더를 연결하면 Lab 결과를 파싱해 환자와 매칭합니다.</p>
+      <LabImportInbox
+        onServerSync={!useSupabaseBackend && serverKey && serverPw ? async () => {
+          await uploadBackupToServer(serverPw, serverKey.trim());
+        } : undefined}
+      />
+    </Card>
+  );
+}
 
 function AISettings() {
   const { provider, apiKey, model, setProvider, setApiKey, setModel, isConfigured } = useAIStore();
+  const { toast } = useToast();
   const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-  const { toast } = useToast();
-
   const providerInfo = LLM_PROVIDERS[provider];
 
-  const handleTest = async () => {
+  const test = async () => {
     setTesting(true);
     setTestResult(null);
     try {
@@ -1672,255 +1083,417 @@ function AISettings() {
       setTestResult(result);
       toast({ title: result.success ? '연결 성공' : '연결 실패', description: result.message, variant: result.success ? 'default' : 'destructive' });
     } catch (err) {
-      setTestResult({ success: false, message: (err as Error).message });
+      setTestResult({ success: false, message: err instanceof Error ? err.message : String(err) });
     } finally {
       setTesting(false);
     }
   };
 
   return (
-    <div className="space-y-4">
-      {/* Provider selection */}
+    <Card className="space-y-4 p-4 sm:p-6">
+      <div className="flex items-center gap-2">
+        <Bot className="h-5 w-5 text-primary" />
+        <h2 className="text-lg font-semibold">AI 설정</h2>
+      </div>
+      <p className="text-sm text-muted-foreground">API Key는 이 기기에 저장됩니다. 환자 정보가 외부 API로 전송될 수 있으니 실제 사용 시 주의하세요.</p>
       <div>
-        <label className="text-sm font-medium mb-1.5 block">LLM 선택</label>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {(Object.keys(LLM_PROVIDERS) as LLMProvider[]).map((p) => (
+        <label className="mb-1.5 block text-sm font-medium">LLM 선택</label>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {(Object.keys(LLM_PROVIDERS) as LLMProvider[]).map((item) => (
             <button
-              key={p}
-              onClick={() => setProvider(p)}
-              className={cn(
-                'rounded-md border px-3 py-2 text-sm transition-colors',
-                provider === p
-                  ? 'border-primary bg-primary/10 font-medium text-primary'
-                  : 'hover:bg-muted text-muted-foreground'
-              )}
+              key={item}
+              onClick={() => setProvider(item)}
+              className={cn('rounded-md border px-3 py-2 text-sm transition-colors', provider === item ? 'border-primary bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:bg-muted')}
             >
-              {LLM_PROVIDERS[p].name.split(' ')[0]}
+              {LLM_PROVIDERS[item].name.split(' ')[0]}
             </button>
           ))}
         </div>
       </div>
-
-      {/* Model selection */}
       <div>
-        <label className="text-sm font-medium mb-1.5 block">모델</label>
-        <select
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-        >
-          {providerInfo.models.map((m) => (
-            <option key={m.id} value={m.id}>{m.name} ({m.id})</option>
-          ))}
+        <label className="mb-1.5 block text-sm font-medium">모델</label>
+        <select value={model} onChange={(event) => setModel(event.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+          {providerInfo.models.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.id})</option>)}
         </select>
       </div>
-
-      {/* API Key */}
       <div>
-        <label className="text-sm font-medium mb-1.5 block">API Key</label>
+        <label className="mb-1.5 block text-sm font-medium">API Key</label>
         <div className="relative">
-          <Input
-            type={showKey ? 'text' : 'password'}
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder={`${providerInfo.name} API 키를 입력하세요`}
-            className="pr-10"
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-            onClick={() => setShowKey(!showKey)}
-          >
+          <Input type={showKey ? 'text' : 'password'} value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={`${providerInfo.name} API Key`} className="pr-10" />
+          <Button type="button" variant="ghost" size="icon" className="absolute top-1/2 right-1 h-7 w-7 -translate-y-1/2" onClick={() => setShowKey(!showKey)}>
             {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
           </Button>
         </div>
-        {apiKey && (
-          <p className="text-xs text-muted-foreground mt-1">
-            {apiKey.slice(0, 8)}...{apiKey.slice(-4)} ({apiKey.length}자)
-          </p>
-        )}
       </div>
-
-      {/* Test connection */}
       <div className="flex items-center gap-3">
-        <Button size="sm" onClick={handleTest} disabled={testing || !isConfigured()}>
-          {testing ? (
-            <><div className="h-3.5 w-3.5 mr-1 animate-spin rounded-full border-2 border-current border-t-transparent" />테스트 중...</>
-          ) : (
-            '연결 테스트'
-          )}
+        <Button size="sm" onClick={test} disabled={testing || !isConfigured()}>
+          {testing ? '테스트 중...' : '연결 테스트'}
         </Button>
         {testResult && (
           <span className={cn('text-sm', testResult.success ? 'text-green-600' : 'text-destructive')}>
-            {testResult.success ? '✓ 연결됨' : '✗ 실패'}: {testResult.message.slice(0, 60)}
+            {testResult.success ? '성공' : '실패'}: {testResult.message.slice(0, 80)}
           </span>
         )}
       </div>
-    </div>
+    </Card>
   );
 }
 
-// --- Lab Reference Settings Sub-component ---
+function BackupSettings() {
+  return useSupabaseBackend ? <SupabaseBackupSettings /> : <LegacyBackupSettings />;
+}
 
-function LabReferenceSettings() {
-  const { getAllReferences, setOverride, removeOverride, resetAll } = useLabReferenceStore();
-  const refs = getAllReferences();
-  const [editingName, setEditingName] = useState<string | null>(null);
-  const [editMin, setEditMin] = useState('');
-  const [editMax, setEditMax] = useState('');
-  const [addName, setAddName] = useState('');
-  const [addMin, setAddMin] = useState('');
-  const [addMax, setAddMax] = useState('');
-  const [showAll, setShowAll] = useState(false);
+function SupabaseBackupSettings() {
+  const { currentUser } = useAuthStore();
+  const { toast } = useToast();
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [previewPassword, setPreviewPassword] = useState('');
+  const [previewId, setPreviewId] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [preview, setPreview] = useState<SnapshotPreview | null>(null);
+  const [snapshots, setSnapshots] = useState<BackupSnapshotSummary[]>([]);
 
-  const displayRefs = showAll ? refs : refs.filter((r) => r.isOverridden || ['WBC', 'Hb', 'PLT', 'AST', 'ALT', 'BUN', 'Cr', 'Na', 'K', 'CRP', 'Glucose', 'Albumin', 'Total Bilirubin'].includes(r.name));
+  const loadSnapshots = useCallback(async () => {
+    if (!currentUser) return;
+    const items = await listSupabaseBackupSnapshots(currentUser.id);
+    setSnapshots(items);
+    setPreviewId((current) => current || items[0]?.id || '');
+  }, [currentUser]);
 
-  const hasOverrides = refs.some((r) => r.isOverridden);
+  useEffect(() => {
+    loadSnapshots();
+  }, [loadSnapshots]);
+
+  const createSnapshot = async () => {
+    if (!currentUser) return;
+    if (password.length < 4) {
+      toast({ title: '비밀번호는 4자 이상이어야 합니다.', variant: 'destructive' });
+      return;
+    }
+    setLoading(true);
+    try {
+      const snapshot = await createSupabaseBackupSnapshot({ ownerId: currentUser.id, password });
+      setPassword('');
+      setSnapshots((current) => [snapshot, ...current]);
+      setPreviewId(snapshot.id);
+      toast({ title: '스냅샷 생성 완료', description: 'Supabase 데이터를 암호화 스냅샷으로 저장했습니다.' });
+    } catch (err) {
+      toast({ title: '스냅샷 생성 실패', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const checkSnapshot = async () => {
+    if (!previewId || !previewPassword) return;
+    setLoading(true);
+    try {
+      const result = await previewSupabaseBackupSnapshot({ snapshotId: previewId, password: previewPassword });
+      setPreview(result);
+      toast({ title: '스냅샷 확인 완료', description: `환자 ${result.recordCounts.patients}명, 현재 ${result.currentCounts.patients}명` });
+    } catch (err) {
+      toast({ title: '스냅샷 확인 실패', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="space-y-3">
-      {/* Table */}
-      <div className="overflow-x-auto rounded-md border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50">
-            <tr>
-              <th className="text-left p-2 font-medium">항목</th>
-              <th className="text-center p-2 font-medium w-20">하한</th>
-              <th className="text-center p-2 font-medium w-20">상한</th>
-              <th className="text-center p-2 font-medium w-14">단위</th>
-              <th className="text-center p-2 font-medium w-16"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {displayRefs.map((ref) => {
-              const isEditing = editingName === ref.name;
-              return (
-                <tr key={ref.name} className={cn(ref.isOverridden && 'bg-amber-50/50 dark:bg-amber-950/10')}>
-                  <td className="p-2">
-                    <span className="font-medium">{ref.name}</span>
-                    {ref.isOverridden && <span className="ml-1 text-[10px] text-amber-600">수정됨</span>}
-                  </td>
-                  {isEditing ? (
-                    <>
-                      <td className="p-1"><Input type="number" step="any" value={editMin} onChange={(e) => setEditMin(e.target.value)} className="h-7 text-xs text-center" placeholder="-" /></td>
-                      <td className="p-1"><Input type="number" step="any" value={editMax} onChange={(e) => setEditMax(e.target.value)} className="h-7 text-xs text-center" placeholder="-" /></td>
-                      <td className="p-2 text-center text-xs text-muted-foreground">{ref.unit}</td>
-                      <td className="p-1 text-center">
-                        <div className="flex gap-0.5 justify-center">
-                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => {
-                            setOverride(ref.name, editMin ? parseFloat(editMin) : undefined, editMax ? parseFloat(editMax) : undefined);
-                            setEditingName(null);
-                          }}><Save className="h-3 w-3 text-green-600" /></Button>
-                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingName(null)}><X className="h-3 w-3" /></Button>
-                        </div>
-                      </td>
-                    </>
-                  ) : (
-                    <>
-                      <td className="p-2 text-center text-muted-foreground">{ref.referenceMin ?? '-'}</td>
-                      <td className="p-2 text-center text-muted-foreground">{ref.referenceMax ?? '-'}</td>
-                      <td className="p-2 text-center text-xs text-muted-foreground">{ref.unit}</td>
-                      <td className="p-1 text-center">
-                        <div className="flex gap-0.5 justify-center">
-                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => {
-                            setEditingName(ref.name);
-                            setEditMin(ref.referenceMin?.toString() ?? '');
-                            setEditMax(ref.referenceMax?.toString() ?? '');
-                          }}><Pencil className="h-3 w-3" /></Button>
-                          {ref.isOverridden && (
-                            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeOverride(ref.name)}>
-                              <RotateCcw className="h-3 w-3" />
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    </>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+    <Card className="space-y-5 p-6">
+      <div className="flex items-center gap-2">
+        <HardDrive className="h-5 w-5 text-primary" />
+        <h2 className="text-lg font-semibold">Supabase 백업</h2>
       </div>
-
-      {/* Toggle show all / common */}
-      <div className="flex items-center justify-between">
-        <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => setShowAll(!showAll)}>
-          {showAll ? `주요 항목만 (${displayRefs.length}개 표시 중)` : `전체 항목 보기 (${refs.length}개)`}
-        </Button>
-        {hasOverrides && (
-          <Button size="sm" variant="ghost" className="text-xs h-7 text-destructive" onClick={resetAll}>
-            <RotateCcw className="h-3 w-3 mr-1" />
-            기본값 초기화
+      <p className="text-sm text-muted-foreground">현재 서버 데이터를 암호화된 스냅샷으로 저장하고, 복원 전 record count를 확인합니다.</p>
+      <div className="space-y-3 rounded-lg border border-teal-200 bg-teal-50/70 p-4">
+        <div className="flex items-center gap-2">
+          <Cloud className="h-4 w-4 text-teal-700" />
+          <h3 className="text-sm font-medium text-teal-950">서버 스냅샷</h3>
+        </div>
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="relative">
+            <Input type={showPassword ? 'text' : 'password'} placeholder="스냅샷 암호화 비밀번호" value={password} onChange={(event) => setPassword(event.target.value)} className="pr-9" />
+            <Button variant="ghost" size="icon" className="absolute top-1/2 right-1 h-7 w-7 -translate-y-1/2" onClick={() => setShowPassword(!showPassword)}>
+              {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </Button>
+          </div>
+          <Button onClick={createSnapshot} disabled={loading || !password}>
+            <CloudUpload className="mr-1 h-4 w-4" />
+            스냅샷 생성
           </Button>
+        </div>
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+          <select value={previewId} onChange={(event) => { setPreviewId(event.target.value); setPreview(null); }} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
+            <option value="">스냅샷 선택</option>
+            {snapshots.map((snapshot) => (
+              <option key={snapshot.id} value={snapshot.id}>{new Date(snapshot.createdAt).toLocaleString()} · {snapshot.kind}</option>
+            ))}
+          </select>
+          <Input type="password" placeholder="확인용 비밀번호" value={previewPassword} onChange={(event) => setPreviewPassword(event.target.value)} />
+          <Button variant="outline" onClick={checkSnapshot} disabled={loading || !previewId || !previewPassword}>
+            <Eye className="mr-1 h-4 w-4" />
+            미리보기
+          </Button>
+        </div>
+        {preview && (
+          <div className="grid gap-2 rounded-md bg-white/80 p-3 text-xs text-zinc-700 sm:grid-cols-3">
+            <span>스냅샷 환자 {preview.recordCounts.patients}</span>
+            <span>스냅샷 메모 {preview.recordCounts.notes}</span>
+            <span>스냅샷 일정 {preview.recordCounts.schedules}</span>
+            <span>현재 환자 {preview.currentCounts.patients}</span>
+            <span>현재 메모 {preview.currentCounts.notes}</span>
+            <span>현재 일정 {preview.currentCounts.schedules}</span>
+          </div>
         )}
       </div>
-
-      {/* Add custom item */}
-      <div className="flex gap-2 items-end">
-        <div className="flex-1">
-          <label className="text-xs text-muted-foreground mb-1 block">항목명</label>
-          <Input value={addName} onChange={(e) => setAddName(e.target.value)} className="h-8 text-sm" placeholder="예: LDH" />
-        </div>
-        <div className="w-20">
-          <label className="text-xs text-muted-foreground mb-1 block">하한</label>
-          <Input type="number" step="any" value={addMin} onChange={(e) => setAddMin(e.target.value)} className="h-8 text-sm" />
-        </div>
-        <div className="w-20">
-          <label className="text-xs text-muted-foreground mb-1 block">상한</label>
-          <Input type="number" step="any" value={addMax} onChange={(e) => setAddMax(e.target.value)} className="h-8 text-sm" />
-        </div>
-        <Button size="sm" className="h-8" disabled={!addName.trim()} onClick={() => {
-          setOverride(addName.trim(), addMin ? parseFloat(addMin) : undefined, addMax ? parseFloat(addMax) : undefined);
-          setAddName(''); setAddMin(''); setAddMax('');
-        }}>
-          <Plus className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-    </div>
+    </Card>
   );
 }
 
-// --- Calendar Color Settings Sub-component ---
+function LegacyBackupSettings() {
+  const { toast } = useToast();
+  const [backupPassword, setBackupPassword] = useState('');
+  const [backupShowPw, setBackupShowPw] = useState(false);
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [restorePassword, setRestorePassword] = useState('');
+  const [restoreShowPw, setRestoreShowPw] = useState(false);
+  const [restoreLoading, setRestoreLoading] = useState(false);
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [dailyBackup, setDailyBackup] = useState(isDailyBackupEnabled);
+  const [textExportPw, setTextExportPw] = useState('');
+  const [textImportPw, setTextImportPw] = useState('');
+  const [textImportData, setTextImportData] = useState('');
+  const [serverPw, setServerPwState] = useState(() => localStorage.getItem('wardflow-server-pw') || '');
+  const [serverKey, setServerKeyState] = useState(() => localStorage.getItem('wardflow-server-key') || '');
+  const [serverInfo, setServerInfo] = useState<{ exists: boolean; updatedAt?: string } | null>(null);
+  const [serverLoading, setServerLoading] = useState(false);
+  const restoreInputRef = useRef<HTMLInputElement>(null);
 
-const EVENT_TYPE_LABELS: Record<CalendarEventType, string> = {
-  schedule: '일정',
-  global_alert: '범용 알림',
-  reminder: '알림 메모',
-};
+  const setServerPw = (value: string) => {
+    setServerPwState(value);
+    localStorage.setItem('wardflow-server-pw', value);
+  };
+  const setServerKey = (value: string) => {
+    setServerKeyState(value);
+    localStorage.setItem('wardflow-server-key', value);
+  };
 
-function CalendarColorSettings() {
-  const { colors, setColor, getColor } = useCalendarColorStore();
+  const exportFile = async () => {
+    if (backupPassword.length < 4) {
+      toast({ title: '비밀번호는 4자 이상이어야 합니다.', variant: 'destructive' });
+      return;
+    }
+    setBackupLoading(true);
+    try {
+      const blob = await exportBackup(backupPassword);
+      const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      downloadBlob(blob, `wardflow_backup_${date}.wardflow`);
+      setBackupPassword('');
+      toast({ title: '백업 완료', description: '암호화된 백업 파일을 다운로드했습니다.' });
+    } catch (err) {
+      toast({ title: '백업 실패', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
+    } finally {
+      setBackupLoading(false);
+    }
+  };
+
+  const importFile = async () => {
+    if (!restoreFile || !restorePassword) return;
+    if (!window.confirm('현재 데이터를 백업 파일 내용으로 교체합니다. 계속하시겠습니까?')) return;
+    setRestoreLoading(true);
+    try {
+      const result = await importBackup(restoreFile, restorePassword);
+      toast({ title: '복원 완료', description: `환자 ${result.patientCount}명, 메모 ${result.noteCount}건을 복원했습니다.` });
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (err) {
+      toast({ title: '복원 실패', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
+    } finally {
+      setRestoreLoading(false);
+    }
+  };
+
+  const copyTextBackup = async () => {
+    if (textExportPw.length < 4) {
+      toast({ title: '비밀번호는 4자 이상이어야 합니다.', variant: 'destructive' });
+      return;
+    }
+    const text = await exportBackupAsText(textExportPw);
+    await navigator.clipboard.writeText(text);
+    setTextExportPw('');
+    toast({ title: '클립보드에 복사했습니다.', description: '다른 기기에서 텍스트 복원에 붙여넣을 수 있습니다.' });
+  };
+
+  const importTextBackup = async () => {
+    if (!textImportData.trim() || !textImportPw) return;
+    if (!window.confirm('현재 데이터를 백업 텍스트 내용으로 교체합니다. 계속하시겠습니까?')) return;
+    const result = await importBackupFromText(textImportData, textImportPw);
+    toast({ title: '복원 완료', description: `환자 ${result.patientCount}명, 메모 ${result.noteCount}건을 복원했습니다.` });
+    setTimeout(() => window.location.reload(), 1200);
+  };
+
+  const uploadServer = async () => {
+    if (!serverPw || !serverKey.trim()) return;
+    setServerLoading(true);
+    try {
+      const result = await uploadBackupToServer(serverPw, serverKey.trim());
+      setServerInfo({ exists: true, updatedAt: result.updatedAt });
+      toast({ title: '서버 업로드 완료', description: new Date(result.updatedAt).toLocaleString() });
+    } catch (err) {
+      toast({ title: '서버 업로드 실패', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
+    } finally {
+      setServerLoading(false);
+    }
+  };
+
+  const downloadServer = async () => {
+    if (!serverPw || !serverKey.trim()) return;
+    if (!window.confirm('서버 데이터로 현재 데이터를 교체합니다. 계속하시겠습니까?')) return;
+    setServerLoading(true);
+    try {
+      const result = await downloadBackupFromServer(serverPw, serverKey.trim());
+      toast({ title: '서버 복원 완료', description: `환자 ${result.patientCount}명, 메모 ${result.noteCount}건을 복원했습니다.` });
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (err) {
+      toast({ title: '서버 복원 실패', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
+    } finally {
+      setServerLoading(false);
+    }
+  };
+
+  const checkServer = async () => {
+    if (!serverKey.trim()) return;
+    const info = await getServerBackupInfo(serverKey.trim());
+    setServerInfo(info);
+    toast({ title: info.exists ? '서버 백업 확인됨' : '저장된 서버 백업이 없습니다.' });
+  };
 
   return (
-    <div className="space-y-3">
-      {(Object.keys(EVENT_TYPE_LABELS) as CalendarEventType[]).map((type) => {
-        const currentColor = getColor(type);
-        return (
-          <div key={type} className="flex items-center gap-3">
-            <div className={`w-4 h-4 rounded-full shrink-0 ${currentColor.dot}`} />
-            <span className="text-sm font-medium w-20 shrink-0">{EVENT_TYPE_LABELS[type]}</span>
-            <div className="flex gap-1.5 flex-wrap">
-              {PRESET_KEYS.map((key) => {
-                const preset = COLOR_PRESETS[key]!;
-                const isSelected = colors[type] === key;
-                return (
-                  <button
-                    key={key}
-                    onClick={() => setColor(type, key)}
-                    className={`w-7 h-7 rounded-full border-2 transition-all ${preset.dot} ${
-                      isSelected ? 'border-foreground scale-110 ring-2 ring-offset-1 ring-foreground/20' : 'border-transparent opacity-60 hover:opacity-100'
-                    }`}
-                    title={preset.name}
-                  />
-                );
-              })}
-            </div>
+    <Card className="space-y-5 p-6">
+      <div className="flex items-center gap-2">
+        <HardDrive className="h-5 w-5 text-primary" />
+        <h2 className="text-lg font-semibold">백업 / 복원</h2>
+      </div>
+      <p className="text-sm text-muted-foreground">Legacy IndexedDB 데이터를 파일 또는 텍스트로 백업합니다.</p>
+      <label className="flex cursor-pointer items-center justify-between rounded-lg border p-3 hover:bg-muted/50">
+        <div className="flex items-center gap-2">
+          <Bell className="h-4 w-4 text-amber-500" />
+          <span className="text-sm font-medium">매일 첫 실행 시 백업 알림</span>
+        </div>
+        <input
+          type="checkbox"
+          checked={dailyBackup}
+          onChange={(event) => {
+            setDailyBackup(event.target.checked);
+            setDailyBackupEnabled(event.target.checked);
+          }}
+        />
+      </label>
+      <BackupPasswordRow
+        title="백업 내보내기"
+        icon={<Download className="h-4 w-4 text-green-600" />}
+        password={backupPassword}
+        setPassword={setBackupPassword}
+        showPassword={backupShowPw}
+        setShowPassword={setBackupShowPw}
+        buttonLabel="내보내기"
+        onClick={exportFile}
+        loading={backupLoading}
+      />
+      <div className="space-y-3 rounded-lg border p-4">
+        <div className="flex items-center gap-2">
+          <Upload className="h-4 w-4 text-blue-600" />
+          <h3 className="text-sm font-medium">백업 복원</h3>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => restoreInputRef.current?.click()}>
+            {restoreFile ? restoreFile.name : '파일 선택'}
+          </Button>
+          <input ref={restoreInputRef} type="file" accept=".wardflow" className="hidden" onChange={(event) => setRestoreFile(event.target.files?.[0] ?? null)} />
+          <div className="relative min-w-[220px] flex-1">
+            <Input type={restoreShowPw ? 'text' : 'password'} placeholder="백업 비밀번호" value={restorePassword} onChange={(event) => setRestorePassword(event.target.value)} className="pr-9" />
+            <Button variant="ghost" size="icon" className="absolute top-1/2 right-1 h-7 w-7 -translate-y-1/2" onClick={() => setRestoreShowPw(!restoreShowPw)}>
+              {restoreShowPw ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </Button>
           </div>
-        );
-      })}
+          <Button variant="destructive" onClick={importFile} disabled={restoreLoading || !restoreFile || !restorePassword}>복원</Button>
+        </div>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-3 rounded-lg border p-4">
+          <h3 className="text-sm font-medium">텍스트로 복사</h3>
+          <Input type="password" placeholder="암호화 비밀번호" value={textExportPw} onChange={(event) => setTextExportPw(event.target.value)} />
+          <Button size="sm" onClick={copyTextBackup}>복사</Button>
+        </div>
+        <div className="space-y-3 rounded-lg border p-4">
+          <h3 className="text-sm font-medium">텍스트에서 복원</h3>
+          <textarea className="h-20 w-full resize-none rounded-md border bg-background p-2 text-xs" value={textImportData} onChange={(event) => setTextImportData(event.target.value)} />
+          <Input type="password" placeholder="백업 비밀번호" value={textImportPw} onChange={(event) => setTextImportPw(event.target.value)} />
+          <Button size="sm" variant="destructive" onClick={importTextBackup} disabled={!textImportPw || !textImportData.trim()}>복원</Button>
+        </div>
+      </div>
+      <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
+        <div className="flex items-center gap-2">
+          <Cloud className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-medium">레거시 서버 동기화</h3>
+        </div>
+        <div className="grid gap-2 md:grid-cols-2">
+          <Input placeholder="동기화 키" value={serverKey} onChange={(event) => setServerKey(event.target.value)} />
+          <Input type="password" placeholder="암호화 비밀번호" value={serverPw} onChange={(event) => setServerPw(event.target.value)} />
+        </div>
+        {serverInfo && <p className="text-xs text-muted-foreground">{serverInfo.exists ? `마지막 저장: ${new Date(serverInfo.updatedAt ?? '').toLocaleString()}` : '저장된 데이터 없음'}</p>}
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={checkServer} disabled={serverLoading || !serverKey}>확인</Button>
+          <Button size="sm" onClick={uploadServer} disabled={serverLoading || !serverKey || !serverPw}>
+            <CloudUpload className="mr-1 h-3.5 w-3.5" />
+            업로드
+          </Button>
+          <Button variant="destructive" size="sm" onClick={downloadServer} disabled={serverLoading || !serverKey || !serverPw}>
+            <CloudDownload className="mr-1 h-3.5 w-3.5" />
+            다운로드
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function BackupPasswordRow({
+  title,
+  icon,
+  password,
+  setPassword,
+  showPassword,
+  setShowPassword,
+  buttonLabel,
+  onClick,
+  loading,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  password: string;
+  setPassword: (value: string) => void;
+  showPassword: boolean;
+  setShowPassword: (value: boolean) => void;
+  buttonLabel: string;
+  onClick: () => void;
+  loading: boolean;
+}) {
+  return (
+    <div className="space-y-3 rounded-lg border p-4">
+      <div className="flex items-center gap-2">
+        {icon}
+        <h3 className="text-sm font-medium">{title}</h3>
+      </div>
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Input type={showPassword ? 'text' : 'password'} placeholder="암호화 비밀번호" value={password} onChange={(event) => setPassword(event.target.value)} className="pr-9" />
+          <Button variant="ghost" size="icon" className="absolute top-1/2 right-1 h-7 w-7 -translate-y-1/2" onClick={() => setShowPassword(!showPassword)}>
+            {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          </Button>
+        </div>
+        <Button onClick={onClick} disabled={loading || !password}>{buttonLabel}</Button>
+      </div>
     </div>
   );
 }

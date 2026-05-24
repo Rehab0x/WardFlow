@@ -10,7 +10,21 @@ export interface BackupSnapshotSummary {
   createdAt: Date;
 }
 
-function fromBackupSnapshotRow(row: Tables<'backup_snapshots'>): BackupSnapshotSummary {
+type BackupSnapshotSummaryRow = Pick<
+  Tables<'backup_snapshots'>,
+  'id' | 'kind' | 'record_counts' | 'content_hash' | 'app_version' | 'created_at'
+>;
+
+const backupSnapshotSummaryColumns = `
+  id,
+  kind,
+  record_counts,
+  content_hash,
+  app_version,
+  created_at
+`;
+
+function fromBackupSnapshotRow(row: BackupSnapshotSummaryRow): BackupSnapshotSummary {
   return {
     id: row.id,
     kind: row.kind,
@@ -39,7 +53,7 @@ export async function createBackupSnapshot(input: {
       content_hash: input.contentHash ?? null,
       app_version: input.appVersion ?? null,
     })
-    .select('*')
+    .select(backupSnapshotSummaryColumns)
     .single();
 
   if (error) throw error;
@@ -49,7 +63,7 @@ export async function createBackupSnapshot(input: {
 export async function listBackupSnapshots(ownerId: string): Promise<BackupSnapshotSummary[]> {
   const { data, error } = await supabase
     .from('backup_snapshots')
-    .select('id, owner_id, kind, encrypted_data, record_counts, content_hash, app_version, created_at')
+    .select(backupSnapshotSummaryColumns)
     .eq('owner_id', ownerId)
     .order('created_at', { ascending: false });
 

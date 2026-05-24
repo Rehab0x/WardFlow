@@ -1,5 +1,13 @@
 import { db } from '@/db/database';
 import type { Template } from '@/db/database';
+import { useSupabaseBackend } from '@/config/backend';
+import {
+  createTemplate,
+  deleteTemplate,
+  listTemplates,
+  listTemplatesByField,
+  updateTemplate,
+} from '@/data/templates.repository';
 
 export type TemplateField =
   | 'chiefComplaint'
@@ -15,6 +23,8 @@ export type TemplateField =
 
 export const templateService = {
   async getByField(field: TemplateField): Promise<Template[]> {
+    if (useSupabaseBackend) return listTemplatesByField(field);
+
     if (field === 'global') {
       return db.templates.where('field').equals('global').sortBy('name');
     }
@@ -27,10 +37,17 @@ export const templateService = {
   },
 
   async getAll(): Promise<Template[]> {
+    if (useSupabaseBackend) return listTemplates();
+
     return db.templates.orderBy('name').toArray();
   },
 
   async add(field: TemplateField, name: string, content: string): Promise<string> {
+    if (useSupabaseBackend) {
+      const template = await createTemplate(field, name, content);
+      return template.id;
+    }
+
     const template: Template = {
       id: crypto.randomUUID(),
       field,
@@ -43,10 +60,20 @@ export const templateService = {
   },
 
   async update(id: string, updates: Partial<Pick<Template, 'name' | 'content'>>): Promise<void> {
+    if (useSupabaseBackend) {
+      await updateTemplate(id, updates);
+      return;
+    }
+
     await db.templates.update(id, updates);
   },
 
   async delete(id: string): Promise<void> {
+    if (useSupabaseBackend) {
+      await deleteTemplate(id);
+      return;
+    }
+
     await db.templates.delete(id);
   },
 };

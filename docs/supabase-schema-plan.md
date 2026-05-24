@@ -286,6 +286,13 @@ Helper idea:
 
 Every child table should check access through its parent patient.
 
+## Query Performance Notes
+
+- The initial v2 build has no existing clinical dataset to transfer. Optimize the schema/bootstrap path for new Supabase data creation rather than bulk Dexie import.
+- Keep list and briefing reads thin: patient rail and Today briefing should select identity/status/room/onset fields first, then hydrate full charting text only for the opened patient.
+- Keep queue-style reads scoped by active patient ids and date windows. Avoid broad note, medication, schedule, or Lab scans as the ward grows.
+- Preserve `updated_at` on mutable rows so frontend stores can reuse unchanged objects after confirmation fetches and avoid rerender churn.
+
 ## Open Decisions
 
 - Whether nurses should see all patients by default.

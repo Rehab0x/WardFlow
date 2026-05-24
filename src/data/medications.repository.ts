@@ -1,11 +1,34 @@
 import { supabase } from '@/lib/supabase';
 import type { Medication, MedicationCreateInput, MedicationUpdateInput } from '@/domain/medication';
 import { fromMedicationRow, toMedicationInsert, toMedicationUpdate } from '@/mappers/medication.mapper';
+import { chunkArray } from './chunk';
+
+const medicationColumns = `
+  id,
+  patient_id,
+  category,
+  drug_name,
+  drug_base_name,
+  single_dose,
+  schedule,
+  timing,
+  days_remaining,
+  dosage,
+  frequency,
+  start_date,
+  end_date,
+  is_active,
+  notes,
+  created_by,
+  created_at,
+  updated_at,
+  deleted_at
+`;
 
 export async function listMedicationsByPatient(patientId: string): Promise<Medication[]> {
   const { data, error } = await supabase
     .from('medications')
-    .select('*')
+    .select(medicationColumns)
     .eq('patient_id', patientId)
     .is('deleted_at', null)
     .order('start_date', { ascending: false });
@@ -17,7 +40,7 @@ export async function listMedicationsByPatient(patientId: string): Promise<Medic
 export async function listActiveAntibiotics(): Promise<Medication[]> {
   const { data, error } = await supabase
     .from('medications')
-    .select('*')
+    .select(medicationColumns)
     .eq('category', 'antibiotic')
     .eq('is_active', true)
     .is('deleted_at', null)
@@ -27,11 +50,32 @@ export async function listActiveAntibiotics(): Promise<Medication[]> {
   return data.map(fromMedicationRow);
 }
 
+export async function listActiveAntibioticsByPatientIds(patientIds: string[]): Promise<Medication[]> {
+  if (patientIds.length === 0) return [];
+
+  const chunkQueries = chunkArray(patientIds, 100).map(async (chunk) => {
+    const { data, error } = await supabase
+      .from('medications')
+      .select(medicationColumns)
+      .in('patient_id', chunk)
+      .eq('category', 'antibiotic')
+      .eq('is_active', true)
+      .is('deleted_at', null)
+      .order('start_date', { ascending: true });
+
+    if (error) throw error;
+    return data.map(fromMedicationRow);
+  });
+
+  const rows = (await Promise.all(chunkQueries)).flat();
+  return rows.sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
+}
+
 export async function createMedication(input: MedicationCreateInput): Promise<Medication> {
   const { data, error } = await supabase
     .from('medications')
     .insert(toMedicationInsert(input))
-    .select('*')
+    .select(medicationColumns)
     .single();
 
   if (error) throw error;
@@ -44,7 +88,7 @@ export async function createMedications(inputs: MedicationCreateInput[]): Promis
   const { data, error } = await supabase
     .from('medications')
     .insert(inputs.map(toMedicationInsert))
-    .select('*');
+    .select(medicationColumns);
 
   if (error) throw error;
   return data.map(fromMedicationRow);
@@ -55,7 +99,7 @@ export async function updateMedication(id: string, input: MedicationUpdateInput)
     .from('medications')
     .update(toMedicationUpdate(input))
     .eq('id', id)
-    .select('*')
+    .select(medicationColumns)
     .single();
 
   if (error) throw error;

@@ -21,6 +21,6 @@ export function fromUserProfile(profile: UserProfile): User {
 
 export function loginIdentifierToEmail(identifier: string): string {
   const trimmed = identifier.trim();
-  return trimmed.includes('@') ? trimmed : `${trimmed}@wardflow.local`;
+  return trimmed.includes('@') ? trimmed : `${trimmed}@wardflow.example.com`;
 }
 

@@ -2,6 +2,20 @@ import { supabase } from '@/lib/supabase';
 import type { RegisterProfileInput, UserProfile } from '@/domain/user';
 import { fromProfileRow } from '@/mappers/user.mapper';
 
+const profileColumns = `
+  id,
+  username,
+  display_name,
+  department,
+  role,
+  status,
+  modules,
+  approved_by,
+  approved_at,
+  created_at,
+  updated_at
+`;
+
 export async function getCurrentProfile(): Promise<UserProfile | null> {
   const { data: sessionData, error: sessionError } = await supabase.auth.getUser();
   if (sessionError) throw sessionError;
@@ -10,7 +24,7 @@ export async function getCurrentProfile(): Promise<UserProfile | null> {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('*')
+    .select(profileColumns)
     .eq('id', user.id)
     .maybeSingle();
 
@@ -47,7 +61,7 @@ export async function registerProfile(input: RegisterProfileInput): Promise<void
 export async function listPendingProfiles(): Promise<UserProfile[]> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('*')
+    .select(profileColumns)
     .eq('status', 'pending')
     .order('created_at', { ascending: true });
 
@@ -58,7 +72,7 @@ export async function listPendingProfiles(): Promise<UserProfile[]> {
 export async function listProfiles(): Promise<UserProfile[]> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('*')
+    .select(profileColumns)
     .order('created_at', { ascending: false });
 
   if (error) throw error;

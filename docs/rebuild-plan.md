@@ -48,9 +48,13 @@ IndexedDB may remain only for:
 
 Local cache must never be treated as an authoritative backup. If local cache is empty, it must not clear server data.
 
+This v2 rebuild starts from a clean clinical dataset, so there is no current need for a Dexie-to-Supabase patient migration flow. The migration effort should prioritize schema bootstrap, account setup, RLS, and safe server snapshots.
+
 ### Data Access
 
 Create a repository layer so UI code does not call Supabase or Dexie directly.
+
+Performance rule: list surfaces should use thin, explicit-column queries and patient-id scoped reads. Heavy charting bodies, Lab item details, and other wide records should load only when a screen actually needs them.
 
 Suggested structure:
 
@@ -91,9 +95,8 @@ Zustand should hold UI state and currently loaded views, not act as the database
 6. Migrate notes and schedules.
 7. Migrate medications.
 8. Migrate labs using normalized `lab_results` and `lab_items`.
-9. Add IndexedDB/local backup import to Supabase migration tool.
-10. Remove direct Dexie usage from app flows.
-11. Keep Dexie only for cache/offline queue if needed.
+9. Remove direct Dexie usage from app flows.
+10. Keep Dexie only for cache/offline queue if needed.
 
 ## Minimal v2 Scope
 
@@ -151,11 +154,10 @@ Defer until after v2 baseline:
 - Implement normalized lab storage.
 - Replace direct `db.*` calls in stores/pages for migrated modules.
 
-### Milestone 4: Backup and Migration
+### Milestone 4: Backup and Recovery
 
 - Add snapshot backup table and UI.
 - Add restore preview.
-- Add old WardFlow backup import to Supabase.
 - Add local IndexedDB export rescue screen where possible.
 
 ### Milestone 5: New UI

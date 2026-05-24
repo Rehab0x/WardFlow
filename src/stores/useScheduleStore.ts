@@ -11,14 +11,17 @@ import {
   updateSchedule as updateSupabaseSchedule,
 } from '@/data/schedules.repository';
 import { fromDomainSchedule } from '@/mappers/legacyClinical.mapper';
+import { formatUserFacingError } from '@/lib/errorMessages';
+import { removeById, replaceById, upsertById } from './storeUtils';
 
 interface ScheduleStore {
   schedules: Schedule[];
   isLoading: boolean;
+  error: string | null;
 
   fetchAll: () => Promise<void>;
   fetchByPatient: (patientId: string) => Promise<void>;
-  addSchedule: (schedule: Omit<Schedule, 'id' | 'createdAt'>) => Promise<void>;
+  addSchedule: (schedule: Omit<Schedule, 'id' | 'createdAt'>) => Promise<string>;
   updateSchedule: (id: string, updates: Partial<Schedule>) => Promise<void>;
   deleteSchedule: (id: string) => Promise<void>;
   toggleComplete: (id: string) => Promise<void>;
@@ -27,29 +30,33 @@ interface ScheduleStore {
 export const useScheduleStore = create<ScheduleStore>((set, get) => ({
   schedules: [],
   isLoading: false,
+  error: null,
 
   fetchAll: async () => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
       if (useSupabaseBackend) {
-        const schedules = await listSchedulesByDate(new Date());
-        set({ schedules: schedules.map(fromDomainSchedule), isLoading: false });
+        const schedules = (await listSchedulesByDate(new Date())).map(fromDomainSchedule);
+        set({ schedules, isLoading: false });
         return;
       }
 
       const schedules = await db.schedules.orderBy('scheduledDate').toArray();
       set({ schedules, isLoading: false });
-    } catch {
-      set({ isLoading: false });
+    } catch (error) {
+      set({
+        isLoading: false,
+        error: formatUserFacingError(error, '일정을 불러오지 못했습니다.'),
+      });
     }
   },
 
   fetchByPatient: async (patientId: string) => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
       if (useSupabaseBackend) {
-        const schedules = await listSchedulesByPatient(patientId);
-        set({ schedules: schedules.map(fromDomainSchedule), isLoading: false });
+        const schedules = (await listSchedulesByPatient(patientId)).map(fromDomainSchedule);
+        set({ schedules, isLoading: false });
         return;
       }
 
@@ -58,107 +65,130 @@ export const useScheduleStore = create<ScheduleStore>((set, get) => ({
         .equals(patientId)
         .sortBy('scheduledDate');
       set({ schedules, isLoading: false });
-    } catch {
-      set({ isLoading: false });
+    } catch (error) {
+      set({
+        isLoading: false,
+        error: formatUserFacingError(error, '일정을 불러오지 못했습니다.'),
+      });
     }
   },
 
   addSchedule: async (data) => {
-    if (useSupabaseBackend) {
-      const { currentUser } = useAuthStore.getState();
-      if (!currentUser) throw new Error('User not authenticated');
-      const schedule = await createSupabaseSchedule({
-        patientId: data.patientId,
-        title: data.title,
-        scheduledDate: data.scheduledDate,
-        scheduledTime: data.scheduledTime,
-        category: data.category,
-        isCompleted: data.isCompleted,
-        notes: data.notes,
-        createdBy: currentUser.id,
-      });
-      const legacySchedule = fromDomainSchedule(schedule);
+    try {
+      if (useSupabaseBackend) {
+        const { currentUser } = useAuthStore.getState();
+        if (!currentUser) throw new Error('로그인이 필요합니다.');
+        const schedule = await createSupabaseSchedule({
+          patientId: data.patientId,
+          title: data.title,
+          scheduledDate: data.scheduledDate,
+          scheduledTime: data.scheduledTime,
+          category: data.category,
+          isCompleted: data.isCompleted,
+          notes: data.notes,
+          createdBy: currentUser.id,
+        });
+        const legacySchedule = fromDomainSchedule(schedule);
+        set((state) => ({
+          schedules: upsertById(state.schedules, legacySchedule, 'append').sort(
+            (a, b) => a.scheduledDate.getTime() - b.scheduledDate.getTime()
+          ),
+        }));
+        return legacySchedule.id;
+      }
+
+      const schedule: Schedule = {
+        ...data,
+        id: crypto.randomUUID(),
+        createdAt: new Date(),
+      };
+      await db.schedules.add(schedule);
       set((state) => ({
-        schedules: [...state.schedules, legacySchedule].sort(
+        schedules: upsertById(state.schedules, schedule, 'append').sort(
           (a, b) => a.scheduledDate.getTime() - b.scheduledDate.getTime()
         ),
       }));
-      return;
+      return schedule.id;
+    } catch (error) {
+      set({ error: formatUserFacingError(error, '일정을 추가하지 못했습니다.') });
+      throw error;
     }
-
-    const schedule: Schedule = {
-      ...data,
-      id: crypto.randomUUID(),
-      createdAt: new Date(),
-    };
-    await db.schedules.add(schedule);
-    set((state) => ({
-      schedules: [...state.schedules, schedule].sort(
-        (a, b) => a.scheduledDate.getTime() - b.scheduledDate.getTime()
-      ),
-    }));
   },
 
   updateSchedule: async (id, updates) => {
-    if (useSupabaseBackend) {
-      const schedule = await updateSupabaseSchedule(id, {
-        title: updates.title,
-        scheduledDate: updates.scheduledDate,
-        scheduledTime: updates.scheduledTime,
-        category: updates.category,
-        isCompleted: updates.isCompleted,
-        notes: updates.notes,
-      });
-      const legacySchedule = fromDomainSchedule(schedule);
+    try {
+      if (useSupabaseBackend) {
+        const schedule = await updateSupabaseSchedule(id, {
+          title: updates.title,
+          scheduledDate: updates.scheduledDate,
+          scheduledTime: updates.scheduledTime,
+          category: updates.category,
+          isCompleted: updates.isCompleted,
+          notes: updates.notes,
+        });
+        const legacySchedule = fromDomainSchedule(schedule);
+        set((state) => ({
+          schedules: replaceById(state.schedules, id, legacySchedule)
+            .sort((a, b) => a.scheduledDate.getTime() - b.scheduledDate.getTime()),
+        }));
+        return;
+      }
+
+      await db.schedules.update(id, updates);
       set((state) => ({
         schedules: state.schedules
-          .map((s) => (s.id === id ? legacySchedule : s))
+          .map((s) => (s.id === id ? { ...s, ...updates } : s))
           .sort((a, b) => a.scheduledDate.getTime() - b.scheduledDate.getTime()),
       }));
-      return;
+    } catch (error) {
+      set({ error: formatUserFacingError(error, '일정을 수정하지 못했습니다.') });
+      throw error;
     }
-
-    await db.schedules.update(id, updates);
-    set((state) => ({
-      schedules: state.schedules
-        .map((s) => (s.id === id ? { ...s, ...updates } : s))
-        .sort((a, b) => a.scheduledDate.getTime() - b.scheduledDate.getTime()),
-    }));
   },
 
   deleteSchedule: async (id) => {
-    if (useSupabaseBackend) {
-      await softDeleteSchedule(id);
-      set((state) => ({
-        schedules: state.schedules.filter((s) => s.id !== id),
-      }));
-      return;
-    }
+    try {
+      if (useSupabaseBackend) {
+        await softDeleteSchedule(id);
+        set((state) => ({
+          schedules: removeById(state.schedules, id),
+        }));
+        return;
+      }
 
-    await db.schedules.delete(id);
-    set((state) => ({
-      schedules: state.schedules.filter((s) => s.id !== id),
-    }));
+      await db.schedules.delete(id);
+      set((state) => ({
+        schedules: removeById(state.schedules, id),
+      }));
+    } catch (error) {
+      set({ error: formatUserFacingError(error, '일정을 삭제하지 못했습니다.') });
+      throw error;
+    }
   },
 
   toggleComplete: async (id) => {
-    const schedule = get().schedules.find((s) => s.id === id);
-    if (!schedule) return;
-    const isCompleted = !schedule.isCompleted;
-    if (useSupabaseBackend) {
-      const updated = await updateSupabaseSchedule(id, { isCompleted });
-      const legacySchedule = fromDomainSchedule(updated);
-      set((state) => ({
-        schedules: state.schedules.map((s) => (s.id === id ? legacySchedule : s)),
-      }));
-      return;
-    }
+    try {
+      const schedule = get().schedules.find((s) => s.id === id);
+      if (!schedule) return;
+      const isCompleted = !schedule.isCompleted;
+      if (useSupabaseBackend) {
+        const updated = await updateSupabaseSchedule(id, { isCompleted });
+        const legacySchedule = fromDomainSchedule(updated);
+        set((state) => ({
+          schedules: replaceById(state.schedules, id, legacySchedule),
+        }));
+        return;
+      }
 
-    await db.schedules.update(id, { isCompleted });
-    set((state) => ({
-      schedules: state.schedules.map((s) =>
-        s.id === id ? { ...s, isCompleted } : s
-      ),
-    }));
+      await db.schedules.update(id, { isCompleted });
+      set((state) => ({
+        schedules: state.schedules.map((s) =>
+          s.id === id ? { ...s, isCompleted } : s
+        ),
+      }));
+    } catch (error) {
+      set({ error: formatUserFacingError(error, '일정 상태를 변경하지 못했습니다.') });
+      throw error;
+    }
   },
 }));

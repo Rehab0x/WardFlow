@@ -14,6 +14,7 @@ import {
   signOut,
 } from '@/data/auth.repository';
 import { fromUserProfile, loginIdentifierToEmail } from '@/mappers/legacyUser.mapper';
+import { formatUserFacingError } from '@/lib/errorMessages';
 
 interface RegisterInput {
   name: string;
@@ -115,7 +116,7 @@ export const useAuthStore = create<AuthStore>()(
           });
         } catch (error) {
           set({
-            error: error instanceof Error ? error.message : '로그인에 실패했습니다.',
+            error: formatUserFacingError(error, '로그인에 실패했습니다.'),
             isLoading: false,
             isAuthenticated: false,
             currentUser: null,
@@ -178,7 +179,7 @@ export const useAuthStore = create<AuthStore>()(
           set({ isLoading: false, error: null });
         } catch (error) {
           set({
-            error: error instanceof Error ? error.message : '회원가입에 실패했습니다.',
+            error: formatUserFacingError(error, '회원가입에 실패했습니다.'),
             isLoading: false,
           });
           throw error;
@@ -328,7 +329,7 @@ export const useAuthStore = create<AuthStore>()(
       },
     }),
     {
-      name: 'wardflow-auth',
+      name: useSupabaseBackend ? 'wardflow-auth-supabase' : 'wardflow-auth',
       partialize: (state) => ({
         currentUser: state.currentUser,
         isAuthenticated: state.isAuthenticated,

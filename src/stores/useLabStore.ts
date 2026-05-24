@@ -14,6 +14,8 @@ import {
   fromDomainLabResult,
   toDomainLabItemCreateInput,
 } from '@/mappers/legacyClinical.mapper';
+import { formatUserFacingError } from '@/lib/errorMessages';
+import { removeById, replaceById, upsertById } from './storeUtils';
 
 interface LabStore {
   labs: LabResult[];
@@ -43,8 +45,8 @@ export const useLabStore = create<LabStore>((set) => ({
     set({ isLoading: true, error: null });
     try {
       if (useSupabaseBackend) {
-        const labs = await listSupabaseLabsByPatient(patientId);
-        set({ labs: labs.map(fromDomainLabResult), isLoading: false });
+        const labs = (await listSupabaseLabsByPatient(patientId)).map(fromDomainLabResult);
+        set({ labs, isLoading: false });
         return;
       }
 
@@ -54,10 +56,11 @@ export const useLabStore = create<LabStore>((set) => ({
         .reverse() // Most recent first
         .sortBy('testDate');
 
-      set({ labs: labs.reverse(), isLoading: false });
+      const nextLabs = labs.reverse();
+      set({ labs: nextLabs, isLoading: false });
     } catch (error) {
       set({
-        error: error instanceof Error ? error.message : 'Failed to fetch lab results',
+        error: formatUserFacingError(error, 'Lab 결과를 불러오지 못했습니다.'),
         isLoading: false,
       });
     }
@@ -67,7 +70,7 @@ export const useLabStore = create<LabStore>((set) => ({
     try {
       if (useSupabaseBackend) {
         const { currentUser } = useAuthStore.getState();
-        if (!currentUser) throw new Error('User not authenticated');
+        if (!currentUser) throw new Error('로그인이 필요합니다.');
         const labResult = await createSupabaseLabResult({
           patientId,
           category,
@@ -78,7 +81,7 @@ export const useLabStore = create<LabStore>((set) => ({
         });
         const legacyLab = fromDomainLabResult(labResult);
         set((state) => ({
-          labs: [legacyLab, ...state.labs],
+          labs: upsertById(state.labs, legacyLab),
         }));
         return legacyLab.id;
       }
@@ -100,13 +103,13 @@ export const useLabStore = create<LabStore>((set) => ({
 
       // Update local state
       set((state) => ({
-        labs: [labResult, ...state.labs],
+        labs: upsertById(state.labs, labResult),
       }));
 
       return id;
     } catch (error) {
       set({
-        error: error instanceof Error ? error.message : 'Failed to add lab result',
+        error: formatUserFacingError(error, 'Lab 결과를 추가하지 못했습니다.'),
       });
       throw error;
     }
@@ -117,7 +120,7 @@ export const useLabStore = create<LabStore>((set) => ({
       if (useSupabaseBackend) {
         await softDeleteSupabaseLabResult(id);
         set((state) => ({
-          labs: state.labs.filter((lab) => lab.id !== id),
+          labs: removeById(state.labs, id),
         }));
         return;
       }
@@ -126,11 +129,11 @@ export const useLabStore = create<LabStore>((set) => ({
 
       // Update local state
       set((state) => ({
-        labs: state.labs.filter((lab) => lab.id !== id),
+        labs: removeById(state.labs, id),
       }));
     } catch (error) {
       set({
-        error: error instanceof Error ? error.message : 'Failed to delete lab result',
+        error: formatUserFacingError(error, 'Lab 결과를 삭제하지 못했습니다.'),
       });
       throw error;
     }
@@ -139,9 +142,18 @@ export const useLabStore = create<LabStore>((set) => ({
   updateLabItemValue: async (patientId: string, date: string, itemName: string, newValue: string | number) => {
     try {
       if (useSupabaseBackend) {
-        await updateSupabaseLabItemValue({ patientId, date, itemName, newValue });
-        const labs = await listSupabaseLabsByPatient(patientId);
-        set({ labs: labs.map(fromDomainLabResult) });
+        const updatedLab = await updateSupabaseLabItemValue({ patientId, date, itemName, newValue });
+        if (!updatedLab) return;
+
+        const legacyLab = fromDomainLabResult(updatedLab);
+        set((state) => {
+          const existingIndex = state.labs.findIndex((lab) => lab.id === legacyLab.id);
+          if (existingIndex === -1) {
+            return { labs: [legacyLab, ...state.labs] };
+          }
+
+          return { labs: replaceById(state.labs, legacyLab.id, legacyLab) };
+        });
         return;
       }
 
@@ -257,7 +269,7 @@ export const useLabStore = create<LabStore>((set) => ({
       }
     } catch (error) {
       set({
-        error: error instanceof Error ? error.message : 'Failed to update lab item',
+        error: formatUserFacingError(error, 'Lab 항목을 수정하지 못했습니다.'),
       });
       throw error;
     }
@@ -354,7 +366,7 @@ export const useLabStore = create<LabStore>((set) => ({
         dataPoints,
       };
     } catch (error) {
-      console.error('Failed to get lab trend data:', error);
+      console.error('Lab 추세 데이터를 불러오지 못했습니다:', error);
       return null;
     }
   },
