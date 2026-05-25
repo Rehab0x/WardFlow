@@ -5,7 +5,7 @@ Current local state:
 - `.env.local` is now in Supabase mode.
 - `VITE_SUPABASE_URL` is set to the project URL shape, not the REST `/rest/v1` endpoint.
 - `VITE_SUPABASE_ANON_KEY` is set locally.
-- Supabase CLI is not installed on this machine.
+- Supabase CLI `2.101.0` is installed as a project dev dependency; project link/type generation still requires `supabase login` or `SUPABASE_ACCESS_TOKEN`.
 - The foundation SQL migration has been applied manually through the Supabase SQL editor.
 - First admin login and patient creation have been validated by the user.
 - Static checks passed for the current migration/repository shape.
@@ -85,7 +85,7 @@ Auth cache note: Supabase mode uses a separate persisted auth key from Dexie mod
 7. Create a snapshot backup.
 8. Preview the snapshot and confirm record counts match.
 9. Confirm destructive restore is still blocked/not exposed.
-10. Confirm `npm run types:supabase` is only run from a machine with Supabase CLI installed and linked to the intended project.
+10. Confirm `npm run types:supabase` is only run after Supabase CLI authentication/linking succeeds for the intended project.
 
 ## Current Priority For Next Session
 

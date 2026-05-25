@@ -224,9 +224,7 @@ export function LegacyBackupSettings() {
         <HardDrive className="h-5 w-5 text-primary" />
         <h2 className="text-lg font-semibold">백업 / 복원</h2>
       </div>
-      <p className="text-sm text-muted-foreground">
-        Legacy IndexedDB 데이터를 파일 또는 텍스트로 백업합니다.
-      </p>
+      <p className="text-sm text-muted-foreground">로컬 데이터를 파일 또는 텍스트로 백업합니다.</p>
       <label className="flex cursor-pointer items-center justify-between rounded-lg border p-3 hover:bg-muted/50">
         <div className="flex items-center gap-2">
           <Bell className="h-4 w-4 text-amber-500" />

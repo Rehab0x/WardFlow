@@ -15,7 +15,7 @@ describe('BackupSettings helpers', () => {
     expect(formatSnapshotOption(snapshot)).toContain('2026');
   });
 
-  it('formats available record counts and defaults malformed values', () => {
+  it('formats available data counts and defaults malformed values', () => {
     expect(
       formatSnapshotCounts({
         patients: 3,
@@ -28,7 +28,7 @@ describe('BackupSettings helpers', () => {
     expect(formatSnapshotCounts({ patients: 'bad', notes: null })).toBe(
       '환자 0, 메모 0, 일정 0, Lab 0'
     );
-    expect(formatSnapshotCounts(null)).toBe('record count 없음');
+    expect(formatSnapshotCounts(null)).toBe('데이터 개수 없음');
   });
 
   it('formats restore count deltas', () => {

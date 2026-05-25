@@ -20,8 +20,8 @@ export function LabImportSettings() {
       </p>
       {useSupabaseBackend && (
         <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950">
-          Supabase 모드에서는 Lab import 결과가 현재 로그인 계정 권한으로 저장됩니다. 기존 IndexedDB
-          서버 백업 동기화는 비활성화되어 있습니다.
+          Supabase 모드에서는 Lab import 결과가 현재 로그인 계정 권한으로 저장됩니다. 이전 로컬 백업
+          동기화는 비활성화되어 있습니다.
         </div>
       )}
       <LabImportInbox

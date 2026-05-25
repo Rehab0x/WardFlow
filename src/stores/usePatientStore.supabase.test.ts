@@ -165,4 +165,23 @@ describe('usePatientStore Supabase flow', () => {
     expect(repo.archivePatient).toHaveBeenCalledWith('patient-1');
     expect(usePatientStore.getState().getPatientById('patient-1')).toBeUndefined();
   });
+
+  it('keeps patient archive failure messages aligned with the soft-hide policy', async () => {
+    const archiveError = {};
+    repo.archivePatient.mockRejectedValue(archiveError);
+
+    const { usePatientStore } = await import('./usePatientStore');
+    const patient = makeLegacyPatient();
+    usePatientStore.setState({
+      patients: [patient],
+      patientById: new Map([['patient-1', patient]]),
+      isLoading: false,
+      error: null,
+    });
+
+    await expect(usePatientStore.getState().deletePatient('patient-1')).rejects.toBe(archiveError);
+    expect(repo.archivePatient).toHaveBeenCalledWith('patient-1');
+    expect(usePatientStore.getState().error).toBe('환자를 숨김 처리하지 못했습니다.');
+    expect(usePatientStore.getState().getPatientById('patient-1')).toBe(patient);
+  });
 });

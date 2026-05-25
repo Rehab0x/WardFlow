@@ -16,6 +16,7 @@ import {
   toDomainPatientUpdateInput,
 } from '@/mappers/legacyPatient.mapper';
 import { formatUserFacingError } from '@/lib/errorMessages';
+import { patientArchiveFailureMessage } from '@/lib/patientDeletionPolicy';
 import { mergeEntityListByUpdateStamp, removeById, replaceById, upsertById } from './storeUtils';
 
 let patientListFetchPromise: Promise<void> | null = null;
@@ -271,7 +272,7 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
       set((state) => buildPatientCollectionState(state, removeById(state.patients, id)));
     } catch (error) {
       set({
-        error: formatUserFacingError(error, '환자를 삭제하지 못했습니다.'),
+        error: formatUserFacingError(error, patientArchiveFailureMessage),
       });
       throw error;
     }

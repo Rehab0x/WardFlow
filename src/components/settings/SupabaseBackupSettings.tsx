@@ -156,7 +156,7 @@ export function SupabaseBackupSettings() {
         </Button>
       </div>
       <p className="text-sm text-muted-foreground">
-        현재 서버 데이터를 암호화된 스냅샷으로 저장하고, 복원 전 record count를 확인합니다.
+        현재 서버 데이터를 암호화된 스냅샷으로 저장하고, 복원 전 데이터 개수를 확인합니다.
       </p>
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -173,6 +173,7 @@ export function SupabaseBackupSettings() {
           <div className="relative">
             <Input
               type={showPassword ? 'text' : 'password'}
+              aria-label="스냅샷 암호화 비밀번호"
               placeholder="스냅샷 암호화 비밀번호"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
@@ -195,6 +196,7 @@ export function SupabaseBackupSettings() {
         </div>
         <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
           <select
+            aria-label="미리보기할 스냅샷"
             value={previewId}
             onChange={(event) => {
               setPreviewId(event.target.value);
@@ -211,6 +213,7 @@ export function SupabaseBackupSettings() {
           </select>
           <Input
             type="password"
+            aria-label="스냅샷 미리보기 비밀번호"
             placeholder="확인용 비밀번호"
             value={previewPassword}
             onChange={(event) => setPreviewPassword(event.target.value)}
@@ -336,7 +339,7 @@ export function formatSnapshotOption(snapshot: BackupSnapshotSummary): string {
 
 export function formatSnapshotCounts(recordCounts: BackupSnapshotSummary['recordCounts']): string {
   if (!recordCounts || typeof recordCounts !== 'object' || Array.isArray(recordCounts)) {
-    return 'record count 없음';
+    return '데이터 개수 없음';
   }
 
   const counts = recordCounts as Record<string, unknown>;

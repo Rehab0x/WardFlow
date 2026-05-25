@@ -28,6 +28,7 @@ import { formatUserFacingError } from '@/lib/errorMessages';
 import {
   formatPatientArchiveConfirm,
   patientArchiveButtonLabel,
+  patientArchiveFailureMessage,
   patientArchiveHelpText,
 } from '@/lib/patientDeletionPolicy';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -422,7 +423,7 @@ export default function V2AppPage() {
       markLocalBriefingUpdated();
       queueBriefingRefresh();
     } catch (error) {
-      setAddError(formatUserFacingError(error, '환자를 삭제하지 못했습니다.'));
+      setAddError(formatUserFacingError(error, patientArchiveFailureMessage));
     } finally {
       setSavingPatient(false);
     }

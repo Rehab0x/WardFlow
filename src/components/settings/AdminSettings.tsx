@@ -274,7 +274,7 @@ export function AdminSettings() {
       <div className="mx-4 mb-4 rounded-lg border border-sky-200 bg-sky-50/80 p-3 text-sm text-sky-950 sm:mx-6">
         {useSupabaseBackend
           ? '새 가입자는 승인 대기 상태로 생성됩니다. 승인된 사용자만 앱에 로그인할 수 있으며, 회원 비활성화는 프로필을 거절 상태로 바꿉니다.'
-          : '로컬 IndexedDB 모드의 사용자와 권한을 관리합니다.'}
+          : '로컬 모드의 사용자와 권한을 관리합니다.'}
         <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-sky-800">
           <span>대기 {pendingUsers.length}명</span>
           <span>회원 {approvedMemberCount}명</span>
