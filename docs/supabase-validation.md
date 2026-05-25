@@ -95,6 +95,16 @@ Auth cache note: Supabase mode uses a separate persisted auth key from Dexie mod
 4. Watch for any save/delete that feels slow enough to need a more explicit pending state.
 5. Keep an eye on patient-list and Today queue duplication after rapid clinical writes.
 
+## 2026-05-25 Smoke Attempt Notes
+
+- Static verification passed again after deployment handoff:
+  - `npm run type-check`
+  - focused Vitest run over Settings, Supabase write paths, backup snapshot checks, and patient deletion policy: 17 files / 57 tests
+  - `npm run build`
+- Vite can start in the foreground with `node_modules/.bin/vite.cmd --host 127.0.0.1 --port 3000`.
+- Browser automation was not available in this Codex session because the browser plugin's Node execution tool was not exposed.
+- Deployed-app smoke is still pending because the deployed URL and test account credentials were not available from repo-local configuration. Run the checklist above against the deployed URL once available.
+
 ## Stop Conditions
 
 - Any RLS error on a normal approved-admin flow.
