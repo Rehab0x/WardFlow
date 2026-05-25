@@ -82,3 +82,11 @@ export async function getBackupSnapshotData(id: string): Promise<string | null> 
   return data?.encrypted_data ?? null;
 }
 
+export async function deleteBackupSnapshot(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('backup_snapshots')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw error;
+}

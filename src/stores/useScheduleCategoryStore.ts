@@ -21,6 +21,7 @@ interface ScheduleCategoryStore {
   addCategory: (label: string, color: string) => void;
   updateCategory: (id: string, updates: Partial<Omit<ScheduleCategory, 'id'>>) => void;
   removeCategory: (id: string) => void;
+  replaceCategories: (categories: ScheduleCategory[]) => void;
   resetCategories: () => void;
   getLabel: (id: string) => string;
   getColor: (id: string) => string;
@@ -28,22 +29,57 @@ interface ScheduleCategoryStore {
 
 export { DEFAULT_CATEGORIES, COLOR_OPTIONS };
 
+function normalizeColor(color: string): string {
+  return COLOR_OPTIONS.includes(color as (typeof COLOR_OPTIONS)[number]) ? color : 'gray';
+}
+
+function normalizeLabel(label: string): string {
+  return label.trim().replace(/\s+/g, ' ');
+}
+
+function normalizeCategories(categories: ScheduleCategory[]): ScheduleCategory[] {
+  const seen = new Set<string>();
+  const normalized: ScheduleCategory[] = [];
+
+  for (const category of categories) {
+    const label = normalizeLabel(category.label);
+    if (!label) continue;
+
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    normalized.push({
+      id: category.id || `${key.replace(/\s+/g, '_')}_${Date.now()}`,
+      label,
+      color: normalizeColor(category.color),
+    });
+  }
+
+  return normalized.length > 0 ? normalized : [...DEFAULT_CATEGORIES];
+}
+
 export const useScheduleCategoryStore = create<ScheduleCategoryStore>()(
   persist(
     (set, get) => ({
       categories: [...DEFAULT_CATEGORIES],
 
       addCategory: (label, color) => {
-        const id = label.toLowerCase().replace(/\s+/g, '_') + '_' + Date.now();
+        const normalizedLabel = normalizeLabel(label);
+        if (!normalizedLabel) return;
+        const existing = get().categories.some((category) => category.label.toLowerCase() === normalizedLabel.toLowerCase());
+        if (existing) return;
+
+        const id = normalizedLabel.toLowerCase().replace(/\s+/g, '_') + '_' + Date.now();
         set((state) => ({
-          categories: [...state.categories, { id, label, color }],
+          categories: [...state.categories, { id, label: normalizedLabel, color: normalizeColor(color) }],
         }));
       },
 
       updateCategory: (id, updates) => {
         set((state) => ({
           categories: state.categories.map((c) =>
-            c.id === id ? { ...c, ...updates } : c
+            c.id === id ? { ...c, ...updates, color: updates.color ? normalizeColor(updates.color) : c.color } : c
           ),
         }));
       },
@@ -52,6 +88,10 @@ export const useScheduleCategoryStore = create<ScheduleCategoryStore>()(
         set((state) => ({
           categories: state.categories.filter((c) => c.id !== id),
         }));
+      },
+
+      replaceCategories: (categories) => {
+        set({ categories: normalizeCategories(categories) });
       },
 
       resetCategories: () => {

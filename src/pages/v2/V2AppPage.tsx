@@ -25,6 +25,11 @@ import {
 import type { LabItem, Patient } from '@/db/database';
 import { fetchBriefingData, type BriefingData } from '@/services/briefingService';
 import { formatUserFacingError } from '@/lib/errorMessages';
+import {
+  formatPatientArchiveConfirm,
+  patientArchiveButtonLabel,
+  patientArchiveHelpText,
+} from '@/lib/patientDeletionPolicy';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useLabStore } from '@/stores/useLabStore';
 import { useMedicationStore } from '@/stores/useMedicationStore';
@@ -151,10 +156,7 @@ export default function V2AppPage() {
 
   const loadBriefingData = useCallback(async () => {
     const refreshUserKey = currentUser?.id ?? 'anonymous';
-    if (
-      briefingRefreshPromiseRef.current &&
-      briefingRefreshUserKeyRef.current === refreshUserKey
-    ) {
+    if (briefingRefreshPromiseRef.current && briefingRefreshUserKeyRef.current === refreshUserKey) {
       briefingRefreshQueuedRef.current = true;
       return briefingRefreshPromiseRef.current;
     }
@@ -200,7 +202,9 @@ export default function V2AppPage() {
       const [briefingResult] = await Promise.allSettled([loadBriefingData(), fetchPatients()]);
       lastFullRefreshAtRef.current = Date.now();
       if (briefingResult.status === 'rejected') {
-        setBriefingError(formatUserFacingError(briefingResult.reason, 'Today 데이터를 불러오지 못했습니다.'));
+        setBriefingError(
+          formatUserFacingError(briefingResult.reason, 'Today 데이터를 불러오지 못했습니다.')
+        );
       }
     })();
 
@@ -271,13 +275,16 @@ export default function V2AppPage() {
     [workspaceUnsaved]
   );
 
-  const openPatient = useCallback((patientId: string, tab: string = 'overview') => {
-    if (patientId !== selectedPatientId && !confirmWorkspaceNavigation()) return false;
-    setSelectedPatientId(patientId);
-    setSelectedTab(isWorkspaceTabId(tab) ? tab : 'overview');
-    setWorkspaceUnsaved(false);
-    return true;
-  }, [confirmWorkspaceNavigation, selectedPatientId]);
+  const openPatient = useCallback(
+    (patientId: string, tab: string = 'overview') => {
+      if (patientId !== selectedPatientId && !confirmWorkspaceNavigation()) return false;
+      setSelectedPatientId(patientId);
+      setSelectedTab(isWorkspaceTabId(tab) ? tab : 'overview');
+      setWorkspaceUnsaved(false);
+      return true;
+    },
+    [confirmWorkspaceNavigation, selectedPatientId]
+  );
 
   const queueBriefingRefresh = useCallback(() => {
     void loadBriefingData();
@@ -400,7 +407,7 @@ export default function V2AppPage() {
 
   const handleDeleteEditingPatient = async () => {
     if (!editingPatient || savingPatient) return;
-    if (!window.confirm(`${editingPatient.name} 환자를 삭제할까요? 삭제된 환자는 목록에서 보이지 않습니다.`)) return;
+    if (!window.confirm(formatPatientArchiveConfirm(editingPatient.name))) return;
 
     setSavingPatient(true);
     setAddError(null);
@@ -791,8 +798,14 @@ function AddPatientPanel({
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const firstInputRef = useRef<HTMLInputElement>(null);
   const birthDate = useMemo(() => parseDateInput(draft.birthDate), [draft.birthDate]);
-  const hasValidBirthDate = useMemo(() => isValidBirthDateInput(draft.birthDate), [draft.birthDate]);
-  const isDirty = useMemo(() => !areAddPatientDraftsEqual(draft, initialDraft), [draft, initialDraft]);
+  const hasValidBirthDate = useMemo(
+    () => isValidBirthDateInput(draft.birthDate),
+    [draft.birthDate]
+  );
+  const isDirty = useMemo(
+    () => !areAddPatientDraftsEqual(draft, initialDraft),
+    [draft, initialDraft]
+  );
   const validationMessages = useMemo(() => buildAddPatientPanelValidationMessages(draft), [draft]);
   const canSubmit = useMemo(
     () =>
@@ -827,9 +840,12 @@ function AddPatientPanel({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [close]);
 
-  const update = useCallback(<Key extends keyof AddPatientDraft,>(key: Key, value: AddPatientDraft[Key]) => {
-    setDraft((current) => ({ ...current, [key]: value }));
-  }, []);
+  const update = useCallback(
+    <Key extends keyof AddPatientDraft>(key: Key, value: AddPatientDraft[Key]) => {
+      setDraft((current) => ({ ...current, [key]: value }));
+    },
+    []
+  );
 
   const submit = useCallback(() => {
     setSubmitAttempted(true);
@@ -886,7 +902,9 @@ function AddPatientPanel({
             <Input
               value={draft.registrationNumber}
               inputMode="numeric"
-              onChange={(value) => update('registrationNumber', value.replace(/\D/g, '').slice(0, 12))}
+              onChange={(value) =>
+                update('registrationNumber', value.replace(/\D/g, '').slice(0, 12))
+              }
             />
           </Field>
           <Field label="이름">
@@ -937,10 +955,17 @@ function AddPatientPanel({
             </select>
           </Field>
           <Field label="주치의">
-            <Input value={draft.attendingPhysician} onChange={(value) => update('attendingPhysician', value)} />
+            <Input
+              value={draft.attendingPhysician}
+              onChange={(value) => update('attendingPhysician', value)}
+            />
           </Field>
           <Field label="태그">
-            <Input value={draft.tagsText} onChange={(value) => update('tagsText', value)} placeholder="#DM, #aspiration" />
+            <Input
+              value={draft.tagsText}
+              onChange={(value) => update('tagsText', value)}
+              placeholder="#DM, #aspiration"
+            />
           </Field>
         </div>
         {showValidationSummary && (
@@ -948,18 +973,28 @@ function AddPatientPanel({
             {validationMessages[0]}
           </div>
         )}
-        {error && <div className="mx-4 rounded-md bg-red-50 px-3 py-2 text-[12px] text-red-700">{error}</div>}
+        {error && (
+          <div className="mx-4 rounded-md bg-red-50 px-3 py-2 text-[12px] text-red-700">
+            {error}
+          </div>
+        )}
         <div className="flex items-center justify-between gap-2 px-4 py-3">
           <div>
             {onDelete && (
-              <button
-                type="button"
-                onClick={onDelete}
-                disabled={isSaving}
-                className="h-8 rounded-md border border-red-200 px-3 text-[12px] font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                환자 삭제
-              </button>
+              <div className="space-y-1">
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  disabled={isSaving}
+                  title={patientArchiveHelpText}
+                  className="h-8 rounded-md border border-red-200 px-3 text-[12px] font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {patientArchiveButtonLabel}
+                </button>
+                <p className="max-w-[220px] text-[11px] leading-relaxed text-zinc-500">
+                  영구 삭제하지 않고 목록에서 숨깁니다.
+                </p>
+              </div>
             )}
           </div>
           <div className="flex gap-2">
@@ -1036,9 +1071,7 @@ function filterPatients(searchRows: PatientSearchRow[], query: string) {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return [];
 
-  return searchRows
-    .filter((row) => row.text.includes(normalized))
-    .map((row) => row.patient);
+  return searchRows.filter((row) => row.text.includes(normalized)).map((row) => row.patient);
 }
 
 function buildPatientListIndexes(patients: Patient[]): PatientListIndexes {
@@ -1244,7 +1277,10 @@ function applyOptimisticLab(
           totalItems: existing.totalItems + 1,
           abnormalCount: existing.abnormalCount + (draft.flag ? 1 : 0),
           abnormalItems: draft.flag
-            ? [optimisticItem, ...existing.abnormalItems.filter((item) => item !== optimisticItem)].slice(0, 5)
+            ? [
+                optimisticItem,
+                ...existing.abnormalItems.filter((item) => item !== optimisticItem),
+              ].slice(0, 5)
             : existing.abnormalItems,
         }
       : {
@@ -1269,7 +1305,6 @@ function applyOptimisticLab(
       }),
     };
   });
-
 }
 
 function applyOptimisticRemoveLab(
@@ -1301,7 +1336,9 @@ function applyOptimisticSchedule(
         isCompleted: false,
       },
       'scheduleId'
-    ).sort((a, b) => (a.scheduledTime || '').localeCompare(b.scheduledTime || '', 'ko-KR', { numeric: true })),
+    ).sort((a, b) =>
+      (a.scheduledTime || '').localeCompare(b.scheduledTime || '', 'ko-KR', { numeric: true })
+    ),
   }));
 }
 
@@ -1315,7 +1352,10 @@ function applyOptimisticRemoveSchedule(
   }));
 }
 
-function removeBriefingItemsByPatient<T extends { patientId: string }>(items: T[], patientId: string) {
+function removeBriefingItemsByPatient<T extends { patientId: string }>(
+  items: T[],
+  patientId: string
+) {
   if (!items.some((item) => item.patientId === patientId)) return items;
   return items.filter((item) => item.patientId !== patientId);
 }
@@ -1325,13 +1365,8 @@ function removeBriefingItemByKey<T, K extends keyof T>(items: T[], key: K, value
   return items.filter((item) => item[key] !== value);
 }
 
-function upsertBriefingItem<T>(
-  items: T[],
-  nextItem: T,
-  key: keyof T | ((item: T) => string)
-) {
-  const getKey =
-    typeof key === 'function' ? key : (item: T) => String(item[key]);
+function upsertBriefingItem<T>(items: T[], nextItem: T, key: keyof T | ((item: T) => string)) {
+  const getKey = typeof key === 'function' ? key : (item: T) => String(item[key]);
   const nextKey = getKey(nextItem);
   let replaced = false;
   const nextItems = items.map((item) => {
@@ -1395,8 +1430,10 @@ function buildAddPatientPanelValidationMessages(draft: AddPatientDraft) {
   const messages: string[] = [];
   if (!draft.name.trim()) messages.push('이름을 입력해주세요.');
   if (!draft.registrationNumber.trim()) messages.push('등록번호를 입력해주세요.');
-  if (draft.patientType === 'admitted' && !draft.roomBed.trim()) messages.push('병실을 입력해주세요.');
-  if (!isValidBirthDateInput(draft.birthDate)) messages.push('생년월일은 1900년부터 오늘 사이로 입력해주세요.');
+  if (draft.patientType === 'admitted' && !draft.roomBed.trim())
+    messages.push('병실을 입력해주세요.');
+  if (!isValidBirthDateInput(draft.birthDate))
+    messages.push('생년월일은 1900년부터 오늘 사이로 입력해주세요.');
   return messages;
 }
 

@@ -12,7 +12,9 @@ import {
   rejectProfile,
   signInWithEmail,
   signOut,
+  updateProfileAccess,
 } from '@/data/auth.repository';
+import { normalizeUserRole, normalizeWardModules } from '@/lib/adminAccess';
 import { fromUserProfile, loginIdentifierToEmail } from '@/mappers/legacyUser.mapper';
 import { formatUserFacingError } from '@/lib/errorMessages';
 
@@ -40,6 +42,7 @@ interface AuthStore {
   getPendingUsers: () => Promise<User[]>;
   getAllUsers: () => Promise<User[]>;
   approveUser: (userId: string, role: User['role'], modules: User['modules']) => Promise<void>;
+  updateUserAccess: (userId: string, role: User['role'], modules: User['modules']) => Promise<void>;
   rejectUser: (userId: string) => Promise<void>;
   deleteUser: (userId: string) => Promise<void>;
 }
@@ -262,8 +265,11 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       approveUser: async (userId: string, role: User['role'], modules: User['modules']) => {
+        const normalizedRole = normalizeUserRole(role);
+        const normalizedModules = normalizeWardModules(modules);
+
         if (useSupabaseBackend) {
-          await approveProfile(userId, role, modules);
+          await approveProfile(userId, normalizedRole, normalizedModules);
           return;
         }
 
@@ -275,11 +281,35 @@ export const useAuthStore = create<AuthStore>()(
         const now = new Date();
         await db.users.update(userId, {
           status: 'approved',
-          role,
-          modules,
+          role: normalizedRole,
+          modules: normalizedModules,
           approvedBy: currentUser.id,
           approvedAt: now,
           updatedAt: now,
+        });
+      },
+
+      updateUserAccess: async (userId: string, role: User['role'], modules: User['modules']) => {
+        const normalizedRole = normalizeUserRole(role);
+        const normalizedModules = normalizeWardModules(modules);
+
+        if (useSupabaseBackend) {
+          await updateProfileAccess(userId, normalizedRole, normalizedModules);
+          return;
+        }
+
+        const { currentUser } = get();
+        if (!currentUser || currentUser.role !== 'admin') {
+          throw new Error('관리자만 권한을 변경할 수 있습니다.');
+        }
+        if (userId === currentUser.id) {
+          throw new Error('본인 계정 권한은 변경할 수 없습니다.');
+        }
+
+        await db.users.update(userId, {
+          role: normalizedRole,
+          modules: normalizedModules,
+          updatedAt: new Date(),
         });
       },
 

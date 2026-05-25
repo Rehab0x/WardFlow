@@ -28,26 +28,42 @@ export const COLOR_PRESETS: Record<string, CalendarColorOption> = {
 };
 
 const PRESET_KEYS = Object.keys(COLOR_PRESETS);
+const DEFAULT_COLORS: Record<CalendarEventType, string> = {
+  schedule: 'violet',
+  global_alert: 'amber',
+  reminder: 'blue',
+};
 
 interface CalendarColorStore {
   colors: Record<CalendarEventType, string>; // color key from COLOR_PRESETS
   setColor: (type: CalendarEventType, colorKey: string) => void;
+  replaceColors: (colors: Partial<Record<CalendarEventType, unknown>>) => void;
   getColor: (type: CalendarEventType) => CalendarColorOption;
+}
+
+function normalizeColorKey(value: unknown, fallback: string): string {
+  return typeof value === 'string' && COLOR_PRESETS[value] ? value : fallback;
 }
 
 export const useCalendarColorStore = create<CalendarColorStore>()(
   persist(
     (set, get) => ({
-      colors: {
-        schedule: 'violet',
-        global_alert: 'amber',
-        reminder: 'blue',
-      },
+      colors: { ...DEFAULT_COLORS },
 
       setColor: (type, colorKey) => {
         if (!COLOR_PRESETS[colorKey]) return;
         set((state) => ({
           colors: { ...state.colors, [type]: colorKey },
+        }));
+      },
+
+      replaceColors: (colors) => {
+        set((state) => ({
+          colors: {
+            schedule: normalizeColorKey(colors.schedule, state.colors.schedule ?? DEFAULT_COLORS.schedule),
+            global_alert: normalizeColorKey(colors.global_alert, state.colors.global_alert ?? DEFAULT_COLORS.global_alert),
+            reminder: normalizeColorKey(colors.reminder, state.colors.reminder ?? DEFAULT_COLORS.reminder),
+          },
         }));
       },
 
@@ -62,4 +78,4 @@ export const useCalendarColorStore = create<CalendarColorStore>()(
   )
 );
 
-export { PRESET_KEYS };
+export { DEFAULT_COLORS, PRESET_KEYS };

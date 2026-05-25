@@ -8,6 +8,7 @@ interface LabReferenceStore {
   overrides: Record<string, { min?: number; max?: number }>;
 
   setOverride: (name: string, min?: number, max?: number) => void;
+  replaceOverrides: (overrides: Record<string, unknown>) => void;
   removeOverride: (name: string) => void;
   resetAll: () => void;
 
@@ -27,18 +28,43 @@ export const useLabReferenceStore = create<LabReferenceStore>()(
       overrides: {},
 
       setOverride: (name, min, max) => {
-        set((state) => ({
-          overrides: {
-            ...state.overrides,
-            [name.toLowerCase()]: { min, max },
-          },
-        }));
+        const nextMin = normalizeReferenceBound(min);
+        const nextMax = normalizeReferenceBound(max);
+        const key = normalizeReferenceKey(name);
+        if (!key) return;
+
+        set((state) => {
+          const overrides = { ...state.overrides };
+          if (nextMin === undefined && nextMax === undefined) {
+            delete overrides[key];
+          } else {
+            overrides[key] = { min: nextMin, max: nextMax };
+          }
+          return { overrides };
+        });
+      },
+
+      replaceOverrides: (overrides) => {
+        const next: Record<string, { min?: number; max?: number }> = {};
+
+        for (const [name, value] of Object.entries(overrides)) {
+          const key = normalizeReferenceKey(name);
+          if (!key || !value || typeof value !== 'object') continue;
+
+          const min = normalizeReferenceBound((value as { min?: unknown }).min);
+          const max = normalizeReferenceBound((value as { max?: unknown }).max);
+          if (min !== undefined || max !== undefined) {
+            next[key] = { min, max };
+          }
+        }
+
+        set({ overrides: next });
       },
 
       removeOverride: (name) => {
         set((state) => {
           const next = { ...state.overrides };
-          delete next[name.toLowerCase()];
+          delete next[normalizeReferenceKey(name)];
           return { overrides: next };
         });
       },
@@ -108,3 +134,11 @@ export const useLabReferenceStore = create<LabReferenceStore>()(
     }
   )
 );
+
+function normalizeReferenceBound(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function normalizeReferenceKey(name: string): string {
+  return name.trim().toLowerCase();
+}

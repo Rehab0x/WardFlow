@@ -32,7 +32,10 @@ export async function getCurrentProfile(): Promise<UserProfile | null> {
   return data ? fromProfileRow(data) : null;
 }
 
-export async function signInWithEmail(email: string, password: string): Promise<UserProfile | null> {
+export async function signInWithEmail(
+  email: string,
+  password: string
+): Promise<UserProfile | null> {
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw error;
   return getCurrentProfile();
@@ -101,11 +104,30 @@ export async function approveProfile(
   if (error) throw error;
 }
 
-export async function rejectProfile(userId: string): Promise<void> {
+export async function updateProfileAccess(
+  userId: string,
+  role: UserProfile['role'],
+  modules: string[]
+): Promise<void> {
+  const current = await getCurrentProfile();
+  if (!current) throw new Error('Not authenticated.');
+  if (current.role !== 'admin') throw new Error('관리자만 권한을 변경할 수 있습니다.');
+
   const { error } = await supabase
     .from('profiles')
-    .update({ status: 'rejected' })
-    .eq('id', userId);
+    .update({
+      role,
+      modules,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', userId)
+    .neq('role', 'admin');
+
+  if (error) throw error;
+}
+
+export async function rejectProfile(userId: string): Promise<void> {
+  const { error } = await supabase.from('profiles').update({ status: 'rejected' }).eq('id', userId);
 
   if (error) throw error;
 }

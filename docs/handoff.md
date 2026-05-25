@@ -5,7 +5,7 @@ Last updated: 2026-05-25
 ## Current Git State
 
 - Branch: `main`
-- Latest commit pushed to GitHub: `1fa17ea Add patient delete action and icon tooltips`
+- Latest session commit: `Harden settings and Supabase safety flows`
 - Remote: `https://github.com/Rehab0x/WardFlow.git`
 - Local verification before push:
   - `npm.cmd run type-check` passed on 2026-05-25
@@ -208,8 +208,61 @@ If `VITE_DATA_BACKEND` is missing, the app stays in the old IndexedDB mode.
 - `usePatientStore.fetchPatients` and `fetchPatientById` now share in-flight promises, preventing duplicate patient-list or single-patient Supabase reads when initial load, focus refresh, and future lazy hydration overlap.
 - `/v2/app` patient edit now includes a confirmed patient-delete action. The delete path uses the existing patient store archive/soft-delete behavior, removes the patient from local briefing state, clears selection if needed, and queues the normal server confirmation refresh.
 - Icon-only controls in the v2 top bar and patient workspace header now expose hover tooltips and clearer aria labels for actions such as patient search, patient add, settings, logout, attention toggle, patient edit, and discharge/restore.
+- Settings user management now explains the Supabase approval flow, shows loading/error states for admin reads, clarifies that Supabase member "delete" only moves the profile to rejected, and surfaces snapshot restore-block/warning checks in the backup preview UI.
+- Lab category settings now show load/save/error/dirty states, block duplicate category or item additions, keep failed saves visible, and normalize trimmed category/item data before persisting to Supabase or Dexie.
+- Supabase user-setting auto-save now exposes per-setting save state. Charting copy settings, schedule categories, calendar colors, and Lab reference settings show "저장 중/저장됨/저장 실패" in Settings instead of failing only in the console.
+- Schedule category settings now edit through a validated draft, block blank or duplicate labels, normalize colors/labels before replacing the store, and only apply changes when the user saves or resets. Hydrated Supabase schedule-category settings also pass through the same normalization path.
+- Lab reference overrides now ignore non-finite numeric values and clear an override when both bounds are empty/invalid, preventing NaN/Infinity from leaking into persisted user settings.
+- Settings auto-save status now clears on auth/user changes and exposes polite live-region status text with a saved-time tooltip.
+- Supabase user-settings hydration now uses store-level normalization for charting copy settings, calendar colors, schedule categories, and Lab reference overrides. Malformed JSON values no longer directly overwrite persisted local store state.
+- Charting, calendar color, and Lab reference stores now expose replace/normalize paths for hydrated settings, with tests covering invalid problem-list styles, separators, section labels, color keys, and reference override values.
+- Store tests now cover schedule-category normalization/default fallback and Lab reference finite-number sanitization.
+- AI settings now trim API keys before storing, validate model selections against the active provider, expose pressed state on provider buttons, show key length, and surface failed connection-test errors through toast instead of only inline text.
+- Backup settings were split into a thin backend switcher plus `SupabaseBackupSettings` and `LegacyBackupSettings`, so Supabase snapshot backup UI and legacy IndexedDB backup/import UI can evolve independently while keeping the existing snapshot formatter tests on the public wrapper export.
+- Admin settings now split member access management and patient ownership into `AdminMemberAccess` and `AdminPatientOwnership`, with shared role/module option metadata in `adminAccessOptions`. The main admin settings component now focuses on loading state, actions, and tab orchestration.
+- Remaining Settings sections were split into single-purpose files. `WorkSettings.tsx` now re-exports `ChartingSettings`, `ScheduleCategorySettings`, `CalendarColorSettings`, and `AISettings`; `LabSettings.tsx` now re-exports `LabCategorySettings`, `LabReferenceSettings`, and `LabImportSettings`; admin approval was extracted into `AdminApprovalPanel`.
+
+## Recent Verification
+
+- `npm run type-check` passed on 2026-05-25 after the backup settings split.
+- `npx vitest run src/lib/settingsNavigation.test.ts src/components/settings/WorkSettings.test.ts src/components/settings/BackupSettings.test.ts src/lib/adminPatients.test.ts src/lib/adminAccess.test.ts src/lib/errorMessages.test.ts src/stores/useAIStore.test.ts src/stores/useScheduleCategoryStore.test.ts src/stores/useLabReferenceStore.test.ts src/stores/useCalendarColorStore.test.ts src/stores/useChartingSettingsStore.test.ts src/stores/useSettingsSyncStatusStore.test.ts src/services/backupSnapshotService.test.ts` passed on 2026-05-25.
+- `npm run build` passed on 2026-05-25 after the backup settings split.
+- `npm run type-check`, the same 13-file focused Vitest run, and `npm run build` passed again on 2026-05-25 after the admin member/patient ownership split.
+- `npm run type-check`, the 13-file focused Vitest run, and `npm run build` passed again on 2026-05-25 after finishing the remaining Settings component splits.
+- `/v2/app` Supabase write-path validation started with store-level coverage because the in-app browser execution tool was unavailable in this session. New tests cover Supabase patient fetch/create/update/archive plus note, Lab, antibiotic, and today-schedule add/delete paths used by the v2 shell.
+- `npm run type-check`, `npx vitest run` over the 15 focused files including the new Supabase write-path tests, and `npm run build` passed on 2026-05-25.
+- Settings UI behavior now has React Testing Library coverage for admin member search/status filters/role-module actions, patient ownership search/status filters/empty state, and schedule category add/save behavior.
+- `npm run type-check`, `npx vitest run` over the 16 focused files including Settings UI and Supabase write-path tests, and `npm run build` passed on 2026-05-25.
+- Supabase snapshot restore preview diff/impact rows were added and verified with `npm run type-check`, `npx vitest run` over the 16 focused Settings/Supabase files, and `npm run build` on 2026-05-25.
+- Supabase backup settings now separate snapshot list/create/preview loading states, show list refresh, selected snapshot counts, empty/error states, trimmed password handling, and clearer per-action pending labels.
+- Supabase backup snapshots can now be deleted from Settings after explicit confirmation. The repository/service layer exposes a delete path, and the UI clears preview/password/selection state after successful deletion.
+- Backup snapshot errors are now normalized through a service-level formatter so password/decryption, RLS/permission, network, missing snapshot, and invalid snapshot-format failures show Korean user-facing messages in Settings.
+- Backup snapshot preview now validates missing snapshot/password inputs before decrypting, trims passwords at the service boundary, and normalizes partially malformed snapshot table arrays before counting records.
+- Backup snapshot tests now also cover formatted snapshot errors.
+- Lab Import settings now explicitly explains that legacy IndexedDB server-backup sync is disabled in Supabase mode while import writes use the logged-in account permissions.
+- AI store tests now cover API-key trimming/config checks and invalid-model fallback.
+- Admin Settings now uses the shared user-facing error formatter for load/approve/reject/deactivate failures, exposes a manual refresh action, last-refresh time, summary counts, loading labels, aria-pressed tabs, and clearer member deactivate labels.
+- Admin patient ownership now builds a user id map, sorts owner groups by active count/name, labels unknown owners, shows role/status badges, admitted/consult/attention counts, active-empty state, patient registration hover details, and sorted active/discharged patient rows.
+- Shared error message formatting now has focused tests covering explicit permission messages, Supabase/RLS technical fallback, network fallback, empty errors, and non-technical pass-through messages.
+- Settings auto-save status now versions pending saves so a slower previous request cannot overwrite the visible state of a newer save; focused tests cover stale completion handling and status clearing.
+- Legacy backup actions now wrap file/text/server failures with the shared user-facing error formatter and show pending labels for text backup/restore and restore actions.
+- Admin member management now supports editing approved members' role/module access, re-approving pending or rejected users from the member table, filtering by status, searching by member metadata, and resetting unsaved access drafts.
+- Supabase and legacy auth stores now share normalized role/module handling for approval and access updates; Supabase exposes a profile access update repository path guarded by admin role checks.
+- Admin access helper tests cover role/module normalization, draft-change detection, module toggling, status counts, and member search/filter behavior.
+- Admin patient ownership grouping/counting/filtering is now covered by pure helpers and tests; the patient ownership tab supports active/attention/discharged/all filters plus patient search.
+- The Settings auto-save status badge has been extracted into `src/components/settings/AutoSaveStatus.tsx`, keeping the shared "저장 중/저장됨/저장 실패" display out of the large settings page.
+- The full Admin Settings section has been extracted into `src/components/settings/AdminSettings.tsx`, including approval, member access, and patient ownership panels. `SettingsPage.tsx` now imports the admin section instead of carrying the full admin workflow inline.
+- The Settings backup section has been extracted into `src/components/settings/BackupSettings.tsx`, covering both Supabase snapshots and legacy file/text/server backup UI. Snapshot option/count formatting helpers are exported and covered by focused tests.
+- Lab category, Lab reference, and Lab Import settings have been extracted into `src/components/settings/LabSettings.tsx`, leaving `SettingsPage.tsx` focused on the settings shell plus smaller non-Lab sections.
+- Charting copy, schedule category, calendar color, and AI settings have been extracted into `src/components/settings/WorkSettings.tsx`. Schedule draft label normalization/validation helpers are exported and covered by focused tests.
+- PIN lock settings have been extracted into `src/components/settings/PinSettings.tsx`, and settings route section ids/group order are centralized in `src/lib/settingsNavigation.ts` with tests.
+- Settings sidebar/mobile navigation has been extracted into `src/components/settings/SettingsNavigation.tsx`, while `settingsNavigation` now also builds visible section descriptors from admin/PIN/backend state.
+- Backup snapshot restore-check tests now cover missing-Lab and empty-clinical-data warning cases used by the Settings preview UI.
+- Supabase snapshot restore preview now builds per-record-type impact rows comparing snapshot counts against current server counts. Each impact includes snapshot/current counts, delta, level, and message, while the preview summary keeps zero-patient-over-non-empty-server restores blocked.
+- Supabase backup Settings preview now renders the restore impact grid with warning/danger styling and a compact delta label, so admins can see which data domains would shrink or grow before any destructive restore path is opened.
+- Patient delete policy is now explicitly soft-archive only in the v2 app. The edit panel labels the action as hiding the patient from lists, the confirmation explains that clinical records remain in Supabase, and `patientDeletionPolicy` has focused tests.
+- Supabase type generation now has a documented path in `docs/supabase-types.md` plus an `npm run types:supabase` script. The local machine still lacks the Supabase CLI, so `src/types/supabase.ts` remains manually maintained until the CLI can generate it from the linked project.
 - This rebuild is starting from an empty clinical dataset. Keep migration tooling focused on schema/bootstrap and safety snapshots, not Dexie-to-Supabase patient transfer.
-- Supabase-generated TypeScript types should eventually replace the hand-written `src/types/supabase.ts`.
 - Today briefing and sidebar flag Supabase reads should remain scoped to accessible active patient IDs to avoid broad table scans.
 
 ## Current 2026-05-25 Checkpoint
@@ -218,7 +271,7 @@ If `VITE_DATA_BACKEND` is missing, the app stays in the old IndexedDB mode.
 - First admin login works, patient creation works after the RLS/profile setup was corrected, and the user reported the core app flow is broadly functional.
 - The main app route has been moved onto the v2 shell; `/v2/app` redirects to `/`.
 - Settings has been reshaped into a left settings sidebar plus right content panel and is wired to the existing admin, charting, Lab, AI, and backup sections.
-- Recent verification: `npm run type-check` and `npm run build` both pass.
+- Recent verification: `npx vitest run src/lib/settingsNavigation.test.ts src/components/settings/WorkSettings.test.ts src/components/settings/BackupSettings.test.ts src/lib/adminPatients.test.ts src/lib/adminAccess.test.ts src/lib/errorMessages.test.ts src/stores/useAIStore.test.ts src/stores/useScheduleCategoryStore.test.ts src/stores/useLabReferenceStore.test.ts src/stores/useCalendarColorStore.test.ts src/stores/useChartingSettingsStore.test.ts src/stores/useSettingsSyncStatusStore.test.ts src/services/backupSnapshotService.test.ts`, `npm run type-check`, and `npm run build` pass after the PIN/settings-navigation extraction pass.
 - Git status at handoff time was clean on `main...origin/main`.
 
 ## Recommended Next Steps
@@ -226,8 +279,8 @@ If `VITE_DATA_BACKEND` is missing, the app stays in the old IndexedDB mode.
 1. Do a manual deployed-app smoke test in Supabase mode: login, add/edit/delete patient, discharge/restore, charting save, note save/delete, Lab save/delete, antibiotic save/delete, schedule save/delete, refresh, and relogin.
 2. Tighten Settings behavior after real use. Prioritize admin approval/member management, Supabase snapshot backup preview, charting templates, Lab category/reference settings, and any controls that still look like legacy IndexedDB behavior.
 3. Add a small admin-facing explanation for pending user approval if the current Settings admin tab is not discoverable enough.
-4. Decide whether patient delete should remain a soft archive only, or whether an admin-only purge flow is needed later. Keep hard delete out of the normal edit panel.
-5. Replace hand-written `src/types/supabase.ts` with generated Supabase types once the schema settles.
+4. Keep patient delete as a soft-archive/hide action in normal workflows. Add an admin-only purge only if a later compliance requirement explicitly needs it.
+5. Install/link Supabase CLI in a trusted environment and run `npm run types:supabase` to replace `src/types/supabase.ts` with generated schema types.
 6. Continue removing remaining legacy/mojibake strings only where they are visible in the Supabase v2 flow. Legacy routes can be cleaned later unless they leak into the current app.
 7. Add focused tests for the highest-risk v2/Supabase flows: patient create/update/archive mapping, RLS-friendly repository errors, backup snapshot restore checks, and briefing optimistic update helpers.
 8. Consider loading thin patient shell rows first and hydrating full charting rows on patient open, using the repository path already added for patient shell rows.
@@ -240,5 +293,6 @@ Use `docs/supabase-validation.md` for the current Supabase validation checklist.
 - Rebuild plan: `docs/rebuild-plan.md`
 - Supabase schema plan: `docs/supabase-schema-plan.md`
 - Supabase validation checklist: `docs/supabase-validation.md`
+- 2026-05-25 worklog: `docs/worklog-2026-05-25.md`
 - Design plan: `docs/design-plan.md`
 - Handoff: `docs/handoff.md`

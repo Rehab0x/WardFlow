@@ -6,6 +6,7 @@ import { useCalendarColorStore } from '@/stores/useCalendarColorStore';
 import { useChartingSettingsStore } from '@/stores/useChartingSettingsStore';
 import { useLabReferenceStore } from '@/stores/useLabReferenceStore';
 import { useScheduleCategoryStore } from '@/stores/useScheduleCategoryStore';
+import { useSettingsSyncStatusStore } from '@/stores/useSettingsSyncStatusStore';
 import type { Json } from '@/types/supabase';
 
 type ChartingSettingsPayload = {
@@ -38,6 +39,7 @@ export function useSupabaseUserSettingsSync() {
 
     let cancelled = false;
     hydratedRef.current = false;
+    useSettingsSyncStatusStore.getState().clearAll();
 
     const hydrate = async () => {
       try {
@@ -56,27 +58,19 @@ export function useSupabaseUserSettingsSync() {
         const labReferences = labReferencesRaw as LabReferencesPayload | null;
 
         if (charting) {
-          useChartingSettingsStore.setState((state) => ({
-            problemListStyle: charting.problemListStyle ?? state.problemListStyle,
-            includeFieldNames: charting.includeFieldNames ?? state.includeFieldNames,
-            excludeEmptySections: charting.excludeEmptySections ?? state.excludeEmptySections,
-            sectionSeparator: charting.sectionSeparator ?? state.sectionSeparator,
-            sectionNames: charting.sectionNames
-              ? { ...state.sectionNames, ...charting.sectionNames }
-              : state.sectionNames,
-          }));
+          useChartingSettingsStore.getState().replaceSettings(charting);
         }
 
         if (scheduleCategories?.categories) {
-          useScheduleCategoryStore.setState({ categories: scheduleCategories.categories });
+          useScheduleCategoryStore.getState().replaceCategories(scheduleCategories.categories);
         }
 
         if (calendarColors?.colors) {
-          useCalendarColorStore.setState({ colors: calendarColors.colors });
+          useCalendarColorStore.getState().replaceColors(calendarColors.colors);
         }
 
         if (labReferences?.overrides) {
-          useLabReferenceStore.setState({ overrides: labReferences.overrides });
+          useLabReferenceStore.getState().replaceOverrides(labReferences.overrides);
         }
       } catch (error) {
         console.error('Failed to hydrate Supabase user settings:', error);
@@ -89,6 +83,7 @@ export function useSupabaseUserSettingsSync() {
 
     return () => {
       cancelled = true;
+      useSettingsSyncStatusStore.getState().clearAll();
     };
   }, [currentUser]);
 
@@ -98,13 +93,18 @@ export function useSupabaseUserSettingsSync() {
     const scheduleSave = (key: string, value: unknown) => {
       if (!hydratedRef.current) return;
 
+      const { markPending, markSaved, markError } = useSettingsSyncStatusStore.getState();
       const timers = saveTimersRef.current;
       if (timers[key]) window.clearTimeout(timers[key]);
+      const version = markPending(key);
 
       timers[key] = window.setTimeout(() => {
-        setUserSetting(key, value as Json).catch((error) => {
-          console.error(`Failed to save setting ${key}:`, error);
-        });
+        setUserSetting(key, value as Json)
+          .then(() => markSaved(key, version))
+          .catch((error) => {
+            markError(key, error, version);
+            console.error(`Failed to save setting ${key}:`, error);
+          });
       }, 500);
     };
 

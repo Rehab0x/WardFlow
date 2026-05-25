@@ -71,7 +71,8 @@ Auth cache note: Supabase mode uses a separate persisted auth key from Dexie mod
 21. Reopen the app or refresh the browser.
 22. Confirm data persists from Supabase.
 23. Edit the patient again and use the patient-delete action from the edit panel.
-24. Confirm the deleted patient disappears from the active list and Today queues, then refresh and confirm it stays hidden.
+24. Confirm the hidden patient disappears from the active list and Today queues, then refresh and confirm it stays hidden.
+25. Confirm the UI describes the action as a soft archive/list hide, not a permanent data purge.
 
 ## Admin And Safety Pass
 
@@ -84,6 +85,7 @@ Auth cache note: Supabase mode uses a separate persisted auth key from Dexie mod
 7. Create a snapshot backup.
 8. Preview the snapshot and confirm record counts match.
 9. Confirm destructive restore is still blocked/not exposed.
+10. Confirm `npm run types:supabase` is only run from a machine with Supabase CLI installed and linked to the intended project.
 
 ## Current Priority For Next Session
 

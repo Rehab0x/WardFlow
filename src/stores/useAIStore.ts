@@ -57,6 +57,14 @@ interface AIStore {
   isConfigured: () => boolean;
 }
 
+function getDefaultModel(provider: LLMProvider): string {
+  return LLM_PROVIDERS[provider].models[0]?.id || '';
+}
+
+function isModelForProvider(provider: LLMProvider, model: string): boolean {
+  return LLM_PROVIDERS[provider].models.some((item) => item.id === model);
+}
+
 export const useAIStore = create<AIStore>()(
   persist(
     (set, get) => ({
@@ -65,17 +73,20 @@ export const useAIStore = create<AIStore>()(
       model: 'claude-sonnet-4-20250514',
 
       setProvider: (provider) => {
-        const firstModel = LLM_PROVIDERS[provider].models[0]?.id || '';
-        set({ provider, model: firstModel });
+        const currentModel = get().model;
+        set({ provider, model: isModelForProvider(provider, currentModel) ? currentModel : getDefaultModel(provider) });
       },
 
-      setApiKey: (apiKey) => set({ apiKey }),
+      setApiKey: (apiKey) => set({ apiKey: apiKey.trim() }),
 
-      setModel: (model) => set({ model }),
+      setModel: (model) => {
+        const { provider } = get();
+        set({ model: isModelForProvider(provider, model) ? model : getDefaultModel(provider) });
+      },
 
       isConfigured: () => {
         const { apiKey } = get();
-        return apiKey.length > 10;
+        return apiKey.trim().length > 10;
       },
     }),
     {
