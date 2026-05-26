@@ -280,6 +280,17 @@ If `VITE_DATA_BACKEND` is missing, the app stays in the old IndexedDB mode.
 - Recent verification: `npx vitest run src/lib/settingsNavigation.test.ts src/components/settings/WorkSettings.test.ts src/components/settings/BackupSettings.test.ts src/lib/adminPatients.test.ts src/lib/adminAccess.test.ts src/lib/errorMessages.test.ts src/stores/useAIStore.test.ts src/stores/useScheduleCategoryStore.test.ts src/stores/useLabReferenceStore.test.ts src/stores/useCalendarColorStore.test.ts src/stores/useChartingSettingsStore.test.ts src/stores/useSettingsSyncStatusStore.test.ts src/services/backupSnapshotService.test.ts`, `npm run type-check`, and `npm run build` pass after the PIN/settings-navigation extraction pass.
 - Git status at handoff time was clean on `main...origin/main`.
 
+## Current 2026-05-27 Checkpoint
+
+- Today's v2 clinical workflow rebuild was committed and pushed as `66bbfc6 Rebuild v2 clinical workflows`.
+- Production deploy completed successfully on Vercel.
+- Production alias: `https://ward-flow.vercel.app`.
+- Deployment URL: `https://ward-flow-lq20djvsd-randy-kims-projects-6c97c3d7.vercel.app`.
+- Patient registration now allows shared room/bed values, v2 patient deletion uses Supabase hard delete, and `supabase/migrations/202605270001_allow_patient_delete.sql` was added for live RLS delete permission.
+- The v2 workspace now restores practical Lab review/parsing, charting OCS copy/templates, medication viewing/manual entry/parsing, mobile header wrapping, and visible Lab value tables.
+- Verification before deploy: `npm run type-check`, `npx vitest run src/stores/usePatientStore.supabase.test.ts src/lib/patientDeletionPolicy.test.ts`, and `npm run build` all passed. Vercel production build also passed.
+- Next session should first apply the new Supabase migration in the live project before relying on patient hard delete in production.
+
 ## Recommended Next Steps
 
 1. Do a manual deployed-app smoke test in Supabase mode: login, add/edit/delete patient, discharge/restore, charting save, note save/delete, Lab save/delete, antibiotic save/delete, schedule save/delete, refresh, and relogin.
