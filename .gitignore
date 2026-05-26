@@ -58,3 +58,5 @@ WORK_LOG_*
 
 # Test data files
 *.xls
+.vercel
+.env*.local

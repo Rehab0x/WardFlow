@@ -37,6 +37,8 @@ import { useMedicationStore } from '@/stores/useMedicationStore';
 import { useNoteStore } from '@/stores/useNoteStore';
 import { usePatientStore } from '@/stores/usePatientStore';
 import { useScheduleStore } from '@/stores/useScheduleStore';
+import type { ParsedLabItem } from '@/services/parser/labParser';
+import type { ParsedMedication } from '@/services/parser/medParser';
 
 type AddPatientDraft = {
   roomBed: string;
@@ -58,7 +60,6 @@ type PatientListIndexes = {
   summary: BriefingData['patientSummary'];
   patientsById: Map<string, Patient>;
   registrationNumbers: Map<string, string>;
-  occupiedRoomBeds: Map<string, string>;
   searchRows: PatientSearchRow[];
 };
 
@@ -101,8 +102,9 @@ export default function V2AppPage() {
   } = usePatientStore();
   const { addNote, deleteNote } = useNoteStore();
   const { addSchedule, deleteSchedule } = useScheduleStore();
-  const { addMedication, deleteMedication } = useMedicationStore();
-  const { addLabResult, deleteLabResult } = useLabStore();
+  const { medications, fetchMedicationsByPatient, addMedication, deleteMedication } =
+    useMedicationStore();
+  const { labs, fetchLabsByPatient, addLabResult, deleteLabResult } = useLabStore();
   const [briefingData, setBriefingData] = useState<BriefingData>(emptyBriefingData);
   const [briefingLoading, setBriefingLoading] = useState(false);
   const [briefingError, setBriefingError] = useState<string | null>(null);
@@ -513,6 +515,64 @@ export default function V2AppPage() {
     }, '항생제를 저장하지 못했습니다.');
   };
 
+  const handleAddMedication = async (draft: {
+    category: 'hospital' | 'personal';
+    drugName: string;
+    singleDose: string;
+    frequency: '#1' | '#2' | '#3' | '#4';
+    schedule: string;
+    timing: string;
+    notes: string;
+  }) => {
+    if (!selectedPatient) return;
+    await runWrite(async () => {
+      const startDate = new Date();
+      const drugName = draft.drugName.trim();
+      await addMedication({
+        patientId: selectedPatient.id,
+        category: draft.category,
+        drugName,
+        drugBaseName: drugName,
+        singleDose: Number(draft.singleDose.trim()) || 0,
+        schedule: `${draft.frequency} ${draft.schedule.trim()}`.trim(),
+        timing: draft.timing.trim() || undefined,
+        startDate,
+        isAntibiotic: false,
+        isActive: true,
+        notes: draft.notes.trim() || undefined,
+      });
+      markLocalBriefingUpdated();
+    }, '약제를 저장하지 못했습니다.');
+  };
+
+  const handleSaveParsedMedications = async (
+    category: 'hospital' | 'personal',
+    parsedMedications: ParsedMedication[]
+  ) => {
+    if (!selectedPatient) return;
+    await runWrite(async () => {
+      const startDate = new Date();
+      for (const medication of parsedMedications) {
+        await addMedication({
+          patientId: selectedPatient.id,
+          category,
+          drugName: medication.drugName,
+          drugBaseName: medication.drugBaseName,
+          singleDose: medication.singleDose,
+          schedule: formatParsedMedicationSchedule(medication.schedule),
+          timing: medication.timing,
+          daysRemaining: medication.daysRemaining,
+          startDate,
+          isAntibiotic: false,
+          isActive: true,
+        });
+      }
+      await fetchMedicationsByPatient(selectedPatient.id);
+      markLocalBriefingUpdated();
+      queueBriefingRefresh();
+    }, '파싱한 약제를 저장하지 못했습니다.');
+  };
+
   const handleRemoveAntibiotic = async (medicationId: string) => {
     await runWrite(async () => {
       await deleteMedication(medicationId);
@@ -520,6 +580,16 @@ export default function V2AppPage() {
       markLocalBriefingUpdated();
       queueBriefingRefresh();
     }, '항생제를 삭제하지 못했습니다.');
+  };
+
+  const handleRemoveMedication = async (medicationId: string) => {
+    if (!selectedPatient) return;
+    await runWrite(async () => {
+      await deleteMedication(medicationId);
+      await fetchMedicationsByPatient(selectedPatient.id);
+      markLocalBriefingUpdated();
+      queueBriefingRefresh();
+    }, '약제를 삭제하지 못했습니다.');
   };
 
   const handleAddLab = async (draft: {
@@ -556,6 +626,41 @@ export default function V2AppPage() {
       markLocalBriefingUpdated();
       queueBriefingRefresh();
     }, 'Lab을 저장하지 못했습니다.');
+  };
+
+  const handleSaveParsedLabs = async (
+    items: ParsedLabItem[],
+    testDate: Date,
+    source: 'parsed' | 'xls'
+  ) => {
+    if (!selectedPatient) return;
+    await runWrite(async () => {
+      const grouped = new Map<string, ParsedLabItem[]>();
+      for (const item of items) {
+        const category = item.category || 'Other';
+        const current = grouped.get(category) ?? [];
+        current.push(item);
+        grouped.set(category, current);
+      }
+
+      for (const [category, categoryItems] of grouped.entries()) {
+        const labItems: LabItem[] = categoryItems.map((item) => ({
+          code: item.code || undefined,
+          name: item.name,
+          value: item.value,
+          unit: item.unit,
+          referenceMin: item.referenceMin,
+          referenceMax: item.referenceMax,
+          isAbnormal: item.flag !== '',
+          hlFlag: item.flag || undefined,
+        }));
+        await addLabResult(selectedPatient.id, category, labItems, testDate, source);
+      }
+
+      await fetchLabsByPatient(selectedPatient.id);
+      markLocalBriefingUpdated();
+      queueBriefingRefresh();
+    }, 'Lab 파싱 결과를 저장하지 못했습니다.');
   };
 
   const handleRemoveLab = async (lab: { id?: string }) => {
@@ -720,6 +825,8 @@ export default function V2AppPage() {
         <PatientWorkspace
           patient={selectedPatient}
           data={displayedBriefingData}
+          labResults={labs}
+          medications={medications}
           initialTab={selectedTab}
           onBack={handleOpenToday}
           onTabChange={setSelectedTab}
@@ -729,9 +836,15 @@ export default function V2AppPage() {
           onAddNote={handleAddNote}
           onRemoveNote={handleRemoveNote}
           onAddAntibiotic={handleAddAntibiotic}
+          onAddMedication={handleAddMedication}
+          onSaveParsedMedications={handleSaveParsedMedications}
           onRemoveAntibiotic={handleRemoveAntibiotic}
+          onRemoveMedication={handleRemoveMedication}
           onAddLab={handleAddLab}
           onRemoveLab={handleRemoveLab}
+          onSaveParsedLabs={handleSaveParsedLabs}
+          onLoadLabs={fetchLabsByPatient}
+          onLoadMedications={fetchMedicationsByPatient}
           onAddTodaySchedule={handleAddTodaySchedule}
           onRemoveTodaySchedule={handleRemoveTodaySchedule}
           onArchive={handleArchive}
@@ -993,7 +1106,7 @@ function AddPatientPanel({
                   {patientArchiveButtonLabel}
                 </button>
                 <p className="max-w-[220px] text-[11px] leading-relaxed text-zinc-500">
-                  영구 삭제하지 않고 목록에서 숨깁니다.
+                  환자 정보와 연결된 임상 기록을 함께 삭제합니다.
                 </p>
               </div>
             )}
@@ -1080,7 +1193,6 @@ function buildPatientListIndexes(patients: Patient[]): PatientListIndexes {
   let admitted = 0;
   let consult = 0;
   const registrationNumbers = new Map<string, string>();
-  const occupiedRoomBeds = new Map<string, string>();
   const patientsById = new Map<string, Patient>();
   const searchRows: PatientSearchRow[] = [];
 
@@ -1093,11 +1205,6 @@ function buildPatientListIndexes(patients: Patient[]): PatientListIndexes {
       total++;
       if (patient.patientType === 'admitted') admitted++;
       if (patient.patientType === 'consult') consult++;
-
-      if (patient.patientType === 'admitted') {
-        const roomBed = normalizePatientKey(patient.roomBed);
-        if (roomBed) occupiedRoomBeds.set(roomBed, patient.id);
-      }
     }
 
     searchRows.push({
@@ -1119,7 +1226,6 @@ function buildPatientListIndexes(patients: Patient[]): PatientListIndexes {
     summary: { total, admitted, consult },
     patientsById,
     registrationNumbers,
-    occupiedRoomBeds,
     searchRows,
   };
 }
@@ -1316,6 +1422,13 @@ function applyOptimisticRemoveLab(
   // Lab summaries do not carry individual result IDs, so the precise removal is confirmed by refresh.
 }
 
+function formatParsedMedicationSchedule(schedule: string) {
+  const normalized = schedule.trim();
+  if (!normalized) return '';
+  const count = normalized.split(',').filter(Boolean).length;
+  return count > 0 ? `#${count} ${normalized}` : normalized;
+}
+
 function applyOptimisticSchedule(
   setBriefingData: Dispatch<SetStateAction<BriefingData>>,
   patient: Patient,
@@ -1400,11 +1513,6 @@ function validatePatientDraft(
   );
   if (registrationNumberOwner && registrationNumberOwner !== excludePatientId) {
     return '이미 같은 등록번호의 환자가 있습니다.';
-  }
-
-  const roomBedOwner = indexes.occupiedRoomBeds.get(normalizePatientKey(draft.roomBed));
-  if (draft.patientType === 'admitted' && roomBedOwner && roomBedOwner !== excludePatientId) {
-    return '이미 사용 중인 병실입니다.';
   }
 
   return null;

@@ -4,8 +4,8 @@ import type { Patient } from '@/db/database';
 import { fromDomainPatient } from '@/mappers/legacyPatient.mapper';
 
 const repo = vi.hoisted(() => ({
-  archivePatient: vi.fn(),
   createPatient: vi.fn(),
+  deletePatient: vi.fn(),
   getPatient: vi.fn(),
   listPatients: vi.fn(),
   updatePatient: vi.fn(),
@@ -13,8 +13,8 @@ const repo = vi.hoisted(() => ({
 
 vi.mock('@/config/backend', () => ({ useSupabaseBackend: true }));
 vi.mock('@/data/patients.repository', () => ({
-  archivePatient: repo.archivePatient,
   createPatient: repo.createPatient,
+  deletePatient: repo.deletePatient,
   getPatient: repo.getPatient,
   listPatients: repo.listPatients,
   updatePatient: repo.updatePatient,
@@ -143,7 +143,7 @@ describe('usePatientStore Supabase flow', () => {
         updatedAt: new Date('2026-05-25T00:01:00Z'),
       })
     );
-    repo.archivePatient.mockResolvedValue(undefined);
+    repo.deletePatient.mockResolvedValue(undefined);
 
     const { usePatientStore } = await import('./usePatientStore');
     const patient = makeLegacyPatient();
@@ -162,13 +162,13 @@ describe('usePatientStore Supabase flow', () => {
     expect(usePatientStore.getState().getPatientById('patient-1')?.roomBed).toBe('902-1');
 
     await usePatientStore.getState().deletePatient('patient-1');
-    expect(repo.archivePatient).toHaveBeenCalledWith('patient-1');
+    expect(repo.deletePatient).toHaveBeenCalledWith('patient-1');
     expect(usePatientStore.getState().getPatientById('patient-1')).toBeUndefined();
   });
 
-  it('keeps patient archive failure messages aligned with the soft-hide policy', async () => {
-    const archiveError = {};
-    repo.archivePatient.mockRejectedValue(archiveError);
+  it('keeps patient delete failure messages aligned with the delete policy', async () => {
+    const deleteError = {};
+    repo.deletePatient.mockRejectedValue(deleteError);
 
     const { usePatientStore } = await import('./usePatientStore');
     const patient = makeLegacyPatient();
@@ -179,9 +179,9 @@ describe('usePatientStore Supabase flow', () => {
       error: null,
     });
 
-    await expect(usePatientStore.getState().deletePatient('patient-1')).rejects.toBe(archiveError);
-    expect(repo.archivePatient).toHaveBeenCalledWith('patient-1');
-    expect(usePatientStore.getState().error).toBe('환자를 숨김 처리하지 못했습니다.');
+    await expect(usePatientStore.getState().deletePatient('patient-1')).rejects.toBe(deleteError);
+    expect(repo.deletePatient).toHaveBeenCalledWith('patient-1');
+    expect(usePatientStore.getState().error).toBe('환자를 삭제하지 못했습니다.');
     expect(usePatientStore.getState().getPatientById('patient-1')).toBe(patient);
   });
 });

@@ -4,8 +4,8 @@ import type { Patient } from '@/db/database';
 import { useAuthStore } from './useAuthStore';
 import { useSupabaseBackend } from '@/config/backend';
 import {
-  archivePatient as archiveSupabasePatient,
   createPatient as createSupabasePatient,
+  deletePatient as deleteSupabasePatient,
   getPatient as getSupabasePatient,
   listPatients as listSupabasePatients,
   updatePatient as updateSupabasePatient,
@@ -74,10 +74,7 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
 
         if (currentUser.role === 'doctor') {
           // Doctor: Only own patients (createdBy) - both active and discharged
-          patients = await db.patients
-            .where('createdBy')
-            .equals(currentUser.id)
-            .toArray();
+          patients = await db.patients.where('createdBy').equals(currentUser.id).toArray();
 
           // Also get shared patients
           const sharedPatients = await db.patients
@@ -91,10 +88,7 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
           patients = Array.from(patientMap.values());
         } else if (currentUser.role === 'therapist') {
           // Therapist: Only shared patients
-          patients = await db.patients
-            .where('sharedWith')
-            .equals(currentUser.id)
-            .toArray();
+          patients = await db.patients.where('sharedWith').equals(currentUser.id).toArray();
         } else {
           // Admin & Nurse: All patients (active and discharged)
           patients = await db.patients.toArray();
@@ -261,7 +255,7 @@ export const usePatientStore = create<PatientStore>((set, get) => ({
   deletePatient: async (id) => {
     try {
       if (useSupabaseBackend) {
-        await archiveSupabasePatient(id);
+        await deleteSupabasePatient(id);
         set((state) => buildPatientCollectionState(state, removeById(state.patients, id)));
         return;
       }

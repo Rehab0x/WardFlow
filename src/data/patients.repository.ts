@@ -191,10 +191,14 @@ export async function createPatient(input: PatientCreateInput): Promise<Patient>
 
   if (profileError) throw profileError;
   if (!profile) {
-    throw new Error('현재 로그인 계정의 프로필이 없어 환자를 추가할 수 없습니다. Supabase profiles 테이블을 확인해주세요.');
+    throw new Error(
+      '현재 로그인 계정의 프로필이 없어 환자를 추가할 수 없습니다. Supabase profiles 테이블을 확인해주세요.'
+    );
   }
   if (profile.status !== 'approved') {
-    throw new Error(`현재 계정이 ${profile.status} 상태라 환자를 추가할 수 없습니다. 관리자 승인 후 다시 시도해주세요.`);
+    throw new Error(
+      `현재 계정이 ${profile.status} 상태라 환자를 추가할 수 없습니다. 관리자 승인 후 다시 시도해주세요.`
+    );
   }
 
   const patientId = crypto.randomUUID();
@@ -203,9 +207,7 @@ export async function createPatient(input: PatientCreateInput): Promise<Patient>
     id: patientId,
   };
 
-  const { error } = await supabase
-    .from('patients')
-    .insert(insertPayload);
+  const { error } = await supabase.from('patients').insert(insertPayload);
 
   if (error) throw error;
 
@@ -226,12 +228,8 @@ export async function updatePatient(id: string, input: PatientUpdateInput): Prom
   return fromPatientRow(data);
 }
 
-export async function archivePatient(id: string): Promise<void> {
-  const { error } = await supabase
-    .from('patients')
-    .update({ status: 'archived', deleted_at: new Date().toISOString() })
-    .eq('id', id);
+export async function deletePatient(id: string): Promise<void> {
+  const { error } = await supabase.from('patients').delete().eq('id', id);
 
   if (error) throw error;
 }
-

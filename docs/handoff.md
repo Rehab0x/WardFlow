@@ -1,6 +1,6 @@
 # WardFlow Rebuild Handoff
 
-Last updated: 2026-05-26
+Last updated: 2026-05-27
 
 ## Current Git State
 
@@ -260,12 +260,13 @@ If `VITE_DATA_BACKEND` is missing, the app stays in the old IndexedDB mode.
 - Backup snapshot restore-check tests now cover missing-Lab and empty-clinical-data warning cases used by the Settings preview UI.
 - Supabase snapshot restore preview now builds per-record-type impact rows comparing snapshot counts against current server counts. Each impact includes snapshot/current counts, delta, level, and message, while the preview summary keeps zero-patient-over-non-empty-server restores blocked.
 - Supabase backup Settings preview now renders the restore impact grid with warning/danger styling and a compact delta label, so admins can see which data domains would shrink or grow before any destructive restore path is opened.
-- Patient delete policy is now explicitly soft-archive only in the v2 app. The edit panel labels the action as hiding the patient from lists, the confirmation explains that clinical records remain in Supabase, and `patientDeletionPolicy` has focused tests.
+- Patient delete policy now uses Supabase hard delete for the v2 app. The edit panel labels the action as patient delete, the confirmation explains that linked clinical records are deleted together, and `patientDeletionPolicy` plus Supabase patient-store tests cover the behavior.
 - Supabase type generation now has a documented path in `docs/supabase-types.md` plus an `npm run types:supabase` script. Supabase CLI `2.101.0` is installed as a dev dependency; remote linking/type generation still needs `supabase login` or `SUPABASE_ACCESS_TOKEN`, so `src/types/supabase.ts` remains manually maintained until authentication is available.
 - Supabase backup Settings now has component-level behavior coverage for snapshot list load, create/select, preview impact rendering, and delete/clear-password flows. Snapshot password/select inputs also expose explicit accessible labels for more reliable desktop and mobile use.
 - Settings-visible legacy/technical wording was cleaned up for the current Supabase v2 flow: snapshot copy now says data counts, local-mode/admin text no longer exposes IndexedDB, and legacy backup copy now uses user-facing local-data wording.
-- Patient hide/soft-archive wording now uses a shared failure message in the v2 patient edit flow and patient store, and the Supabase patient-store test covers archive failure without removing the patient locally.
+- Patient delete wording now uses a shared failure message in the v2 patient edit flow and patient store, and the Supabase patient-store test covers delete failure without removing the patient locally.
 - Supabase CLI setup was advanced by adding the CLI package and verifying `npx supabase --version`; `supabase link` and remote type generation are blocked until a Supabase access token is available.
+- v2 patient registration now allows multiple patients in the same room/bed, patient deletion is wired to Supabase hard delete through a new delete RLS policy migration, the mobile workspace header lets C/C and onset use full width below the action row, Lab now has a per-patient value table, and charting OCS copy/template access was restored in the v2 workspace.
 - `npm run type-check`, focused Settings/backup/patient Vitest coverage, and `npm run build` passed on 2026-05-26 after the visible wording and patient-hide policy cleanup.
 - This rebuild is starting from an empty clinical dataset. Keep migration tooling focused on schema/bootstrap and safety snapshots, not Dexie-to-Supabase patient transfer.
 - Today briefing and sidebar flag Supabase reads should remain scoped to accessible active patient IDs to avoid broad table scans.
@@ -284,7 +285,7 @@ If `VITE_DATA_BACKEND` is missing, the app stays in the old IndexedDB mode.
 1. Do a manual deployed-app smoke test in Supabase mode: login, add/edit/delete patient, discharge/restore, charting save, note save/delete, Lab save/delete, antibiotic save/delete, schedule save/delete, refresh, and relogin.
 2. Tighten Settings behavior after real use. Prioritize admin approval/member management, Supabase snapshot backup preview, charting templates, Lab category/reference settings, and any controls that still look like legacy IndexedDB behavior.
 3. Add a small admin-facing explanation for pending user approval if the current Settings admin tab is not discoverable enough.
-4. Keep patient delete as a soft-archive/hide action in normal workflows. Add an admin-only purge only if a later compliance requirement explicitly needs it.
+4. Apply `supabase/migrations/202605270001_allow_patient_delete.sql` to enable RLS-protected hard delete for v2 patient deletion in the live Supabase project.
 5. Provide Supabase CLI authentication with `supabase login` or `SUPABASE_ACCESS_TOKEN`, run `supabase link --project-ref <project-ref>`, then run `npm run types:supabase` to replace `src/types/supabase.ts` with generated schema types.
 6. Continue checking newly touched v2/Supabase screens for visible legacy/mojibake strings during each feature pass. The current Settings/Supabase backup wording has been cleaned.
 7. Add focused tests for the highest-risk v2/Supabase flows: patient create/update/archive mapping, RLS-friendly repository errors, backup snapshot restore checks, and briefing optimistic update helpers.
@@ -300,5 +301,6 @@ Use `docs/supabase-validation.md` for the current Supabase validation checklist.
 - Supabase validation checklist: `docs/supabase-validation.md`
 - 2026-05-25 worklog: `docs/worklog-2026-05-25.md`
 - 2026-05-26 worklog: `docs/worklog-2026-05-26.md`
+- 2026-05-27 worklog: `docs/worklog-2026-05-27.md`
 - Design plan: `docs/design-plan.md`
 - Handoff: `docs/handoff.md`

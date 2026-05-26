@@ -459,12 +459,17 @@ function buildPreviewChangeSummary({
   completedScheduleIds: string[];
 }): PreviewChangeSummaryItem[] {
   const interactionCount = countInteractionStateValues(interactionState);
-  const newPatientCount = patients.filter((patient) => patient.id.startsWith('preview-new-')).length;
+  const newPatientCount = patients.filter((patient) =>
+    patient.id.startsWith('preview-new-')
+  ).length;
   const dischargedCount = patients.filter((patient) => patient.status === 'discharged').length;
 
   return [
     patientsChanged
-      ? { label: newPatientCount > 0 ? '환자/정보' : '환자정보', count: Math.max(1, newPatientCount + dischargedCount) }
+      ? {
+          label: newPatientCount > 0 ? '환자/정보' : '환자정보',
+          count: Math.max(1, newPatientCount + dischargedCount),
+        }
       : null,
     { label: '차팅', count: Object.keys(chartingDrafts).length },
     { label: '알림', count: reminders.length },
@@ -635,7 +640,9 @@ function buildChangedPatientDetail({
   if (completedScheduleIds.some((scheduleId) => scheduleIds.has(scheduleId))) labels.push('완료');
   if (hasInteractionStateValue(interaction)) labels.push('검토');
 
-  return labels.length > 0 ? labels.join(' / ') : `${patient.sex}/${formatAgeYears(patient.birthDate)}`;
+  return labels.length > 0
+    ? labels.join(' / ')
+    : `${patient.sex}/${formatAgeYears(patient.birthDate)}`;
 }
 
 function buildPreviewExportText({
@@ -732,7 +739,9 @@ function pruneEmptyInteractionState(
 
 function normalizeInteractionState(state: PatientWorkspaceInteractionState) {
   const sortValues = (values?: string[]) =>
-    values?.length ? [...values].sort((a, b) => a.localeCompare(b, 'ko-KR', { numeric: true })) : undefined;
+    values?.length
+      ? [...values].sort((a, b) => a.localeCompare(b, 'ko-KR', { numeric: true }))
+      : undefined;
 
   return {
     reviewedLabImports: sortValues(state.reviewedLabImports),
@@ -771,7 +780,9 @@ export default function V2PreviewPage() {
   const [workspaceUnsaved, setWorkspaceUnsaved] = useState(false);
   const [previewExportCopiedAt, setPreviewExportCopiedAt] = useState<Date | null>(null);
   const [previewSavedAt, setPreviewSavedAt] = useState<Date | null>(() =>
-    initialPreviewStateRef.current?.savedAt ? new Date(initialPreviewStateRef.current.savedAt) : null
+    initialPreviewStateRef.current?.savedAt
+      ? new Date(initialPreviewStateRef.current.savedAt)
+      : null
   );
   const [chartingDrafts, setChartingDrafts] = useState<Record<string, ChartingDraft>>(
     () => initialPreviewStateRef.current?.chartingDrafts ?? {}
@@ -970,53 +981,56 @@ export default function V2PreviewPage() {
     completedScheduleIds,
   ]);
 
-  const previewData: BriefingData = useMemo(
-    () => {
-      const activePatients = patients.filter((patient) => patient.status === 'active');
-      const activePatientIds = new Set(activePatients.map((patient) => patient.id));
-      const activePatientMap = new Map(activePatients.map((patient) => [patient.id, patient]));
-      const activeOnly = <T extends { patientId: string }>(items: T[]) =>
-        items.filter((item) => activePatientIds.has(item.patientId));
-      const withPatientIdentity = <T extends { patientId: string; patientName: string; roomBed: string }>(
-        items: T[]
-      ) =>
-        items.map((item) => {
-          const patient = activePatientMap.get(item.patientId);
-          return patient ? { ...item, patientName: patient.name, roomBed: patient.roomBed } : item;
-        });
-      const manualLabSummaries = buildManualLabSummaries(manualLabs, activePatientMap);
+  const previewData: BriefingData = useMemo(() => {
+    const activePatients = patients.filter((patient) => patient.status === 'active');
+    const activePatientIds = new Set(activePatients.map((patient) => patient.id));
+    const activePatientMap = new Map(activePatients.map((patient) => [patient.id, patient]));
+    const activeOnly = <T extends { patientId: string }>(items: T[]) =>
+      items.filter((item) => activePatientIds.has(item.patientId));
+    const withPatientIdentity = <
+      T extends { patientId: string; patientName: string; roomBed: string },
+    >(
+      items: T[]
+    ) =>
+      items.map((item) => {
+        const patient = activePatientMap.get(item.patientId);
+        return patient ? { ...item, patientName: patient.name, roomBed: patient.roomBed } : item;
+      });
+    const manualLabSummaries = buildManualLabSummaries(manualLabs, activePatientMap);
 
-      return {
-        ...previewDataBase,
-        reminders: withPatientIdentity(activeOnly([...reminders, ...previewDataBase.reminders])),
-        progressNotes: withPatientIdentity(activeOnly([...progressNotes, ...previewDataBase.progressNotes])),
-        antibiotics: withPatientIdentity(activeOnly([...customAntibiotics, ...previewDataBase.antibiotics])),
-        recentLabs: withPatientIdentity(
-          mergeLabSummaries(activeOnly(previewDataBase.recentLabs), manualLabSummaries)
-        ),
-        todaySchedules: withPatientIdentity(
-          activeOnly([...customTodaySchedules, ...previewDataBase.todaySchedules])
-        ).map((schedule) => ({
-            ...schedule,
-            isCompleted: completedScheduleIds.includes(schedule.scheduleId) || schedule.isCompleted,
-          })),
-        patientSummary: {
-          total: activePatients.length,
-          admitted: activePatients.filter((patient) => patient.patientType === 'admitted').length,
-          consult: activePatients.filter((patient) => patient.patientType === 'consult').length,
-        },
-      };
-    },
-    [
-      patients,
-      reminders,
-      progressNotes,
-      customAntibiotics,
-      manualLabs,
-      customTodaySchedules,
-      completedScheduleIds,
-    ]
-  );
+    return {
+      ...previewDataBase,
+      reminders: withPatientIdentity(activeOnly([...reminders, ...previewDataBase.reminders])),
+      progressNotes: withPatientIdentity(
+        activeOnly([...progressNotes, ...previewDataBase.progressNotes])
+      ),
+      antibiotics: withPatientIdentity(
+        activeOnly([...customAntibiotics, ...previewDataBase.antibiotics])
+      ),
+      recentLabs: withPatientIdentity(
+        mergeLabSummaries(activeOnly(previewDataBase.recentLabs), manualLabSummaries)
+      ),
+      todaySchedules: withPatientIdentity(
+        activeOnly([...customTodaySchedules, ...previewDataBase.todaySchedules])
+      ).map((schedule) => ({
+        ...schedule,
+        isCompleted: completedScheduleIds.includes(schedule.scheduleId) || schedule.isCompleted,
+      })),
+      patientSummary: {
+        total: activePatients.length,
+        admitted: activePatients.filter((patient) => patient.patientType === 'admitted').length,
+        consult: activePatients.filter((patient) => patient.patientType === 'consult').length,
+      },
+    };
+  }, [
+    patients,
+    reminders,
+    progressNotes,
+    customAntibiotics,
+    manualLabs,
+    customTodaySchedules,
+    completedScheduleIds,
+  ]);
 
   const patientIndicators = useMemo(() => {
     const indicators: Record<
@@ -1074,7 +1088,7 @@ export default function V2PreviewPage() {
 
   const openPatient = (patientId: string, tab?: string) => {
     if (patientId !== selectedPatientId && !confirmDiscardWorkspaceChanges()) return false;
-    const nextTab = tab ? toWorkspaceTab(tab) : lastTabsByPatient[patientId] ?? 'overview';
+    const nextTab = tab ? toWorkspaceTab(tab) : (lastTabsByPatient[patientId] ?? 'overview');
     setSelectedPatientId(patientId);
     setSelectedTab(nextTab);
     setLastTabsByPatient((current) => ({ ...current, [patientId]: nextTab }));
@@ -1371,7 +1385,13 @@ export default function V2PreviewPage() {
         patient.id === patientId
           ? patient.status === 'discharged'
             ? { ...patient, status: 'active', dischargeDate: undefined, updatedAt: new Date() }
-            : { ...patient, status: 'discharged', dischargeDate: today, attention: false, updatedAt: new Date() }
+            : {
+                ...patient,
+                status: 'discharged',
+                dischargeDate: today,
+                attention: false,
+                updatedAt: new Date(),
+              }
           : patient
       )
     );
@@ -1623,17 +1643,9 @@ function QuickAddPanel({
     () => new Set(existingRegistrationNumbers.map((item) => item.trim()).filter(Boolean)),
     [existingRegistrationNumbers]
   );
-  const roomBedSet = useMemo(
-    () => new Set(existingRoomBeds.map((item) => item.trim()).filter(Boolean)),
-    [existingRoomBeds]
-  );
   const isDuplicate =
     normalizedRegistrationNumber.length > 0 &&
     registrationNumberSet.has(normalizedRegistrationNumber);
-  const roomOccupied =
-    draft.patientType === 'admitted' &&
-    Boolean(normalizedRoomBed) &&
-    roomBedSet.has(normalizedRoomBed);
   const hasValidBirthDate = isValidBirthDateInput(draft.birthDate);
   const birthDatePreview = useMemo(() => {
     const parsed = parseDateInput(draft.birthDate);
@@ -1644,17 +1656,15 @@ function QuickAddPanel({
     draft,
     normalizedRegistrationNumber,
     isDuplicate,
-    roomOccupied,
     hasRoom,
     hasValidBirthDate,
   });
   const showValidationSummary =
-    submitAttempted || isDuplicate || roomOccupied || (Boolean(draft.birthDate) && !hasValidBirthDate);
+    submitAttempted || isDuplicate || (Boolean(draft.birthDate) && !hasValidBirthDate);
   const canSubmit =
     Boolean(draft.name.trim()) &&
     Boolean(normalizedRegistrationNumber) &&
     !isDuplicate &&
-    !roomOccupied &&
     hasRoom &&
     hasValidBirthDate;
   const isDirty = !areQuickAddDraftsEqual(draft, initialDraft);
@@ -1749,9 +1759,6 @@ function QuickAddPanel({
             placeholder="303-1"
             disabled={draft.patientType === 'consult'}
           />
-          {roomOccupied && (
-            <div className="-mt-2 text-[11px] text-amber-600">이미 사용 중인 병실입니다.</div>
-          )}
           <PreviewField
             label="생년월일"
             value={draft.birthDate}
@@ -1811,7 +1818,6 @@ function QuickAddPanel({
               }
             />
           </div>
-
         </div>
 
         <div className="grid gap-2 border-t border-zinc-200 p-3">
@@ -1845,21 +1851,21 @@ function QuickAddPanel({
 }
 
 function areQuickAddDraftsEqual(left: QuickAddDraft, right: QuickAddDraft) {
-  return (Object.keys(right) as Array<keyof QuickAddDraft>).every((key) => left[key] === right[key]);
+  return (Object.keys(right) as Array<keyof QuickAddDraft>).every(
+    (key) => left[key] === right[key]
+  );
 }
 
 function buildQuickAddValidationMessages({
   draft,
   normalizedRegistrationNumber,
   isDuplicate,
-  roomOccupied,
   hasRoom,
   hasValidBirthDate,
 }: {
   draft: QuickAddDraft;
   normalizedRegistrationNumber: string;
   isDuplicate: boolean;
-  roomOccupied: boolean;
   hasRoom: boolean;
   hasValidBirthDate: boolean;
 }) {
@@ -1868,7 +1874,6 @@ function buildQuickAddValidationMessages({
   if (!normalizedRegistrationNumber) messages.push('등록번호를 입력해 주세요.');
   if (isDuplicate) messages.push('이미 등록된 등록번호입니다.');
   if (!hasRoom) messages.push('입원 환자는 병실을 입력해 주세요.');
-  if (roomOccupied) messages.push('이미 사용 중인 병실입니다.');
   if (!hasValidBirthDate) messages.push('생년월일은 1900년부터 오늘 사이 날짜로 입력해 주세요.');
 
   return messages;
