@@ -22,6 +22,7 @@ import {
   type PatientRailIndicators,
   type WorkspaceTabId,
 } from '@/components/v2';
+import { BulkLabImport } from '@/components/lab/BulkLabImport';
 import type { LabItem, Patient } from '@/db/database';
 import { fetchBriefingData, type BriefingData } from '@/services/briefingService';
 import { formatUserFacingError } from '@/lib/errorMessages';
@@ -38,6 +39,7 @@ import { useNoteStore } from '@/stores/useNoteStore';
 import { usePatientStore } from '@/stores/usePatientStore';
 import { useScheduleStore } from '@/stores/useScheduleStore';
 import type { ParsedLabItem } from '@/services/parser/labParser';
+import type { BulkImportResult } from '@/services/bulkLabImport';
 import type { ParsedMedication } from '@/services/parser/medParser';
 
 type AddPatientDraft = {
@@ -117,6 +119,7 @@ export default function V2AppPage() {
   const [addError, setAddError] = useState<string | null>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [savingPatient, setSavingPatient] = useState(false);
+  const [labImportOpen, setLabImportOpen] = useState(false);
   const [workspaceUnsaved, setWorkspaceUnsaved] = useState(false);
   const [attentionPending, setAttentionPending] = useState(false);
   const [archivePending, setArchivePending] = useState(false);
@@ -628,11 +631,7 @@ export default function V2AppPage() {
     }, 'Lab을 저장하지 못했습니다.');
   };
 
-  const handleSaveParsedLabs = async (
-    items: ParsedLabItem[],
-    testDate: Date,
-    source: 'parsed' | 'xls'
-  ) => {
+  const handleSaveParsedLabs = async (items: ParsedLabItem[], testDate: Date, source: 'parsed') => {
     if (!selectedPatient) return;
     await runWrite(async () => {
       const grouped = new Map<string, ParsedLabItem[]>();
@@ -777,6 +776,21 @@ export default function V2AppPage() {
     setEditPatientId(selectedPatient.id);
   }, [confirmWorkspaceNavigation, selectedPatient]);
 
+  const handleOpenLabImport = useCallback(() => {
+    setLabImportOpen(true);
+  }, []);
+
+  const handleLabImportComplete = useCallback(
+    (_result: BulkImportResult) => {
+      markLocalBriefingUpdated();
+      queueBriefingRefresh();
+      if (selectedPatientId) {
+        void fetchLabsByPatient(selectedPatientId);
+      }
+    },
+    [fetchLabsByPatient, queueBriefingRefresh, selectedPatientId]
+  );
+
   const statusText = useMemo(
     () =>
       [
@@ -806,6 +820,7 @@ export default function V2AppPage() {
       onPatientSelect={openPatient}
       onToday={handleOpenToday}
       onAddPatient={handleOpenAddPatient}
+      onOpenLabImport={handleOpenLabImport}
       onSettings={handleOpenSettings}
       onLogout={handleLogout}
     >
@@ -884,6 +899,34 @@ export default function V2AppPage() {
           onSubmit={handleUpdatePatientInfo}
           onDelete={handleDeleteEditingPatient}
         />
+      )}
+      {labImportOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-zinc-950/35 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3">
+              <div>
+                <h2 className="text-[14px] font-semibold text-zinc-900">Lab XLS 일괄 입력</h2>
+                <p className="text-[11px] text-zinc-500">
+                  XLS 파일 안의 검사일과 등록번호로 전체 환자 Lab을 저장합니다.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLabImportOpen(false)}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+                aria-label="Lab XLS 일괄 입력 닫기"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-5">
+              <BulkLabImport
+                onClose={() => setLabImportOpen(false)}
+                onComplete={handleLabImportComplete}
+              />
+            </div>
+          </div>
+        </div>
       )}
     </AppShellV2>
   );

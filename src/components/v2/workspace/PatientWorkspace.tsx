@@ -67,7 +67,7 @@ interface PatientWorkspaceProps {
   onSaveParsedLabs?: (
     items: ParsedLabItem[],
     testDate: Date,
-    source: 'parsed' | 'xls'
+    source: 'parsed'
   ) => void | Promise<void>;
   onAddLab?: (draft: {
     itemName: string;
@@ -536,7 +536,7 @@ function LabTab({
     flag: '' as '' | 'H' | 'L',
     dateKey: formatDateInput(new Date()),
   });
-  const [parseMode, setParseMode] = useState<'paste' | 'file' | null>(null);
+  const [parseOpen, setParseOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const labs = useMemo(
     () => data.recentLabs.filter((item) => item.patientId === patient.id),
@@ -551,7 +551,7 @@ function LabTab({
 
   useEffect(() => {
     setDraft({ itemName: '', value: '', unit: '', flag: '', dateKey: formatDateInput(new Date()) });
-    setParseMode(null);
+    setParseOpen(false);
     setSaving(false);
   }, [patient.id]);
   useEffect(() => {
@@ -594,12 +594,11 @@ function LabTab({
 
   const saveParsedLabs = useCallback(
     async (items: ParsedLabItem[], testDate: Date) => {
-      if (!parseMode) return;
-      await onSaveParsedLabs?.(items, testDate, parseMode === 'file' ? 'xls' : 'parsed');
-      setParseMode(null);
+      await onSaveParsedLabs?.(items, testDate, 'parsed');
+      setParseOpen(false);
       await onLoadLabs?.(patient.id);
     },
-    [onLoadLabs, onSaveParsedLabs, parseMode, patient.id]
+    [onLoadLabs, onSaveParsedLabs, patient.id]
   );
 
   return (
@@ -749,26 +748,19 @@ function LabTab({
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => setParseMode('paste')}
+              onClick={() => setParseOpen(true)}
               className="rounded-md border border-zinc-200 px-3 py-1.5 text-[12px] font-medium hover:bg-zinc-50"
             >
               OCS 붙여넣기
             </button>
-            <button
-              type="button"
-              onClick={() => setParseMode('file')}
-              className="rounded-md border border-zinc-200 px-3 py-1.5 text-[12px] font-medium hover:bg-zinc-50"
-            >
-              XLS 업로드
-            </button>
           </div>
-          {parseMode && (
+          {parseOpen && (
             <LabParseInput
-              mode={parseMode}
+              mode="paste"
               patientId={patient.id}
               registrationNumber={patient.registrationNumber}
               onSave={saveParsedLabs}
-              onClose={() => setParseMode(null)}
+              onClose={() => setParseOpen(false)}
             />
           )}
         </div>

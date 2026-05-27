@@ -1,12 +1,16 @@
-import { LogOut, Menu, Search, Settings, Stethoscope, UserPlus, X } from 'lucide-react';
+import {
+  FlaskConical,
+  LogOut,
+  Menu,
+  Search,
+  Settings,
+  Stethoscope,
+  UserPlus,
+  X,
+} from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 interface TopBarProps {
@@ -14,6 +18,7 @@ interface TopBarProps {
   searchValue?: string;
   onSearchChange?: (value: string) => void;
   onAddPatient?: () => boolean | void;
+  onOpenLabImport?: () => void;
   onSettings?: () => void;
   onLogout?: () => void;
   onTogglePatients?: () => void;
@@ -25,6 +30,7 @@ export function TopBar({
   searchValue,
   onSearchChange,
   onAddPatient,
+  onOpenLabImport,
   onSettings,
   onLogout,
   onTogglePatients,
@@ -61,10 +67,13 @@ export function TopBar({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [mobileSearchOpen]);
 
-  const clearSearch = useCallback((inputRef: React.RefObject<HTMLInputElement>) => {
-    onSearchChange?.('');
-    inputRef.current?.focus();
-  }, [onSearchChange]);
+  const clearSearch = useCallback(
+    (inputRef: React.RefObject<HTMLInputElement>) => {
+      onSearchChange?.('');
+      inputRef.current?.focus();
+    },
+    [onSearchChange]
+  );
   const toggleMobileSearch = useCallback(() => {
     setMobileSearchOpen((current) => !current);
     window.setTimeout(() => mobileSearchRef.current?.focus(), 0);
@@ -80,7 +89,12 @@ export function TopBar({
         )}
       >
         <div className="flex min-w-0 items-center gap-1.5">
-          <IconButton aria-label="환자 목록 열기" tooltip="환자 목록" className="md:hidden" onClick={onTogglePatients}>
+          <IconButton
+            aria-label="환자 목록 열기"
+            tooltip="환자 목록"
+            className="md:hidden"
+            onClick={onTogglePatients}
+          >
             <Menu className="h-4 w-4" />
           </IconButton>
           <Link to="/" className="flex min-w-0 items-center gap-2 text-zinc-900">
@@ -129,6 +143,13 @@ export function TopBar({
           </IconButton>
           <IconButton aria-label="환자 추가" tooltip="환자 추가" onClick={onAddPatient}>
             <UserPlus className="h-4 w-4" />
+          </IconButton>
+          <IconButton
+            aria-label="Lab XLS 일괄 입력"
+            tooltip="Lab XLS 일괄 입력"
+            onClick={onOpenLabImport}
+          >
+            <FlaskConical className="h-4 w-4" />
           </IconButton>
           <IconButton aria-label="설정" tooltip="설정" onClick={onSettings}>
             <Settings className="h-4 w-4" />

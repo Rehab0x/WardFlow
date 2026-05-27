@@ -16,6 +16,7 @@ interface AppShellV2Props {
   children: ReactNode;
   onSearchChange?: (value: string) => void;
   onAddPatient?: () => boolean | void;
+  onOpenLabImport?: () => void;
   onSettings?: () => void;
   onLogout?: () => void;
   onPatientSelect?: (patientId: string) => boolean | void;
@@ -32,6 +33,7 @@ export function AppShellV2({
   children,
   onSearchChange,
   onAddPatient,
+  onOpenLabImport,
   onSettings,
   onLogout,
   onPatientSelect,
@@ -62,11 +64,14 @@ export function AppShellV2({
     };
   }, [patientsOpen]);
 
-  const handlePatientSelect = useCallback((patientId: string) => {
-    const shouldClose = onPatientSelect?.(patientId);
-    if (shouldClose === false) return;
-    setPatientsOpen(false);
-  }, [onPatientSelect]);
+  const handlePatientSelect = useCallback(
+    (patientId: string) => {
+      const shouldClose = onPatientSelect?.(patientId);
+      if (shouldClose === false) return;
+      setPatientsOpen(false);
+    },
+    [onPatientSelect]
+  );
 
   const handleToday = useCallback(() => {
     const shouldClose = onToday?.();
@@ -92,6 +97,7 @@ export function AppShellV2({
         searchValue={searchValue}
         onSearchChange={onSearchChange}
         onAddPatient={handleAddPatient}
+        onOpenLabImport={onOpenLabImport}
         onSettings={handleSettings}
         onLogout={onLogout}
         onTogglePatients={openPatients}
@@ -180,10 +186,18 @@ export function AppShellV2({
         <BottomAction label="오늘" active={activeMobileAction === 'today'} onClick={handleToday}>
           <Home className="h-4 w-4" />
         </BottomAction>
-        <BottomAction label="환자" active={activeMobileAction === 'patients'} onClick={openPatients}>
+        <BottomAction
+          label="환자"
+          active={activeMobileAction === 'patients'}
+          onClick={openPatients}
+        >
           <Users className="h-4 w-4" />
         </BottomAction>
-        <BottomAction label="설정" active={activeMobileAction === 'settings'} onClick={handleSettings}>
+        <BottomAction
+          label="설정"
+          active={activeMobileAction === 'settings'}
+          onClick={handleSettings}
+        >
           <Settings className="h-4 w-4" />
         </BottomAction>
       </nav>
