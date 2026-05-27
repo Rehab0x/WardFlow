@@ -717,6 +717,24 @@ export default function V2AppPage() {
     }, 'Lab 값을 저장하지 못했습니다.');
   };
 
+  const handleDeleteLabDate = async (dateKey: string) => {
+    if (!selectedPatient) return;
+    await runWrite(async () => {
+      const targets = labs.filter(
+        (lab) =>
+          lab.patientId === selectedPatient.id &&
+          lab.category !== 'Culture' &&
+          formatDateInput(lab.testDate) === dateKey
+      );
+      for (const lab of targets) {
+        await deleteLabResult(lab.id);
+      }
+      await fetchLabsByPatient(selectedPatient.id);
+      markLocalBriefingUpdated();
+      queueBriefingRefresh();
+    }, 'Lab 날짜 결과를 삭제하지 못했습니다.');
+  };
+
   const handleRemoveLab = async (lab: { id?: string }) => {
     if (!lab.id) return;
     const labId = lab.id;
@@ -932,6 +950,7 @@ export default function V2AppPage() {
           onAddLab={handleAddLab}
           onRemoveLab={handleRemoveLab}
           onUpdateLabValue={handleUpdateLabValue}
+          onDeleteLabDate={handleDeleteLabDate}
           onSaveParsedLabs={handleSaveParsedLabs}
           onLoadLabs={fetchLabsByPatient}
           onLoadMedications={fetchMedicationsByPatient}

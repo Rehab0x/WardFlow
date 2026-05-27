@@ -91,6 +91,7 @@ interface PatientWorkspaceProps {
       referenceMax?: number;
     };
   }) => void | Promise<void>;
+  onDeleteLabDate?: (dateKey: string) => void | Promise<void>;
   onRemoveLab?: (lab: PatientWorkspaceManualLab) => void | Promise<void>;
   onLoadLabs?: (patientId: string) => void | Promise<void>;
   onLoadMedications?: (patientId: string) => void | Promise<void>;
@@ -161,6 +162,7 @@ export function PatientWorkspace({
   onRemoveMedication,
   onAddLab,
   onUpdateLabValue,
+  onDeleteLabDate,
   onRemoveLab,
   onSaveParsedLabs,
   onLoadLabs,
@@ -246,6 +248,7 @@ export function PatientWorkspace({
               labResults={labResults}
               onAddLab={onAddLab}
               onUpdateLabValue={onUpdateLabValue}
+              onDeleteLabDate={onDeleteLabDate}
               onRemoveLab={onRemoveLab}
               onSaveParsedLabs={onSaveParsedLabs}
               onLoadLabs={onLoadLabs}
@@ -532,6 +535,7 @@ function LabTab({
   labResults,
   onAddLab: _onAddLab,
   onUpdateLabValue,
+  onDeleteLabDate,
   onRemoveLab,
   onSaveParsedLabs,
   onLoadLabs,
@@ -543,6 +547,7 @@ function LabTab({
   labResults: LabResult[];
   onAddLab?: PatientWorkspaceProps['onAddLab'];
   onUpdateLabValue?: PatientWorkspaceProps['onUpdateLabValue'];
+  onDeleteLabDate?: PatientWorkspaceProps['onDeleteLabDate'];
   onRemoveLab?: PatientWorkspaceProps['onRemoveLab'];
   onSaveParsedLabs?: PatientWorkspaceProps['onSaveParsedLabs'];
   onLoadLabs?: PatientWorkspaceProps['onLoadLabs'];
@@ -564,6 +569,7 @@ function LabTab({
     itemName: string;
     value: string;
   } | null>(null);
+  const [addingDateKey, setAddingDateKey] = useState('');
   const [parseOpen, setParseOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const labs = useMemo(
@@ -585,6 +591,7 @@ function LabTab({
       dateKey: formatDateInput(new Date()),
     });
     setEditingCell(null);
+    setAddingDateKey('');
     setParseOpen(false);
     setSaving(false);
   }, [patient.id, standardLabCategories, standardLabItems]);
@@ -595,9 +602,10 @@ function LabTab({
   const table = useMemo(
     () =>
       buildLabValueTable(
-        labResults.filter((lab) => lab.patientId === patient.id && lab.category !== 'Culture')
+        labResults.filter((lab) => lab.patientId === patient.id && lab.category !== 'Culture'),
+        isClinicalDateInput(addingDateKey) ? addingDateKey : undefined
       ),
-    [labResults, patient.id]
+    [addingDateKey, labResults, patient.id]
   );
   const cultureResults = useMemo(
     () =>
@@ -665,6 +673,20 @@ function LabTab({
     }
   }, [editingCell, onUpdateLabValue, saving, standardLabItems]);
 
+  const deleteLabDate = useCallback(
+    async (dateKey: string) => {
+      if (!onDeleteLabDate || saving) return;
+      if (!window.confirm(`${dateKey} Lab 결과를 삭제할까요?`)) return;
+      setSaving(true);
+      try {
+        await onDeleteLabDate(dateKey);
+      } finally {
+        setSaving(false);
+      }
+    },
+    [onDeleteLabDate, saving]
+  );
+
   const saveParsedLabs = useCallback(
     async (items: ParsedLabItem[], testDate: Date) => {
       await onSaveParsedLabs?.(items, testDate, 'parsed');
@@ -677,6 +699,32 @@ function LabTab({
   return (
     <div className="space-y-3">
       <DataSection title="Lab 수치 표" count={table.itemRows.length}>
+        {table.itemRows.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 px-2 pb-2">
+            <Input
+              value={addingDateKey}
+              type="date"
+              min="1900-01-01"
+              max={formatDateInput(new Date())}
+              invalid={Boolean(addingDateKey) && !isClinicalDateInput(addingDateKey)}
+              onChange={setAddingDateKey}
+            />
+            {addingDateKey && isClinicalDateInput(addingDateKey) && (
+              <span className="text-[11px] text-zinc-500">
+                빈 칸의 + 버튼으로 {addingDateKey} 값을 추가
+              </span>
+            )}
+            {addingDateKey && (
+              <button
+                type="button"
+                onClick={() => setAddingDateKey('')}
+                className="h-8 rounded-md border border-zinc-200 px-2 text-[11px] text-zinc-500 hover:bg-zinc-50"
+              >
+                취소
+              </button>
+            )}
+          </div>
+        )}
         {table.itemRows.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="min-w-full border-separate border-spacing-0 text-[11px]">
@@ -690,9 +738,25 @@ function LabTab({
                       key={date}
                       className="border-b border-zinc-200 px-2 py-1.5 text-right font-mono font-medium text-zinc-500"
                     >
-                      {date.slice(5)}
+                      <span className="inline-flex items-center justify-end gap-1">
+                        <span>{date}</span>
+                        {table.dateLabIds.get(date)?.length ? (
+                          <button
+                            type="button"
+                            onClick={() => void deleteLabDate(date)}
+                            disabled={saving}
+                            className="inline-flex h-4 w-4 items-center justify-center rounded text-[10px] text-zinc-300 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed"
+                            aria-label={`${date} Lab 삭제`}
+                          >
+                            ×
+                          </button>
+                        ) : null}
+                      </span>
                     </th>
                   ))}
+                  <th className="border-b border-zinc-200 px-2 py-1.5 text-left font-medium text-zinc-500">
+                    참고치
+                  </th>
                   <th className="border-b border-zinc-200 px-2 py-1.5 text-left font-medium text-zinc-500">
                     단위
                   </th>
@@ -707,7 +771,7 @@ function LabTab({
                       {showCategory && (
                         <tr>
                           <td
-                            colSpan={table.dates.length + 2}
+                            colSpan={table.dates.length + 3}
                             className="border-b border-zinc-200 bg-zinc-100 px-2 py-1.5 text-left text-[10.5px] font-semibold uppercase text-zinc-600"
                           >
                             {row.category}
@@ -770,11 +834,30 @@ function LabTab({
                                   )}
                                 </button>
                               ) : (
-                                <span className="text-zinc-300">-</span>
+                                date === addingDateKey ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setEditingCell({
+                                        dateKey: date,
+                                        itemName: row.name,
+                                        value: '',
+                                      })
+                                    }
+                                    className="inline-flex h-6 min-w-6 items-center justify-center rounded border border-dashed border-zinc-300 px-1.5 text-[11px] text-zinc-400 hover:border-zinc-500 hover:text-zinc-700"
+                                  >
+                                    +
+                                  </button>
+                                ) : (
+                                  <span className="text-zinc-300">-</span>
+                                )
                               )}
                             </td>
                           );
                         })}
+                        <td className="border-b border-zinc-100 px-2 py-1.5 text-zinc-400">
+                          {row.referenceText}
+                        </td>
                         <td className="border-b border-zinc-100 px-2 py-1.5 text-zinc-400">
                           {row.unit}
                         </td>
@@ -1973,10 +2056,14 @@ function buildChartingCopy(draft: ChartingDraft) {
   return [headerLines.join('\n'), ...bodySections].filter(Boolean).join('\n\n');
 }
 
-function buildLabValueTable(labs: LabResult[]) {
-  const dates = Array.from(new Set(labs.map((lab) => formatDateInput(lab.testDate)))).sort((a, b) =>
-    b.localeCompare(a)
-  );
+function buildLabValueTable(labs: LabResult[], extraDateKey?: string) {
+  const dates = Array.from(
+    new Set([
+      ...labs.map((lab) => formatDateInput(lab.testDate)),
+      ...(extraDateKey ? [extraDateKey] : []),
+    ])
+  ).sort((a, b) => b.localeCompare(a));
+  const dateLabIds = new Map<string, string[]>();
   const rows = new Map<
     string,
     {
@@ -1984,6 +2071,7 @@ function buildLabValueTable(labs: LabResult[]) {
       category: string;
       displayOrder: number;
       unit: string;
+      referenceText: string;
       values: Map<string, { value: string | number; flag?: 'H' | 'L' }>;
     }
   >();
@@ -1994,18 +2082,32 @@ function buildLabValueTable(labs: LabResult[]) {
 
   for (const lab of labs) {
     const date = formatDateInput(lab.testDate);
+    dateLabIds.set(date, [...(dateLabIds.get(date) ?? []), lab.id]);
     for (const item of lab.items) {
       const orderEntry = displayOrderMap.get(item.name.toLowerCase());
       const category = orderEntry?.category ?? lab.category;
       const fallbackOrder = (categoryOrderMap.get(category) ?? 99) * 1000 + 999;
+      const reference = getLabReferenceByName(item.name);
       const row = rows.get(item.name) ?? {
         name: item.name,
         category,
         displayOrder: orderEntry?.order ?? fallbackOrder,
         unit: item.unit,
+        referenceText: formatLabReferenceRange(
+          item.referenceMin ?? reference?.referenceMin,
+          item.referenceMax ?? reference?.referenceMax,
+          reference?.referenceText
+        ),
         values: new Map(),
       };
       if (!row.unit && item.unit) row.unit = item.unit;
+      if (!row.referenceText) {
+        row.referenceText = formatLabReferenceRange(
+          item.referenceMin ?? reference?.referenceMin,
+          item.referenceMax ?? reference?.referenceMax,
+          reference?.referenceText
+        );
+      }
       row.values.set(date, { value: item.value, flag: item.hlFlag });
       rows.set(item.name, row);
     }
@@ -2013,11 +2115,20 @@ function buildLabValueTable(labs: LabResult[]) {
 
   return {
     dates,
+    dateLabIds,
     itemRows: Array.from(rows.values()).sort((a, b) => {
       if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
       return a.name.localeCompare(b.name, 'ko-KR');
     }),
   };
+}
+
+function formatLabReferenceRange(min?: number, max?: number, text?: string) {
+  if (text) return text;
+  if (min !== undefined && max !== undefined) return `${min}-${max}`;
+  if (min !== undefined) return `>=${min}`;
+  if (max !== undefined) return `<=${max}`;
+  return '';
 }
 
 function buildStandardLabItemOptions(): StandardLabItemOption[] {
