@@ -4,6 +4,14 @@ import { fromLabResultRow, toLabItemInsert, toLabResultInsert } from '@/mappers/
 import { toDateOnly } from '@/mappers/date';
 import { chunkArray } from './chunk';
 
+export type LabItemValueMetadata = {
+  code?: string;
+  category?: string;
+  unit?: string;
+  referenceMin?: number;
+  referenceMax?: number;
+};
+
 type LabResultWithItems = {
   lab_items?: Array<{
     id: string;
@@ -293,6 +301,7 @@ export async function updateLabItemValue(input: {
   date: string;
   itemName: string;
   newValue: string | number;
+  metadata?: LabItemValueMetadata;
 }): Promise<LabResult | null> {
   const valueText = typeof input.newValue === 'string' ? input.newValue.trim() : String(input.newValue);
   const isNumeric = PURE_NUMERIC.test(valueText);
@@ -367,13 +376,36 @@ export async function updateLabItemValue(input: {
 
   if (targetResult) {
     const displayOrder = targetResult.lab_items?.length ?? 0;
+    const isAbnormal = isNumeric
+      ? (input.metadata?.referenceMin !== undefined &&
+          valueNumeric !== null &&
+          valueNumeric < input.metadata.referenceMin) ||
+        (input.metadata?.referenceMax !== undefined &&
+          valueNumeric !== null &&
+          valueNumeric > input.metadata.referenceMax)
+      : false;
+    const hlFlag = isNumeric
+      ? input.metadata?.referenceMax !== undefined &&
+        valueNumeric !== null &&
+        valueNumeric > input.metadata.referenceMax
+        ? 'H'
+        : input.metadata?.referenceMin !== undefined &&
+            valueNumeric !== null &&
+            valueNumeric < input.metadata.referenceMin
+          ? 'L'
+          : null
+      : null;
     const { error: insertItemError } = await supabase.from('lab_items').insert({
       lab_result_id: targetResult.id,
+      code: input.metadata?.code ?? null,
       name: input.itemName,
       value_text: valueText,
       value_numeric: valueNumeric,
-      unit: '',
-      is_abnormal: false,
+      unit: input.metadata?.unit ?? '',
+      reference_min: input.metadata?.referenceMin ?? null,
+      reference_max: input.metadata?.referenceMax ?? null,
+      is_abnormal: isAbnormal,
+      hl_flag: hlFlag,
       display_order: displayOrder,
     });
 
@@ -395,7 +427,7 @@ export async function updateLabItemValue(input: {
     .insert({
       patient_id: input.patientId,
       test_date: input.date,
-      category: 'Other',
+      category: input.metadata?.category ?? 'Other',
       source: 'manual',
       created_by: user.id,
     })
@@ -406,11 +438,33 @@ export async function updateLabItemValue(input: {
 
   const { error: itemError } = await supabase.from('lab_items').insert({
     lab_result_id: newResult.id,
+    code: input.metadata?.code ?? null,
     name: input.itemName,
     value_text: valueText,
     value_numeric: valueNumeric,
-    unit: '',
-    is_abnormal: false,
+    unit: input.metadata?.unit ?? '',
+    reference_min: input.metadata?.referenceMin ?? null,
+    reference_max: input.metadata?.referenceMax ?? null,
+    is_abnormal:
+      isNumeric &&
+      ((input.metadata?.referenceMin !== undefined &&
+        valueNumeric !== null &&
+        valueNumeric < input.metadata.referenceMin) ||
+        (input.metadata?.referenceMax !== undefined &&
+          valueNumeric !== null &&
+          valueNumeric > input.metadata.referenceMax)),
+    hl_flag:
+      isNumeric &&
+      input.metadata?.referenceMax !== undefined &&
+      valueNumeric !== null &&
+      valueNumeric > input.metadata.referenceMax
+        ? 'H'
+        : isNumeric &&
+            input.metadata?.referenceMin !== undefined &&
+            valueNumeric !== null &&
+            valueNumeric < input.metadata.referenceMin
+          ? 'L'
+          : null,
     display_order: 0,
   });
 

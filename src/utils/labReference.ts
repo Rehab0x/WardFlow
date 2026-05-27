@@ -1,34 +1,11 @@
 /**
- * Lab 참조 범위 데이터
- * 주요 검사 항목의 정상 범위 정의
+ * Lab reference ranges.
+ * Defaults are based on the hospital XLS format and can be overridden in Settings.
  */
 
 import type { LabReference } from '@/types/lab';
 
-/**
- * 주요 Lab 검사 항목의 참조 범위
- * 병원마다 차이가 있을 수 있으므로, 추후 설정에서 커스텀 가능하도록 확장 예정
- */
 export const LAB_REFERENCES: LabReference[] = [
-  // === CBC (Complete Blood Count) ===
-  {
-    code: 'B1010',
-    name: 'Hb',
-    category: 'CBC',
-    unit: 'g/dL',
-    referenceMin: 12.0,
-    referenceMax: 16.0,
-    description: 'Hemoglobin (혈색소)',
-  },
-  {
-    code: 'B1020',
-    name: 'Hct',
-    category: 'CBC',
-    unit: '%',
-    referenceMin: 37.0,
-    referenceMax: 47.0,
-    description: 'Hematocrit (적혈구 용적률)',
-  },
   {
     code: 'B1050',
     name: 'WBC',
@@ -36,399 +13,267 @@ export const LAB_REFERENCES: LabReference[] = [
     unit: '×10³/μL',
     referenceMin: 4.0,
     referenceMax: 10.0,
-    description: 'White Blood Cell (백혈구)',
-  },
-  {
-    code: 'B1060',
-    name: 'Platelet',
-    category: 'CBC',
-    unit: '×10³/μL',
-    referenceMin: 150,
-    referenceMax: 400,
-    description: 'Platelet count (혈소판)',
-  },
-  {
-    code: 'B1030',
-    name: 'RBC',
-    category: 'CBC',
-    unit: '×10⁶/μL',
-    referenceMin: 4.2,
-    referenceMax: 5.4,
-    description: 'Red Blood Cell (적혈구)',
   },
   {
     code: 'B1040',
-    name: 'MCV',
+    name: 'RBC',
     category: 'CBC',
-    unit: 'fL',
-    referenceMin: 80,
-    referenceMax: 100,
-    description: 'Mean Corpuscular Volume (평균 적혈구 용적)',
+    unit: '×10⁶/μL',
+    referenceMin: 4.0,
+    referenceMax: 6.0,
   },
   {
-    code: 'B1041',
-    name: 'MCH',
+    code: 'B1010',
+    name: 'Hb',
     category: 'CBC',
-    unit: 'pg',
-    referenceMin: 27,
-    referenceMax: 32,
-    description: 'Mean Corpuscular Hemoglobin (평균 적혈구 혈색소량)',
+    unit: 'g/dL',
+    referenceMin: 12.0,
+    referenceMax: 16.0,
   },
   {
-    code: 'B1042',
+    code: 'B10201',
+    name: 'Hct',
+    category: 'CBC',
+    unit: '%',
+    referenceMin: 36.0,
+    referenceMax: 47.0,
+  },
+  {
+    code: 'B1060',
+    name: 'PLT',
+    category: 'CBC',
+    unit: '×10³/μL',
+    referenceMin: 150,
+    referenceMax: 450,
+  },
+  { code: 'B1080', name: 'MCV', category: 'CBC', unit: 'fL', referenceMin: 80, referenceMax: 100 },
+  { code: 'B1090', name: 'MCH', category: 'CBC', unit: 'pg', referenceMin: 27, referenceMax: 33 },
+  {
+    code: 'B1100',
     name: 'MCHC',
     category: 'CBC',
     unit: 'g/dL',
     referenceMin: 32,
     referenceMax: 36,
-    description: 'Mean Corpuscular Hemoglobin Concentration (평균 적혈구 혈색소 농도)',
   },
 
-  // === Chemistry (화학검사) ===
+  {
+    code: 'B10911',
+    name: 'Neutrophil',
+    category: 'WBC Diff',
+    unit: '%',
+    referenceMin: 48,
+    referenceMax: 75,
+  },
+  {
+    code: 'B10912',
+    name: 'Lymphocyte',
+    category: 'WBC Diff',
+    unit: '%',
+    referenceMin: 15,
+    referenceMax: 40,
+  },
+  {
+    code: 'B10913',
+    name: 'Monocyte',
+    category: 'WBC Diff',
+    unit: '%',
+    referenceMin: 2,
+    referenceMax: 11,
+  },
+  { code: 'B10914', name: 'Eosinophil', category: 'WBC Diff', unit: '%', referenceMax: 5 },
+  { code: 'B10915', name: 'Basophil', category: 'WBC Diff', unit: '%', referenceMax: 2 },
+
   {
     code: 'B2500',
     name: 'Total Protein',
-    category: 'Chemistry',
+    category: 'BC',
     unit: 'g/dL',
     referenceMin: 6.6,
     referenceMax: 8.3,
-    description: '총 단백',
   },
   {
     code: 'B2510',
     name: 'Albumin',
-    category: 'Chemistry',
+    category: 'BC',
     unit: 'g/dL',
     referenceMin: 3.5,
     referenceMax: 5.2,
-    description: '알부민',
   },
+  { code: 'B2570', name: 'AST (SGOT)', category: 'BC', unit: 'U/L', referenceMax: 40 },
+  { code: 'B2580', name: 'ALT (SGPT)', category: 'BC', unit: 'U/L', referenceMax: 41 },
+  { code: 'B2602', name: 'ALP', category: 'BC', unit: 'U/L', referenceMin: 30, referenceMax: 120 },
+  { code: 'B2710', name: 'γ-GTP', category: 'BC', unit: 'U/L', referenceMax: 38 },
   {
     code: 'B2730',
     name: 'BUN',
-    category: 'RFT',
+    category: 'BC',
     unit: 'mg/dL',
     referenceMin: 8.0,
     referenceMax: 23.0,
-    description: 'Blood Urea Nitrogen (혈중 요소 질소)',
   },
   {
     code: 'B2740',
-    name: 'Cr',
-    category: 'RFT',
+    name: 'Creatinine',
+    category: 'BC',
     unit: 'mg/dL',
     referenceMin: 0.5,
     referenceMax: 1.2,
-    description: 'Creatinine (크레아티닌)',
+  },
+  {
+    code: 'B2521',
+    name: 'Glucose',
+    category: 'BC',
+    unit: 'mg/dL',
+    referenceMin: 70,
+    referenceMax: 99,
+  },
+  { code: 'B1270', name: 'HbA1c', category: 'BC', unit: '%', referenceMin: 4.0, referenceMax: 6.0 },
+  {
+    code: 'B2790',
+    name: 'Na',
+    category: 'BC',
+    unit: 'mmol/L',
+    referenceMin: 136,
+    referenceMax: 145,
   },
   {
     code: 'B2800',
-    name: 'Glucose',
-    category: 'Chemistry',
-    unit: 'mg/dL',
-    referenceMin: 70,
-    referenceMax: 110,
-    description: 'Blood Glucose (혈당)',
-  },
-  {
-    code: 'B2900',
-    name: 'HbA1c',
-    category: 'Chemistry',
-    unit: '%',
-    referenceMin: 4.0,
-    referenceMax: 6.0,
-    description: 'Glycated Hemoglobin (당화혈색소)',
-  },
-
-  // === LFT (Liver Function Test) ===
-  {
-    code: 'B2600',
-    name: 'AST',
-    category: 'LFT',
-    unit: 'U/L',
-    referenceMax: 40,
-    description: 'Aspartate Aminotransferase (아스파르테이트 아미노전이효소)',
-  },
-  {
-    code: 'B2610',
-    name: 'ALT',
-    category: 'LFT',
-    unit: 'U/L',
-    referenceMax: 40,
-    description: 'Alanine Aminotransferase (알라닌 아미노전이효소)',
-  },
-  {
-    code: 'B2620',
-    name: 'ALP',
-    category: 'LFT',
-    unit: 'U/L',
-    referenceMin: 30,
-    referenceMax: 120,
-    description: 'Alkaline Phosphatase (알칼리성 인산분해효소)',
-  },
-  {
-    code: 'B2630',
-    name: 'Total Bilirubin',
-    category: 'LFT',
-    unit: 'mg/dL',
-    referenceMax: 1.2,
-    description: '총 빌리루빈',
-  },
-  {
-    code: 'B2631',
-    name: 'Direct Bilirubin',
-    category: 'LFT',
-    unit: 'mg/dL',
-    referenceMax: 0.3,
-    description: '직접 빌리루빈',
-  },
-  {
-    code: 'B2650',
-    name: 'GGT',
-    category: 'LFT',
-    unit: 'U/L',
-    referenceMax: 60,
-    description: 'Gamma-Glutamyl Transferase',
-  },
-
-  // === Electrolyte (전해질) ===
-  {
-    code: 'B2100',
-    name: 'Na',
-    category: 'Electrolyte',
-    unit: 'mEq/L',
-    referenceMin: 135,
-    referenceMax: 145,
-    description: 'Sodium (나트륨)',
-  },
-  {
-    code: 'B2110',
     name: 'K',
-    category: 'Electrolyte',
-    unit: 'mEq/L',
+    category: 'BC',
+    unit: 'mmol/L',
     referenceMin: 3.5,
-    referenceMax: 5.0,
-    description: 'Potassium (칼륨)',
+    referenceMax: 5.5,
   },
   {
-    code: 'B2120',
+    code: 'B2810',
     name: 'Cl',
-    category: 'Electrolyte',
-    unit: 'mEq/L',
-    referenceMin: 98,
-    referenceMax: 107,
-    description: 'Chloride (염소)',
+    category: 'BC',
+    unit: 'mmol/L',
+    referenceMin: 101,
+    referenceMax: 109,
+  },
+  { code: 'B2561', name: 'Total Cholesterol', category: 'BC', unit: 'mg/dL', referenceMax: 200 },
+  { code: 'A0118', name: 'LDL-Cholesterol', category: 'BC', unit: 'mg/dL', referenceMax: 100 },
+  { code: 'B2910', name: 'HDL-Cholesterol', category: 'BC', unit: 'mg/dL', referenceMin: 40 },
+  { code: 'B2903', name: 'TG', category: 'BC', unit: 'mg/dL', referenceMax: 150 },
+  { code: 'B4621', name: 'CRP', category: 'BC', unit: 'mg/dL', referenceMax: 0.5 },
+  { code: 'B4710', name: 'ESR', category: 'BC', unit: 'mm/hr', referenceMax: 20 },
+  { code: 'B4800', name: 'PCT', category: 'BC', unit: 'ng/mL', referenceMax: 0.5 },
+  { code: 'B4810', name: 'Ferritin', category: 'BC', unit: 'ng/mL' },
+
+  {
+    code: 'B00309',
+    name: 'pH (UA)',
+    category: 'UA',
+    unit: '',
+    referenceMin: 5.0,
+    referenceMax: 8.0,
   },
   {
-    code: 'B2130',
-    name: 'Ca',
-    category: 'Electrolyte',
-    unit: 'mg/dL',
-    referenceMin: 8.6,
-    referenceMax: 10.2,
-    description: 'Calcium (칼슘)',
+    code: 'B003010',
+    name: 'S.G',
+    category: 'UA',
+    unit: '',
+    referenceMin: 1.005,
+    referenceMax: 1.03,
   },
   {
-    code: 'B2140',
-    name: 'P',
-    category: 'Electrolyte',
-    unit: 'mg/dL',
-    referenceMin: 2.5,
-    referenceMax: 4.5,
-    description: 'Phosphorus (인)',
+    code: 'B00411',
+    name: 'RBC (Micro)',
+    category: 'Urine Sediment',
+    unit: '/HPF',
+    referenceMax: 3,
   },
   {
-    code: 'B2150',
-    name: 'Mg',
-    category: 'Electrolyte',
-    unit: 'mg/dL',
-    referenceMin: 1.8,
-    referenceMax: 2.4,
-    description: 'Magnesium (마그네슘)',
+    code: 'B00412',
+    name: 'WBC (Micro)',
+    category: 'Urine Sediment',
+    unit: '/HPF',
+    referenceMax: 3,
+  },
+  {
+    code: 'B00413',
+    name: 'Epithelial cell',
+    category: 'Urine Sediment',
+    unit: '',
+    referenceMax: 3,
   },
 
-  // === Coagulation (응고검사) ===
   {
-    code: 'B3100',
-    name: 'PT',
+    code: 'B1210',
+    name: 'PT (INR)',
     category: 'Coagulation',
-    unit: 'sec',
-    referenceMin: 11,
-    referenceMax: 13,
-    description: 'Prothrombin Time (프로트롬빈 시간)',
-  },
-  {
-    code: 'B3110',
-    name: 'INR',
-    category: 'Coagulation',
-    unit: '',
+    unit: 'INR',
     referenceMin: 0.8,
     referenceMax: 1.2,
-    description: 'International Normalized Ratio',
   },
   {
-    code: 'B3120',
+    code: 'B1220',
     name: 'aPTT',
     category: 'Coagulation',
     unit: 'sec',
     referenceMin: 25,
     referenceMax: 35,
-    description: 'Activated Partial Thromboplastin Time',
   },
-
-  // === Cardiac (심장 마커) ===
-  {
-    code: 'B4100',
-    name: 'Troponin I',
-    category: 'Cardiac',
-    unit: 'ng/mL',
-    referenceMax: 0.04,
-    description: '트로포닌 I',
-  },
+  { code: 'B1230', name: 'D-dimer', category: 'Coagulation', unit: 'μg/mL' },
   {
     code: 'B4110',
-    name: 'CK-MB',
-    category: 'Cardiac',
-    unit: 'ng/mL',
-    referenceMax: 5.0,
-    description: 'Creatine Kinase-MB',
-  },
-  {
-    code: 'B4120',
-    name: 'BNP',
-    category: 'Cardiac',
-    unit: 'pg/mL',
-    referenceMax: 100,
-    description: 'B-type Natriuretic Peptide',
-  },
-
-  // === Infection (감염 마커) ===
-  {
-    code: 'B5100',
-    name: 'CRP',
-    category: 'Infection',
-    unit: 'mg/dL',
-    referenceMax: 0.5,
-    description: 'C-Reactive Protein',
-  },
-  {
-    code: 'B5110',
-    name: 'ESR',
-    category: 'Infection',
-    unit: 'mm/hr',
-    referenceMax: 20,
-    description: 'Erythrocyte Sedimentation Rate (적혈구 침강속도)',
-  },
-  {
-    code: 'B5120',
-    name: 'Procalcitonin',
-    category: 'Infection',
-    unit: 'ng/mL',
-    referenceMax: 0.5,
-    description: '프로칼시토닌',
-  },
-
-  // === Thyroid (갑상선 기능) ===
-  {
-    code: 'B6100',
     name: 'TSH',
     category: 'Thyroid',
     unit: 'μIU/mL',
     referenceMin: 0.4,
     referenceMax: 4.0,
-    description: 'Thyroid Stimulating Hormone',
   },
   {
-    code: 'B6110',
+    code: 'B4120',
     name: 'Free T4',
     category: 'Thyroid',
     unit: 'ng/dL',
     referenceMin: 0.8,
     referenceMax: 1.8,
-    description: 'Free Thyroxine',
   },
   {
-    code: 'B6120',
-    name: 'Free T3',
+    code: 'B4130',
+    name: 'T3',
     category: 'Thyroid',
-    unit: 'pg/mL',
+    unit: 'ng/dL',
     referenceMin: 2.3,
     referenceMax: 4.2,
-    description: 'Free Triiodothyronine',
   },
 ];
 
-/**
- * 검사 코드로 참조 범위 찾기
- */
 export function getLabReference(code: string): LabReference | undefined {
-  return LAB_REFERENCES.find((ref) => ref.code === code);
+  const normalized = code.trim().toLowerCase();
+  return LAB_REFERENCES.find((ref) => ref.code.toLowerCase() === normalized);
 }
 
-/**
- * 검사명으로 참조 범위 찾기 (대소문자 무시)
- */
 export function getLabReferenceByName(name: string): LabReference | undefined {
-  const normalized = name.toLowerCase().trim();
-  return LAB_REFERENCES.find((ref) => ref.name.toLowerCase() === normalized);
+  const normalized = normalizeReferenceName(name);
+  return LAB_REFERENCES.find((ref) => normalizeReferenceName(ref.name) === normalized);
 }
 
-/**
- * 카테고리별 참조 범위 필터링
- */
 export function getLabReferencesByCategory(category: string): LabReference[] {
   return LAB_REFERENCES.filter((ref) => ref.category === category);
 }
 
-/**
- * 값이 정상 범위인지 확인
- */
-export function isValueNormal(
-  value: number | string,
-  reference: LabReference
-): boolean {
-  // 문자열 값은 판정 불가
+export function isValueNormal(value: number | string, reference: LabReference): boolean {
   if (typeof value === 'string') return true;
-
   const { referenceMin, referenceMax } = reference;
-
-  // 범위가 정의되지 않은 경우 정상으로 간주
-  if (referenceMin === undefined && referenceMax === undefined) {
-    return true;
-  }
-
-  // 하한만 있는 경우
-  if (referenceMin !== undefined && referenceMax === undefined) {
-    return value >= referenceMin;
-  }
-
-  // 상한만 있는 경우
-  if (referenceMin === undefined && referenceMax !== undefined) {
-    return value <= referenceMax;
-  }
-
-  // 범위가 모두 있는 경우
+  if (referenceMin === undefined && referenceMax === undefined) return true;
+  if (referenceMin !== undefined && referenceMax === undefined) return value >= referenceMin;
+  if (referenceMin === undefined && referenceMax !== undefined) return value <= referenceMax;
   return value >= referenceMin! && value <= referenceMax!;
 }
 
-/**
- * H/L 플래그 계산
- */
-export function getHLFlag(
-  value: number | string,
-  reference: LabReference
-): 'H' | 'L' | undefined {
+export function getHLFlag(value: number | string, reference: LabReference): 'H' | 'L' | undefined {
   if (typeof value === 'string') return undefined;
-
   const { referenceMin, referenceMax } = reference;
-
-  if (referenceMax !== undefined && value > referenceMax) {
-    return 'H';
-  }
-
-  if (referenceMin !== undefined && value < referenceMin) {
-    return 'L';
-  }
-
+  if (referenceMax !== undefined && value > referenceMax) return 'H';
+  if (referenceMin !== undefined && value < referenceMin) return 'L';
   return undefined;
+}
+
+function normalizeReferenceName(name: string) {
+  return name.trim().toLowerCase();
 }

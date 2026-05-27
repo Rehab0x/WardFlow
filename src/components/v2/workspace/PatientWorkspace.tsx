@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  Fragment,
   useMemo,
   useState,
   type Dispatch,
@@ -14,6 +15,8 @@ import { TemplatePopup } from '@/components/charting/TemplatePopup';
 import type { ParsedLabItem } from '@/services/parser/labParser';
 import { parseOCSMedication, type ParsedMedication } from '@/services/parser/medParser';
 import type { TemplateField } from '@/services/templateService';
+import { DEFAULT_LAB_CATEGORIES, labCategoryService } from '@/services/labCategoryService';
+import { getLabReferenceByName } from '@/utils/labReference';
 import type { LabResult } from '@/types/lab';
 import type { Medication } from '@/types/medication';
 import { ClinicalRow } from '../clinical/ClinicalRow';
@@ -75,6 +78,18 @@ interface PatientWorkspaceProps {
     unit: string;
     flag: '' | 'H' | 'L';
     dateKey: string;
+  }) => void | Promise<void>;
+  onUpdateLabValue?: (input: {
+    dateKey: string;
+    itemName: string;
+    value: string;
+    metadata?: {
+      code?: string;
+      category?: string;
+      unit?: string;
+      referenceMin?: number;
+      referenceMax?: number;
+    };
   }) => void | Promise<void>;
   onRemoveLab?: (lab: PatientWorkspaceManualLab) => void | Promise<void>;
   onLoadLabs?: (patientId: string) => void | Promise<void>;
@@ -145,6 +160,7 @@ export function PatientWorkspace({
   onRemoveAntibiotic,
   onRemoveMedication,
   onAddLab,
+  onUpdateLabValue,
   onRemoveLab,
   onSaveParsedLabs,
   onLoadLabs,
@@ -229,6 +245,7 @@ export function PatientWorkspace({
               manualLabs={manualLabs}
               labResults={labResults}
               onAddLab={onAddLab}
+              onUpdateLabValue={onUpdateLabValue}
               onRemoveLab={onRemoveLab}
               onSaveParsedLabs={onSaveParsedLabs}
               onLoadLabs={onLoadLabs}
@@ -513,7 +530,8 @@ function LabTab({
   data,
   manualLabs,
   labResults,
-  onAddLab,
+  onAddLab: _onAddLab,
+  onUpdateLabValue,
   onRemoveLab,
   onSaveParsedLabs,
   onLoadLabs,
@@ -524,18 +542,28 @@ function LabTab({
   manualLabs: PatientWorkspaceManualLab[];
   labResults: LabResult[];
   onAddLab?: PatientWorkspaceProps['onAddLab'];
+  onUpdateLabValue?: PatientWorkspaceProps['onUpdateLabValue'];
   onRemoveLab?: PatientWorkspaceProps['onRemoveLab'];
   onSaveParsedLabs?: PatientWorkspaceProps['onSaveParsedLabs'];
   onLoadLabs?: PatientWorkspaceProps['onLoadLabs'];
   onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const [draft, setDraft] = useState({
-    itemName: '',
+  const standardLabItems = useMemo(() => buildStandardLabItemOptions(), []);
+  const standardLabCategories = useMemo(
+    () => Array.from(new Set(standardLabItems.map((item) => item.category))),
+    [standardLabItems]
+  );
+  const [newItemDraft, setNewItemDraft] = useState({
+    category: standardLabCategories[0] ?? 'CBC',
+    itemName: standardLabItems[0]?.name ?? '',
     value: '',
-    unit: '',
-    flag: '' as '' | 'H' | 'L',
     dateKey: formatDateInput(new Date()),
   });
+  const [editingCell, setEditingCell] = useState<{
+    dateKey: string;
+    itemName: string;
+    value: string;
+  } | null>(null);
   const [parseOpen, setParseOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const labs = useMemo(
@@ -546,14 +574,20 @@ function LabTab({
     () => manualLabs.filter((item) => item.patientId === patient.id),
     [manualLabs, patient.id]
   );
-  const hasValidDate = isClinicalDateInput(draft.dateKey);
-  const hasDraft = Boolean(draft.itemName.trim() && draft.value.trim());
+  const hasValidDate = isClinicalDateInput(newItemDraft.dateKey);
+  const hasDraft = Boolean(newItemDraft.itemName.trim() && newItemDraft.value.trim());
 
   useEffect(() => {
-    setDraft({ itemName: '', value: '', unit: '', flag: '', dateKey: formatDateInput(new Date()) });
+    setNewItemDraft({
+      category: standardLabCategories[0] ?? 'CBC',
+      itemName: standardLabItems[0]?.name ?? '',
+      value: '',
+      dateKey: formatDateInput(new Date()),
+    });
+    setEditingCell(null);
     setParseOpen(false);
     setSaving(false);
-  }, [patient.id]);
+  }, [patient.id, standardLabCategories, standardLabItems]);
   useEffect(() => {
     void onLoadLabs?.(patient.id);
   }, [onLoadLabs, patient.id]);
@@ -573,24 +607,63 @@ function LabTab({
     [labResults, patient.id]
   );
 
-  const save = useCallback(async () => {
+  const saveStandardLabItem = useCallback(async () => {
     if (!hasDraft || !hasValidDate || saving) return;
     setSaving(true);
     try {
-      await onAddLab?.(draft);
-      setDraft({
-        itemName: '',
-        value: '',
-        unit: '',
-        flag: '',
-        dateKey: formatDateInput(new Date()),
+      const option = standardLabItems.find((item) => item.name === newItemDraft.itemName);
+      await onUpdateLabValue?.({
+        dateKey: newItemDraft.dateKey,
+        itemName: newItemDraft.itemName,
+        value: newItemDraft.value,
+        metadata: option
+          ? {
+              code: option.code,
+              category: option.category,
+              unit: option.unit,
+              referenceMin: option.referenceMin,
+              referenceMax: option.referenceMax,
+            }
+          : undefined,
       });
+      setNewItemDraft((current) => ({
+        ...current,
+        value: '',
+        dateKey: formatDateInput(new Date()),
+      }));
     } catch {
       return;
     } finally {
       setSaving(false);
     }
-  }, [draft, hasDraft, hasValidDate, onAddLab, saving]);
+  }, [hasDraft, hasValidDate, newItemDraft, onUpdateLabValue, saving, standardLabItems]);
+
+  const saveEditedCell = useCallback(async () => {
+    if (!editingCell || saving) return;
+    setSaving(true);
+    try {
+      const option = standardLabItems.find((item) => item.name === editingCell.itemName);
+      await onUpdateLabValue?.({
+        dateKey: editingCell.dateKey,
+        itemName: editingCell.itemName,
+        value: editingCell.value,
+        metadata: option
+          ? {
+              code: option.code,
+              category: option.category,
+              unit: option.unit,
+              referenceMin: option.referenceMin,
+              referenceMax: option.referenceMax,
+            }
+          : undefined,
+      });
+      setEditingCell(null);
+    } catch {
+      return;
+    } finally {
+      setSaving(false);
+    }
+  }, [editingCell, onUpdateLabValue, saving, standardLabItems]);
 
   const saveParsedLabs = useCallback(
     async (items: ParsedLabItem[], testDate: Date) => {
@@ -626,38 +699,89 @@ function LabTab({
                 </tr>
               </thead>
               <tbody>
-                {table.itemRows.map((row) => (
-                  <tr key={row.name} className="odd:bg-zinc-50/60">
-                    <td className="sticky left-0 z-10 max-w-[140px] border-b border-zinc-100 bg-inherit px-2 py-1.5 font-medium text-zinc-700">
-                      {row.name}
-                    </td>
-                    {table.dates.map((date) => {
-                      const value = row.values.get(date);
-                      return (
-                        <td
-                          key={date}
-                          className="border-b border-zinc-100 px-2 py-1.5 text-right font-mono tabular-nums"
-                        >
-                          {value ? (
-                            <span
-                              className={
-                                value.flag ? 'font-semibold text-red-600' : 'text-zinc-700'
-                              }
-                            >
-                              {value.value}
-                              {value.flag && <span className="ml-1 text-[10px]">{value.flag}</span>}
-                            </span>
-                          ) : (
-                            <span className="text-zinc-300">-</span>
-                          )}
+                {table.itemRows.map((row, index) => {
+                  const previous = table.itemRows[index - 1];
+                  const showCategory = !previous || previous.category !== row.category;
+                  return (
+                    <Fragment key={row.name}>
+                      {showCategory && (
+                        <tr>
+                          <td
+                            colSpan={table.dates.length + 2}
+                            className="border-b border-zinc-200 bg-zinc-100 px-2 py-1.5 text-left text-[10.5px] font-semibold uppercase text-zinc-600"
+                          >
+                            {row.category}
+                          </td>
+                        </tr>
+                      )}
+                      <tr className="odd:bg-zinc-50/60">
+                        <td className="sticky left-0 z-10 max-w-[140px] border-b border-zinc-100 bg-inherit px-2 py-1.5 font-medium text-zinc-700">
+                          {row.name}
                         </td>
-                      );
-                    })}
-                    <td className="border-b border-zinc-100 px-2 py-1.5 text-zinc-400">
-                      {row.unit}
-                    </td>
-                  </tr>
-                ))}
+                        {table.dates.map((date) => {
+                          const value = row.values.get(date);
+                          const isEditing =
+                            editingCell?.dateKey === date && editingCell.itemName === row.name;
+                          return (
+                            <td
+                              key={date}
+                              className="border-b border-zinc-100 px-2 py-1.5 text-right font-mono tabular-nums"
+                            >
+                              {isEditing ? (
+                                <input
+                                  autoFocus
+                                  value={editingCell.value}
+                                  onChange={(event) =>
+                                    setEditingCell((current) =>
+                                      current ? { ...current, value: event.target.value } : current
+                                    )
+                                  }
+                                  onBlur={() => void saveEditedCell()}
+                                  onKeyDown={(event) => {
+                                    if (event.key === 'Enter' && !isComposingKeyboardEvent(event)) {
+                                      event.preventDefault();
+                                      void saveEditedCell();
+                                    }
+                                    if (event.key === 'Escape') {
+                                      setEditingCell(null);
+                                    }
+                                  }}
+                                  className="h-7 w-20 rounded border border-zinc-300 px-1.5 text-right text-[11px] outline-none focus:ring-1 focus:ring-zinc-400"
+                                />
+                              ) : value ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setEditingCell({
+                                      dateKey: date,
+                                      itemName: row.name,
+                                      value: String(value.value),
+                                    })
+                                  }
+                                  className={
+                                    value.flag
+                                      ? 'font-semibold text-red-600 hover:underline'
+                                      : 'text-zinc-700 hover:underline'
+                                  }
+                                >
+                                  {value.value}
+                                  {value.flag && (
+                                    <span className="ml-1 text-[10px]">{value.flag}</span>
+                                  )}
+                                </button>
+                              ) : (
+                                <span className="text-zinc-300">-</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="border-b border-zinc-100 px-2 py-1.5 text-zinc-400">
+                          {row.unit}
+                        </td>
+                      </tr>
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -734,12 +858,14 @@ function LabTab({
           <ClinicalRow prefix="-" title="0" detail="Lab 없음" />
         )}
       </DataSection>
-      <CollapsiblePanel title="Lab 추가">
-        <QuickLabForm
-          draft={draft}
-          setDraft={setDraft}
+      <CollapsiblePanel title="표준 항목 추가">
+        <StandardLabItemForm
+          draft={newItemDraft}
+          categories={standardLabCategories}
+          items={standardLabItems}
+          setDraft={setNewItemDraft}
           saving={saving}
-          onSave={save}
+          onSave={saveStandardLabItem}
           hasValidDate={hasValidDate}
         />
       </CollapsiblePanel>
@@ -1510,20 +1636,32 @@ function ChartField({
   );
 }
 
-function QuickLabForm({
+type StandardLabItemOption = {
+  name: string;
+  category: string;
+  code?: string;
+  unit: string;
+  referenceMin?: number;
+  referenceMax?: number;
+};
+
+function StandardLabItemForm({
   draft,
+  categories,
+  items,
   setDraft,
   saving,
   hasValidDate,
   onSave,
 }: {
-  draft: { itemName: string; value: string; unit: string; flag: '' | 'H' | 'L'; dateKey: string };
+  draft: { category: string; itemName: string; value: string; dateKey: string };
+  categories: string[];
+  items: StandardLabItemOption[];
   setDraft: Dispatch<
     SetStateAction<{
+      category: string;
       itemName: string;
       value: string;
-      unit: string;
-      flag: '' | 'H' | 'L';
       dateKey: string;
     }>
   >;
@@ -1531,10 +1669,12 @@ function QuickLabForm({
   hasValidDate: boolean;
   onSave: () => void | Promise<void>;
 }) {
+  const filteredItems = items.filter((item) => item.category === draft.category);
+
   return (
-    <DataSection title="Lab 추가">
+    <DataSection title="표준 항목 추가">
       <div
-        className="grid gap-2 p-2 sm:grid-cols-[140px_minmax(0,1fr)_100px_80px_90px_auto]"
+        className="grid gap-2 p-2 sm:grid-cols-[140px_130px_minmax(0,1fr)_100px_auto]"
         onKeyDown={(event) => {
           if (event.key !== 'Enter' || isComposingKeyboardEvent(event)) return;
           event.preventDefault();
@@ -1549,32 +1689,44 @@ function QuickLabForm({
           invalid={!hasValidDate}
           onChange={(value) => setDraft((current) => ({ ...current, dateKey: value }))}
         />
-        <Input
+        <select
+          value={draft.category}
+          onChange={(event) => {
+            const category = event.target.value;
+            const firstItem = items.find((item) => item.category === category);
+            setDraft((current) => ({
+              ...current,
+              category,
+              itemName: firstItem?.name ?? '',
+            }));
+          }}
+          className="h-8 rounded-md border border-zinc-200 bg-white px-2 text-[12px]"
+        >
+          {categories.map((category) => (
+            <option key={category} value={category}>
+              {category}
+            </option>
+          ))}
+        </select>
+        <select
           value={draft.itemName}
-          placeholder="항목"
-          onChange={(value) => setDraft((current) => ({ ...current, itemName: value }))}
-        />
+          onChange={(event) =>
+            setDraft((current) => ({ ...current, itemName: event.target.value }))
+          }
+          className="h-8 rounded-md border border-zinc-200 bg-white px-2 text-[12px]"
+        >
+          {filteredItems.map((item) => (
+            <option key={item.name} value={item.name}>
+              {item.name}
+              {item.unit ? ` (${item.unit})` : ''}
+            </option>
+          ))}
+        </select>
         <Input
           value={draft.value}
           placeholder="값"
           onChange={(value) => setDraft((current) => ({ ...current, value }))}
         />
-        <Input
-          value={draft.unit}
-          placeholder="단위"
-          onChange={(value) => setDraft((current) => ({ ...current, unit: value }))}
-        />
-        <select
-          value={draft.flag}
-          onChange={(event) =>
-            setDraft((current) => ({ ...current, flag: event.target.value as '' | 'H' | 'L' }))
-          }
-          className="h-8 rounded-md border border-zinc-200 bg-white px-2 text-[12px]"
-        >
-          <option value="">정상</option>
-          <option value="H">H</option>
-          <option value="L">L</option>
-        </select>
         <SaveButton
           disabled={!draft.itemName.trim() || !draft.value.trim() || !hasValidDate}
           pending={saving}
@@ -1591,7 +1743,6 @@ function QuickLabForm({
     </DataSection>
   );
 }
-
 function Input({
   value,
   type = 'text',
@@ -1830,15 +1981,30 @@ function buildLabValueTable(labs: LabResult[]) {
     string,
     {
       name: string;
+      category: string;
+      displayOrder: number;
       unit: string;
       values: Map<string, { value: string | number; flag?: 'H' | 'L' }>;
     }
   >();
+  const displayOrderMap = labCategoryService.buildDisplayOrderMap(DEFAULT_LAB_CATEGORIES);
+  const categoryOrderMap = new Map(
+    DEFAULT_LAB_CATEGORIES.map((category) => [category.name, category.order])
+  );
 
   for (const lab of labs) {
     const date = formatDateInput(lab.testDate);
     for (const item of lab.items) {
-      const row = rows.get(item.name) ?? { name: item.name, unit: item.unit, values: new Map() };
+      const orderEntry = displayOrderMap.get(item.name.toLowerCase());
+      const category = orderEntry?.category ?? lab.category;
+      const fallbackOrder = (categoryOrderMap.get(category) ?? 99) * 1000 + 999;
+      const row = rows.get(item.name) ?? {
+        name: item.name,
+        category,
+        displayOrder: orderEntry?.order ?? fallbackOrder,
+        unit: item.unit,
+        values: new Map(),
+      };
       if (!row.unit && item.unit) row.unit = item.unit;
       row.values.set(date, { value: item.value, flag: item.hlFlag });
       rows.set(item.name, row);
@@ -1847,8 +2013,38 @@ function buildLabValueTable(labs: LabResult[]) {
 
   return {
     dates,
-    itemRows: Array.from(rows.values()).sort((a, b) => a.name.localeCompare(b.name, 'ko-KR')),
+    itemRows: Array.from(rows.values()).sort((a, b) => {
+      if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
+      return a.name.localeCompare(b.name, 'ko-KR');
+    }),
   };
+}
+
+function buildStandardLabItemOptions(): StandardLabItemOption[] {
+  const seen = new Set<string>();
+  const options: StandardLabItemOption[] = [];
+
+  for (const category of DEFAULT_LAB_CATEGORIES) {
+    if (category.name === 'Culture') continue;
+
+    for (const name of category.items) {
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const reference = getLabReferenceByName(name);
+      options.push({
+        name,
+        category: category.name,
+        code: reference?.code,
+        unit: reference?.unit ?? '',
+        referenceMin: reference?.referenceMin,
+        referenceMax: reference?.referenceMax,
+      });
+    }
+  }
+
+  return options;
 }
 
 function areDraftsEqual(left: ChartingDraft, right: ChartingDraft) {

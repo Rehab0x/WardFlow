@@ -72,12 +72,12 @@ export const useLabReferenceStore = create<LabReferenceStore>()(
       resetAll: () => set({ overrides: {} }),
 
       getReference: (name) => {
-        const key = name.toLowerCase();
+        const key = normalizeReferenceKey(name);
         const override = get().overrides[key];
         if (override) return override;
 
         // Fallback to default
-        const def = LAB_REFERENCES.find((r) => r.name.toLowerCase() === key);
+        const def = LAB_REFERENCES.find((r) => normalizeReferenceKey(r.name) === key);
         if (def) return { min: def.referenceMin, max: def.referenceMax };
 
         return undefined;
@@ -88,7 +88,7 @@ export const useLabReferenceStore = create<LabReferenceStore>()(
         const result: Array<LabReference & { isOverridden: boolean }> = [];
 
         for (const def of LAB_REFERENCES) {
-          const key = def.name.toLowerCase();
+          const key = normalizeReferenceKey(def.name);
           const override = overrides[key];
           result.push({
             ...def,
@@ -100,7 +100,7 @@ export const useLabReferenceStore = create<LabReferenceStore>()(
 
         // Add any overrides that aren't in defaults
         for (const [key, val] of Object.entries(overrides)) {
-          if (!LAB_REFERENCES.find((r) => r.name.toLowerCase() === key)) {
+          if (!LAB_REFERENCES.find((r) => normalizeReferenceKey(r.name) === key)) {
             result.push({
               code: '',
               name: key,

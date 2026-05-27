@@ -6,6 +6,7 @@ import { useSupabaseBackend } from '@/config/backend';
 import { useAuthStore } from './useAuthStore';
 import {
   createLabResult as createSupabaseLabResult,
+  type LabItemValueMetadata,
   listLabsByPatient as listSupabaseLabsByPatient,
   softDeleteLabResult as softDeleteSupabaseLabResult,
   updateLabItemValue as updateSupabaseLabItemValue,
@@ -16,6 +17,7 @@ import {
 } from '@/mappers/legacyClinical.mapper';
 import { formatUserFacingError } from '@/lib/errorMessages';
 import { removeById, replaceById, upsertById } from './storeUtils';
+import { getHLFlag, getLabReferenceByName } from '@/utils/labReference';
 
 interface LabStore {
   labs: LabResult[];
@@ -32,7 +34,13 @@ interface LabStore {
     source?: 'manual' | 'parsed' | 'csv' | 'xls'
   ) => Promise<string>;
   deleteLabResult: (id: string) => Promise<void>;
-  updateLabItemValue: (patientId: string, date: string, itemName: string, newValue: string | number) => Promise<void>;
+  updateLabItemValue: (
+    patientId: string,
+    date: string,
+    itemName: string,
+    newValue: string | number,
+    metadata?: LabItemValueMetadata
+  ) => Promise<void>;
   getLabTrendData: (patientId: string, itemCode: string, itemName: string) => Promise<LabTrendData | null>;
 }
 
@@ -139,10 +147,22 @@ export const useLabStore = create<LabStore>((set) => ({
     }
   },
 
-  updateLabItemValue: async (patientId: string, date: string, itemName: string, newValue: string | number) => {
+  updateLabItemValue: async (
+    patientId: string,
+    date: string,
+    itemName: string,
+    newValue: string | number,
+    metadata?: LabItemValueMetadata
+  ) => {
     try {
       if (useSupabaseBackend) {
-        const updatedLab = await updateSupabaseLabItemValue({ patientId, date, itemName, newValue });
+        const updatedLab = await updateSupabaseLabItemValue({
+          patientId,
+          date,
+          itemName,
+          newValue,
+          metadata,
+        });
         if (!updatedLab) return;
 
         const legacyLab = fromDomainLabResult(updatedLab);
@@ -169,6 +189,21 @@ export const useLabStore = create<LabStore>((set) => ({
       const valueStr = typeof newValue === 'string' ? newValue.trim() : String(newValue);
       const isNumeric = PURE_NUMERIC.test(valueStr);
       const numVal = isNumeric ? parseFloat(valueStr) : NaN;
+      const reference = getLabReferenceByName(itemName);
+      const referenceMin = metadata?.referenceMin ?? reference?.referenceMin;
+      const referenceMax = metadata?.referenceMax ?? reference?.referenceMax;
+      const unit = metadata?.unit ?? reference?.unit ?? '';
+      const hlFlag = isNumeric
+        ? getHLFlag(numVal, {
+            code: metadata?.code ?? reference?.code ?? '',
+            name: itemName,
+            category: (metadata?.category ?? reference?.category ?? 'Other') as never,
+            unit,
+            referenceMin,
+            referenceMax,
+          })
+        : undefined;
+      const isAbnormal = Boolean(hlFlag);
 
       // Find labs matching date
       let targetLab: LabResult | undefined;
@@ -230,10 +265,14 @@ export const useLabStore = create<LabStore>((set) => ({
       } else if (targetLab) {
         // Add new item to existing non-Culture lab result on that date
         const newItem: LabItem = {
+          code: metadata?.code ?? reference?.code,
           name: itemName,
           value: isNumeric ? numVal : valueStr,
-          unit: '',
-          isAbnormal: false,
+          unit,
+          referenceMin,
+          referenceMax,
+          isAbnormal,
+          hlFlag,
         };
         const updatedItems = [...targetLab.items, newItem];
         await db.labResults.update(targetLab.id, { items: updatedItems });
@@ -248,16 +287,20 @@ export const useLabStore = create<LabStore>((set) => ({
         const testDate = new Date(y ?? 0, (m ?? 1) - 1, d ?? 1);
         const newId = `lab${Date.now()}`;
         const newItem: LabItem = {
+          code: metadata?.code ?? reference?.code,
           name: itemName,
           value: isNumeric ? numVal : valueStr,
-          unit: '',
-          isAbnormal: false,
+          unit,
+          referenceMin,
+          referenceMax,
+          isAbnormal,
+          hlFlag,
         };
         const newLab: LabResult = {
           id: newId,
           patientId,
           testDate,
-          category: 'Other',
+          category: metadata?.category ?? reference?.category ?? 'Other',
           items: [newItem],
           source: 'manual',
           createdAt: new Date(),

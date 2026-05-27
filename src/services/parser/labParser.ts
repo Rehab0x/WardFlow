@@ -1,4 +1,5 @@
-import { getLabInfo, findLabByName, extractCleanName } from './labCodeMap';
+import { getLabInfo, getLabInfoForXls, findLabByName, extractCleanName } from './labCodeMap';
+import { getHLFlag, getLabReference, getLabReferenceByName } from '@/utils/labReference';
 
 export interface ParsedLabItem {
   code: string;
@@ -70,11 +71,19 @@ export function parseLabText(text: string): ParsedLabResult {
 
   const items: ParsedLabItem[] = [];
   const unmatched: string[] = [];
+  let sectionCategory: string | undefined;
 
   for (const line of lines) {
+    const nextSection = inferSectionCategory(line);
+    if (nextSection !== undefined) {
+      sectionCategory = nextSection || undefined;
+      continue;
+    }
+    if (isIgnoredContinuationLine(line)) continue;
+
     const parsed = parseLine(line);
     if (parsed) {
-      items.push(parsed);
+      items.push(applySectionContext(parsed, sectionCategory));
     } else {
       unmatched.push(line);
     }
@@ -96,7 +105,9 @@ function parseLine(line: string): ParsedLabItem | null {
 }
 
 function parseTabLine(line: string): ParsedLabItem | null {
-  const cols = line.split('\t').map((c) => c.trim());
+  const cols = normalizeMultilineLabValue(line)
+    .split('\t')
+    .map((c) => c.trim());
   if (cols.length < 2) return null;
 
   const col0 = cols[0] ?? '';
@@ -105,8 +116,9 @@ function parseTabLine(line: string): ParsedLabItem | null {
   const col3 = cols[3] ?? '';
   const col4 = cols[4] ?? '';
 
-  // Code pattern: B/A codes (B2500, A0118) or D-codes (D0002010, D000201HZ)
-  const codePattern = /^[ABDabd][\w]{3,}/;
+  // Code pattern: B/A numeric codes (B2500, A0118) or D-codes.
+  // Keep this strict so plain names like "Albumin" are not mistaken for codes.
+  const codePattern = /^(?:[ABab]\d{4,6}[A-Za-z]?|[Dd](?:\d{4,8}[A-Za-z]*|\d{3,4}))$/;
 
   let code = '';
   let rawName = '';
@@ -129,18 +141,19 @@ function parseTabLine(line: string): ParsedLabItem | null {
     refRaw = col3;
   }
 
-  if (!rawName || !value) return null;
+  if (!rawName || isSkippableLabLine(rawName, value)) return null;
+  value = resolveLabValue(rawName, value);
+  if (!value) return null;
 
   const flagUp = flagRaw.toUpperCase().trim();
   const normalFlag: 'H' | 'L' | '' =
-    (flagUp === 'H' || flagUp === 'HIGH') ? 'H' :
-    (flagUp === 'L' || flagUp === 'LOW') ? 'L' : '';
+    flagUp === 'H' || flagUp === 'HIGH' ? 'H' : flagUp === 'L' || flagUp === 'LOW' ? 'L' : '';
 
   const cleanName = extractCleanName(code, rawName);
   const info = code ? getLabInfo(code) : findLabByName(cleanName);
   const ref = parseReferenceRange(refRaw);
 
-  return {
+  return buildParsedItem({
     code,
     name: cleanName,
     category: info?.category ?? inferCategoryFromName(cleanName),
@@ -150,28 +163,59 @@ function parseTabLine(line: string): ParsedLabItem | null {
     referenceMin: ref.min,
     referenceMax: ref.max,
     referenceText: (ref.text ?? refRaw) || undefined,
-  };
+  });
 }
 
 function inferCategoryFromName(name: string): string {
   const lower = name.toLowerCase();
-  if (['wbc', 'rbc', 'hb', 'hct', 'mcv', 'mch', 'mchc', 'plt', 'platelet'].includes(lower)) return 'CBC';
-  if (['neutrophil', 'n.segment', 'lymphocyte', 'monocyte', 'eosinophil', 'basophil'].includes(lower)) return 'WBC Diff.';
-  if (['na', 'k', 'cl'].includes(lower)) return 'Electrolyte';
-  if (lower === 'crp' || lower === 'esr' || lower === 'pct') return 'Inflammatory';
-  if (['color', 'leukocyte', 'occult blood', 'bilirubin', 'urobilinogen', 'ketone', 'protein', 'nitrite', 'ph', 's.g'].includes(lower)) return 'UA';
-  if (lower.includes('micro') || lower.includes('epithelial') || lower.includes('bacteria') || lower.includes('cast') || lower.includes('crystal')) return 'Urine Sediment';
-  return 'LFT';
+  if (['wbc', 'rbc', 'hb', 'hct', 'mcv', 'mch', 'mchc', 'plt', 'platelet'].includes(lower))
+    return 'CBC';
+  if (
+    ['neutrophil', 'n.segment', 'lymphocyte', 'monocyte', 'eosinophil', 'basophil'].includes(lower)
+  )
+    return 'WBC Diff';
+  if (['na', 'k', 'cl'].includes(lower)) return 'BC';
+  if (lower === 'crp' || lower === 'esr' || lower === 'pct') return 'BC';
+  if (
+    [
+      'color',
+      'leukocyte',
+      'occult blood',
+      'bilirubin',
+      'urobilinogen',
+      'ketone',
+      'protein',
+      'nitrite',
+      'ph',
+      's.g',
+    ].includes(lower)
+  )
+    return 'UA';
+  if (
+    lower.includes('micro') ||
+    lower.includes('epithelial') ||
+    lower.includes('bacteria') ||
+    lower.includes('cast') ||
+    lower.includes('crystal')
+  )
+    return 'Urine Sediment';
+  return 'BC';
 }
 
 function parseSpaceLine(line: string): ParsedLabItem | null {
-  const codeMatch = line.match(/^([ABab]\d{4,6}[ABab]?)\s+(.+)/);
+  const normalizedLine = normalizeMultilineLabValue(line);
+  if (isStandaloneLabSectionLine(normalizedLine)) return null;
+
+  const codeMatch = normalizedLine.match(/^([ABab]\d{4,6}[ABab]?)\s+(.+)/);
   if (codeMatch && codeMatch[1] && codeMatch[2]) {
     // 코드가 있는 경우: 기존 형식
     const code = codeMatch[1].toUpperCase();
     const rest = codeMatch[2].trim();
 
-    const parts = rest.split(/\s{2,}/).map((p) => p.trim()).filter(Boolean);
+    const parts = rest
+      .split(/\s{2,}/)
+      .map((p) => p.trim())
+      .filter(Boolean);
     if (parts.length < 2) return null;
 
     const name = parts[0] ?? '';
@@ -183,7 +227,7 @@ function parseSpaceLine(line: string): ParsedLabItem | null {
     const info = getLabInfo(code);
     const ref = parseReferenceRange(refRaw);
 
-    return {
+    return buildParsedItem({
       code,
       name: info?.name ?? name,
       category: info?.category ?? 'Other',
@@ -193,15 +237,18 @@ function parseSpaceLine(line: string): ParsedLabItem | null {
       referenceMin: ref.min,
       referenceMax: ref.max,
       referenceText: (ref.text ?? refRaw) || undefined,
-    };
+    });
   }
 
   // 코드 없이 "검사명 값" 또는 "검사명 값 H/L" 형식
   // 여러 공백으로 분리
-  const parts = line.split(/\s{2,}|\t+/).map((p) => p.trim()).filter(Boolean);
+  const parts = normalizedLine
+    .split(/\s{2,}|\t+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
   if (parts.length < 2) {
     // 단일 공백으로 분리 시도 — 마지막 토큰이 값일 가능성
-    const tokens = line.trim().split(/\s+/);
+    const tokens = normalizedLine.trim().split(/\s+/);
     if (tokens.length < 2) return null;
     // 뒤에서부터 값/flag/ref 파싱
     const lastToken = tokens[tokens.length - 1] ?? '';
@@ -232,22 +279,175 @@ function parseSpaceLine(line: string): ParsedLabItem | null {
   return buildItemFromNameValue(name, value, flag, refRaw);
 }
 
-function buildItemFromNameValue(name: string, value: string, flag: string, refRaw: string): ParsedLabItem | null {
-  if (!name || !value) return null;
+function buildItemFromNameValue(
+  name: string,
+  value: string,
+  flag: string,
+  refRaw: string
+): ParsedLabItem | null {
+  if (!name || isSkippableLabLine(name, value)) return null;
   const cleanName = extractCleanName('', name);
   const info = findLabByName(cleanName);
+  const resolvedValue = resolveLabValue(cleanName, value);
+  if (!resolvedValue) return null;
   const ref = parseReferenceRange(refRaw);
-  return {
+  return buildParsedItem({
     code: '',
     name: cleanName,
     category: info?.category ?? inferCategoryFromName(cleanName),
     unit: info?.unit ?? '',
-    value,
+    value: resolvedValue,
     flag: (flag === 'H' || flag === 'L' ? flag : '') as 'H' | 'L' | '',
     referenceMin: ref.min,
     referenceMax: ref.max,
     referenceText: (ref.text ?? refRaw) || undefined,
+  });
+}
+
+function buildParsedItem(item: ParsedLabItem): ParsedLabItem {
+  const reference =
+    (item.code ? getLabReference(item.code) : undefined) ?? getLabReferenceByName(item.name);
+  const referenceMin = item.referenceMin ?? reference?.referenceMin;
+  const referenceMax = item.referenceMax ?? reference?.referenceMax;
+  const numericValue = parseNumericLabValue(item.value);
+  const computedFlag =
+    item.flag ||
+    (reference && numericValue !== undefined ? (getHLFlag(numericValue, reference) ?? '') : '');
+
+  return {
+    ...item,
+    unit: item.unit || reference?.unit || '',
+    flag: computedFlag,
+    referenceMin,
+    referenceMax,
   };
+}
+
+function applySectionContext(
+  item: ParsedLabItem,
+  sectionCategory: string | undefined
+): ParsedLabItem {
+  if (!sectionCategory) return item;
+
+  if (sectionCategory === 'UA') {
+    if (item.name === 'Glucose') {
+      return {
+        ...item,
+        name: 'Glucose (UA)',
+        category: 'UA',
+        unit: '',
+        flag: '',
+        referenceMin: undefined,
+        referenceMax: undefined,
+        referenceText: undefined,
+      };
+    }
+    if (item.name === 'pH') {
+      return buildParsedItem({
+        ...item,
+        name: 'pH (UA)',
+        category: 'UA',
+        unit: '',
+        flag: '',
+        referenceMin: undefined,
+        referenceMax: undefined,
+        referenceText: undefined,
+      });
+    }
+    if (
+      [
+        'Color',
+        'Leukocyte',
+        'Occult Blood',
+        'Bilirubin',
+        'Urobilinogen',
+        'Ketone',
+        'Protein',
+        'Nitrite',
+        'Glucose (UA)',
+        'pH (UA)',
+        'S.G',
+      ].includes(item.name)
+    ) {
+      return { ...item, category: 'UA' };
+    }
+  }
+
+  if (sectionCategory === 'Urine Sediment') {
+    return { ...item, category: 'Urine Sediment' };
+  }
+
+  if (sectionCategory === 'WBC Diff' && item.category === 'BC') {
+    return { ...item, category: 'WBC Diff' };
+  }
+
+  if (sectionCategory === 'Serology') {
+    return { ...item, category: 'Serology' };
+  }
+
+  return item;
+}
+
+function resolveLabValue(name: string, value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  if (/hba1c/i.test(name) || /hba1c/i.test(trimmed)) {
+    const ngsp = trimmed.match(/NGSP\s*:?\s*([\d.]+)/i);
+    if (ngsp?.[1]) return ngsp[1];
+  }
+
+  return trimmed;
+}
+
+function parseNumericLabValue(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const normalizedRange = trimmed.match(/^([<>≤≥]?)\s*([\d.]+)/);
+  if (!normalizedRange?.[2]) return undefined;
+  const numeric = Number(normalizedRange[2]);
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
+function normalizeMultilineLabValue(line: string) {
+  return line.replace(/\r?\n/g, ' ');
+}
+
+function isStandaloneLabSectionLine(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed) return true;
+  return inferSectionCategory(trimmed) !== undefined;
+}
+
+function isSkippableLabLine(name: string, value: string) {
+  const cleanName = name.trim();
+  const cleanValue = value.trim();
+  if (!cleanName) return true;
+  if (/^\d{8};/.test(cleanName)) return true;
+  if (/;\s*;\s*$/.test(cleanName) || /;\s*;\s*$/.test(cleanValue)) return true;
+  if (!cleanValue) return true;
+  if (/백혈구백분율|요일반검사|요침사검사/.test(cleanName)) return true;
+  return false;
+}
+
+function inferSectionCategory(line: string): string | undefined {
+  const trimmed = line.trim();
+  if (!trimmed) return undefined;
+  const tabCols = trimmed.split('\t').map((col) => col.trim());
+  if (tabCols.length > 1 && tabCols.slice(1).some(Boolean)) return undefined;
+  if (/^\d{8};/.test(trimmed)) return '';
+  if (/백혈구백분율/.test(trimmed)) return 'WBC Diff';
+  if (/UA1|요검사|요일반검사/.test(trimmed)) return 'UA';
+  if (/요침사검사|Urine Micro|Urine Sediment/i.test(trimmed)) return 'Urine Sediment';
+  if (/HBSAG|B형간염/i.test(trimmed)) return 'Serology';
+  if (/HBA1C|HbA1C/i.test(trimmed) && /;\s*;\s*$/.test(trimmed)) return 'BC';
+  if (/CRP/i.test(trimmed) && /;\s*;\s*$/.test(trimmed)) return 'BC';
+  if (/^[A-Za-z0-9()/-]+\s+-\s+.+;\s*;\s*$/.test(trimmed)) return '';
+  return undefined;
+}
+
+function isIgnoredContinuationLine(line: string) {
+  return /^HbA1c-(IFCC|eAG)\s*:/i.test(line.trim());
 }
 
 // ─────────────────────────────────────────────────
@@ -266,13 +466,15 @@ function buildItemFromNameValue(name: string, value: string, flag: string, refRa
 export interface XlsPatientGroup {
   patientName?: string;
   registrationNumber?: string;
-  orderDate?: string;   // YYYY-MM-DD
+  orderDate?: string; // YYYY-MM-DD
   items: ParsedLabItem[];
 }
 
 /** Parse YYYYMMDD → "YYYY-MM-DD" */
 function parseXlsDate(raw: string): string | undefined {
-  const m = String(raw).replace(/\D/g, '').match(/^(\d{4})(\d{2})(\d{2})$/);
+  const m = String(raw)
+    .replace(/\D/g, '')
+    .match(/^(\d{4})(\d{2})(\d{2})$/);
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
   return undefined;
 }
@@ -333,13 +535,13 @@ function extractGroupsFromRows(rows: string[][]): XlsPatientGroup[] {
     if (firstCell === '기관구분' || firstCell === '') continue;
 
     const chartNum = String(row[5] ?? '').trim();
-    const rawDate  = String(row[6] ?? '').trim();
-    const labCode  = String(row[8] ?? '').trim();
-    const labName  = String(row[10] ?? '').trim();
+    const rawDate = String(row[6] ?? '').trim();
+    const labCode = String(row[8] ?? '').trim();
+    const labName = String(row[10] ?? '').trim();
     const numResult = String(row[11] ?? '').trim();
     const textResult = String(row[12] ?? '').trim();
-    const hlFlag   = String(row[13] ?? '').trim();
-    const refRaw   = String(row[15] ?? '').trim();
+    const hlFlag = String(row[13] ?? '').trim();
+    const refRaw = String(row[15] ?? '').trim();
     const patientName = String(row[2] ?? '').trim();
 
     if (!chartNum || !labCode) continue;
@@ -361,7 +563,15 @@ function extractGroupsFromRows(rows: string[][]): XlsPatientGroup[] {
     if (!numResult && !textResult) continue;
 
     const code = labCode.toUpperCase();
-    const info = getLabInfo(code);
+    let info = getLabInfoForXls(code, labName);
+    if (
+      code === 'B00301' &&
+      labName.toLowerCase() === 'color' &&
+      refRaw.toLowerCase() === 'negative' &&
+      /[+\-]/.test(numResult || textResult)
+    ) {
+      info = { name: 'Leukocyte', category: 'UA', unit: '' };
+    }
     const normalFlag: 'H' | 'L' | '' =
       hlFlag.toUpperCase() === 'H' ? 'H' : hlFlag.toUpperCase() === 'L' ? 'L' : '';
     const ref = parseReferenceRange(refRaw);
@@ -374,11 +584,12 @@ function extractGroupsFromRows(rows: string[][]): XlsPatientGroup[] {
     // 2) numResult 없고 textResult만 있되:
     //    a) 이름에 culture/배양/cre- 포함, 또는
     //    b) textResult 자체에 growth/culture/배양/sensitivity/resistant 등 포함
-    const isCulture = categoryFromMap === 'Culture'
-      || (!numResult && !!textResult && (
-        /culture|배양|^cre-|^cre /i.test(labName)
-        || /growth|culture|배양|sensitivity|resistant|susceptib|감수성/i.test(textResult)
-      ));
+    const isCulture =
+      categoryFromMap === 'Culture' ||
+      (!numResult &&
+        !!textResult &&
+        (/culture|배양|^cre-|^cre /i.test(labName) ||
+          /growth|culture|배양|sensitivity|resistant|susceptib|감수성/i.test(textResult)));
 
     // textResult만 있고 Culture가 아닌 경우 (예: HbA1c) → 첫 번째 숫자 추출
     let resolvedValue: string;
@@ -402,17 +613,19 @@ function extractGroupsFromRows(rows: string[][]): XlsPatientGroup[] {
       resolvedCategory = categoryFromMap;
     }
 
-    group.items.push({
-      code,
-      name: info?.name ?? normalizeName(code, labName),
-      category: resolvedCategory,
-      unit: info?.unit ?? '',
-      value: resolvedValue,
-      flag: normalFlag,
-      referenceMin: ref.min,
-      referenceMax: ref.max,
-      referenceText: isCulture ? undefined : ((ref.text ?? refRaw) || undefined),
-    });
+    group.items.push(
+      buildParsedItem({
+        code,
+        name: info?.name ?? normalizeName(code, labName),
+        category: resolvedCategory,
+        unit: info?.unit ?? '',
+        value: resolvedValue,
+        flag: normalFlag,
+        referenceMin: ref.min,
+        referenceMax: ref.max,
+        referenceText: isCulture ? undefined : (ref.text ?? refRaw) || undefined,
+      })
+    );
   }
 
   return Array.from(groupMap.values());
@@ -421,13 +634,44 @@ function extractGroupsFromRows(rows: string[][]): XlsPatientGroup[] {
 /** Fallback category inference from Korean test name */
 function inferCategory(code: string, name: string): string {
   const lower = name.toLowerCase();
-  if (lower.includes('cbc') || lower.includes('혈액검사') || lower.includes('백혈구') || lower.includes('적혈구')) return 'CBC';
-  if (lower.includes('전해질') || code.startsWith('B279') || code.startsWith('B280') || code.startsWith('B281')) return 'Electrolyte';
-  if (lower.includes('crp') || lower.includes('반응성단백') || lower.includes('esr')) return 'Inflammatory';
-  if (lower.includes('hba1c') || lower.includes('당화혈색소')) return 'Chemistry';
-  if (code.startsWith('B004') || code.startsWith('D004') || lower.includes('micro') || lower.includes('sediment')) return 'Urine Sediment';
-  if (lower.includes('소변') || lower.includes('urine') || code.startsWith('B003') || code.startsWith('D003')) return 'UA';
-  if (lower.includes('culture') || lower.includes('배양') || lower.startsWith('cre-') || lower.startsWith('cre ')) return 'Culture';
-  if (lower.includes('갑상') || lower.includes('thyroid') || lower.includes('tsh')) return 'Thyroid';
-  return 'Chemistry';
+  if (
+    lower.includes('cbc') ||
+    lower.includes('혈액검사') ||
+    lower.includes('백혈구') ||
+    lower.includes('적혈구')
+  )
+    return 'CBC';
+  if (
+    lower.includes('전해질') ||
+    code.startsWith('B279') ||
+    code.startsWith('B280') ||
+    code.startsWith('B281')
+  )
+    return 'BC';
+  if (lower.includes('crp') || lower.includes('반응성단백') || lower.includes('esr')) return 'BC';
+  if (lower.includes('hba1c') || lower.includes('당화혈색소')) return 'BC';
+  if (
+    code.startsWith('B004') ||
+    code.startsWith('D004') ||
+    lower.includes('micro') ||
+    lower.includes('sediment')
+  )
+    return 'Urine Sediment';
+  if (
+    lower.includes('소변') ||
+    lower.includes('urine') ||
+    code.startsWith('B003') ||
+    code.startsWith('D003')
+  )
+    return 'UA';
+  if (
+    lower.includes('culture') ||
+    lower.includes('배양') ||
+    lower.startsWith('cre-') ||
+    lower.startsWith('cre ')
+  )
+    return 'Culture';
+  if (lower.includes('갑상') || lower.includes('thyroid') || lower.includes('tsh'))
+    return 'Thyroid';
+  return 'BC';
 }

@@ -47,6 +47,7 @@ type AddPatientDraft = {
   name: string;
   registrationNumber: string;
   birthDate: string;
+  admissionDate: string;
   sex: 'M' | 'F';
   patientType: 'admitted' | 'consult';
   attendingPhysician: string;
@@ -83,11 +84,19 @@ const defaultAddPatientDraft: AddPatientDraft = {
   name: '',
   registrationNumber: '',
   birthDate: '',
+  admissionDate: formatDateInput(new Date()),
   sex: 'F',
   patientType: 'admitted',
   attendingPhysician: '',
   tagsText: '',
 };
+
+function createDefaultAddPatientDraft(): AddPatientDraft {
+  return {
+    ...defaultAddPatientDraft,
+    admissionDate: formatDateInput(new Date()),
+  };
+}
 
 export default function V2AppPage() {
   const navigate = useNavigate();
@@ -106,7 +115,8 @@ export default function V2AppPage() {
   const { addSchedule, deleteSchedule } = useScheduleStore();
   const { medications, fetchMedicationsByPatient, addMedication, deleteMedication } =
     useMedicationStore();
-  const { labs, fetchLabsByPatient, addLabResult, deleteLabResult } = useLabStore();
+  const { labs, fetchLabsByPatient, addLabResult, deleteLabResult, updateLabItemValue } =
+    useLabStore();
   const [briefingData, setBriefingData] = useState<BriefingData>(emptyBriefingData);
   const [briefingLoading, setBriefingLoading] = useState(false);
   const [briefingError, setBriefingError] = useState<string | null>(null);
@@ -123,6 +133,11 @@ export default function V2AppPage() {
   const [workspaceUnsaved, setWorkspaceUnsaved] = useState(false);
   const [attentionPending, setAttentionPending] = useState(false);
   const [archivePending, setArchivePending] = useState(false);
+  const [archiveDialog, setArchiveDialog] = useState<
+    | { mode: 'discharge'; dateKey: string }
+    | { mode: 'readmit'; dateKey: string }
+    | null
+  >(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const briefingRequestSeq = useRef(0);
   const briefingRefreshPromiseRef = useRef<Promise<void> | null>(null);
@@ -327,18 +342,22 @@ export default function V2AppPage() {
       setAddError('생년월일을 확인해주세요.');
       return;
     }
+    const admissionDate = parseDateInput(draft.admissionDate);
+    if (!admissionDate || !isValidClinicalDateInput(draft.admissionDate)) {
+      setAddError('입원일을 확인해주세요.');
+      return;
+    }
 
     setSavingPatient(true);
     setAddError(null);
     try {
-      const now = new Date();
       const patientId = await addPatient({
         registrationNumber: draft.registrationNumber.trim(),
         name: draft.name.trim(),
         birthDate,
         sex: draft.sex,
-        roomBed: draft.patientType === 'consult' ? '협진' : draft.roomBed.trim(),
-        admissionDate: now,
+        roomBed: draft.roomBed.trim(),
+        admissionDate,
         attendingPhysician: draft.attendingPhysician.trim(),
         patientType: draft.patientType,
         status: 'active',
@@ -382,6 +401,11 @@ export default function V2AppPage() {
       setAddError('생년월일을 확인해주세요.');
       return;
     }
+    const admissionDate = parseDateInput(draft.admissionDate);
+    if (!admissionDate || !isValidClinicalDateInput(draft.admissionDate)) {
+      setAddError('입원일을 확인해주세요.');
+      return;
+    }
 
     setSavingPatient(true);
     setAddError(null);
@@ -391,7 +415,8 @@ export default function V2AppPage() {
         name: draft.name.trim(),
         birthDate,
         sex: draft.sex,
-        roomBed: draft.patientType === 'consult' ? '협진' : draft.roomBed.trim(),
+        roomBed: draft.roomBed.trim(),
+        admissionDate,
         attendingPhysician: draft.attendingPhysician.trim(),
         patientType: draft.patientType,
         tags: parseTags(draft.tagsText),
@@ -400,7 +425,7 @@ export default function V2AppPage() {
       setSelectedPatientId(editingPatient.id);
       applyOptimisticPatientIdentity(setBriefingData, editingPatient, {
         name: draft.name.trim(),
-        roomBed: draft.patientType === 'consult' ? '협진' : draft.roomBed.trim(),
+        roomBed: draft.roomBed.trim(),
       });
       markLocalBriefingUpdated();
       queueBriefingRefresh();
@@ -662,6 +687,36 @@ export default function V2AppPage() {
     }, 'Lab 파싱 결과를 저장하지 못했습니다.');
   };
 
+  const handleUpdateLabValue = async (input: {
+    dateKey: string;
+    itemName: string;
+    value: string;
+    metadata?: {
+      code?: string;
+      category?: string;
+      unit?: string;
+      referenceMin?: number;
+      referenceMax?: number;
+    };
+  }) => {
+    if (!selectedPatient) return;
+    await runWrite(async () => {
+      if (!isValidClinicalDateInput(input.dateKey)) {
+        throw new Error('Lab 날짜는 1900년부터 오늘 사이로 입력해주세요.');
+      }
+      await updateLabItemValue(
+        selectedPatient.id,
+        input.dateKey,
+        input.itemName,
+        input.value,
+        input.metadata
+      );
+      await fetchLabsByPatient(selectedPatient.id);
+      markLocalBriefingUpdated();
+      queueBriefingRefresh();
+    }, 'Lab 값을 저장하지 못했습니다.');
+  };
+
   const handleRemoveLab = async (lab: { id?: string }) => {
     if (!lab.id) return;
     const labId = lab.id;
@@ -725,17 +780,36 @@ export default function V2AppPage() {
   const handleArchive = async () => {
     if (!selectedPatient || archivePending) return;
     if (!confirmWorkspaceNavigation()) return;
-    const actionLabel = selectedPatient.status === 'discharged' ? '퇴원 취소' : '퇴원 처리';
-    if (!window.confirm(`${selectedPatient.name} 환자를 ${actionLabel}할까요?`)) return;
+    setArchiveDialog({
+      mode: selectedPatient.status === 'discharged' ? 'readmit' : 'discharge',
+      dateKey:
+        selectedPatient.status === 'discharged'
+          ? formatDateInput(new Date())
+          : formatDateInput(selectedPatient.dischargeDate ?? new Date()),
+    });
+  };
+
+  const handleConfirmArchiveDialog = async (dateKey: string) => {
+    if (!selectedPatient || archivePending || !archiveDialog) return;
+    const statusDate = parseDateInput(dateKey);
+    if (!statusDate || !isValidClinicalDateInput(dateKey)) {
+      setWriteError('날짜는 1900년부터 오늘 사이로 입력해주세요.');
+      return;
+    }
     setArchivePending(true);
     try {
       await runWrite(async () => {
-        if (selectedPatient.status === 'discharged') {
-          await updatePatient(selectedPatient.id, { status: 'active', dischargeDate: undefined });
+        if (archiveDialog.mode === 'readmit') {
+          await updatePatient(selectedPatient.id, {
+            status: 'active',
+            dischargeDate: undefined,
+            admissionDate: statusDate,
+          });
         } else {
-          await dischargePatient(selectedPatient.id, new Date());
+          await dischargePatient(selectedPatient.id, statusDate);
           applyOptimisticRemovePatientItems(setBriefingData, selectedPatient.id);
         }
+        setArchiveDialog(null);
         markLocalBriefingUpdated();
         await refreshAfterPatientWrite();
       }, '환자 상태를 변경하지 못했습니다.');
@@ -857,6 +931,7 @@ export default function V2AppPage() {
           onRemoveMedication={handleRemoveMedication}
           onAddLab={handleAddLab}
           onRemoveLab={handleRemoveLab}
+          onUpdateLabValue={handleUpdateLabValue}
           onSaveParsedLabs={handleSaveParsedLabs}
           onLoadLabs={fetchLabsByPatient}
           onLoadMedications={fetchMedicationsByPatient}
@@ -882,6 +957,7 @@ export default function V2AppPage() {
         <AddPatientPanel
           title="환자 추가"
           submitLabel="추가"
+          initialDraft={createDefaultAddPatientDraft()}
           error={addError}
           isSaving={savingPatient}
           onClose={() => setAddOpen(false)}
@@ -898,6 +974,18 @@ export default function V2AppPage() {
           onClose={() => setEditPatientId(null)}
           onSubmit={handleUpdatePatientInfo}
           onDelete={handleDeleteEditingPatient}
+        />
+      )}
+      {selectedPatient && archiveDialog && (
+        <PatientStatusDialog
+          patientName={selectedPatient.name}
+          mode={archiveDialog.mode}
+          initialDateKey={archiveDialog.dateKey}
+          isSaving={archivePending}
+          onClose={() => {
+            if (!archivePending) setArchiveDialog(null);
+          }}
+          onConfirm={handleConfirmArchiveDialog}
         />
       )}
       {labImportOpen && (
@@ -969,8 +1057,9 @@ function AddPatientPanel({
       Boolean(draft.registrationNumber.trim()) &&
       Boolean(draft.name.trim()) &&
       hasValidBirthDate &&
-      (draft.patientType === 'consult' || Boolean(draft.roomBed.trim())),
-    [draft.name, draft.patientType, draft.registrationNumber, draft.roomBed, hasValidBirthDate]
+      isValidClinicalDateInput(draft.admissionDate) &&
+      Boolean(draft.roomBed.trim()),
+    [draft.admissionDate, draft.name, draft.registrationNumber, draft.roomBed, hasValidBirthDate]
   );
   const showValidationSummary = submitAttempted && !canSubmit && validationMessages.length > 0;
 
@@ -1050,7 +1139,6 @@ function AddPatientPanel({
             <Input
               inputRef={firstInputRef}
               value={draft.roomBed}
-              disabled={draft.patientType === 'consult'}
               onChange={(value) => update('roomBed', value)}
               placeholder="301-1"
             />
@@ -1084,6 +1172,18 @@ function AddPatientPanel({
               <span className="text-[10.5px] text-red-600">1900년부터 오늘 사이로 입력</span>
             )}
           </Field>
+          <Field label="입원일">
+            <Input
+              value={draft.admissionDate}
+              type="date"
+              min="1900-01-01"
+              max={formatDateInput(new Date())}
+              onChange={(value) => update('admissionDate', value)}
+            />
+            {draft.admissionDate && !isValidClinicalDateInput(draft.admissionDate) && (
+              <span className="text-[10.5px] text-red-600">1900년부터 오늘 사이로 입력</span>
+            )}
+          </Field>
           <Field label="성별">
             <select
               value={draft.sex}
@@ -1102,7 +1202,6 @@ function AddPatientPanel({
                 setDraft((current) => ({
                   ...current,
                   patientType,
-                  roomBed: patientType === 'consult' ? '' : current.roomBed,
                 }));
               }}
               className="h-8 rounded-md border border-zinc-200 bg-white px-2 text-[12px]"
@@ -1174,6 +1273,78 @@ function AddPatientPanel({
           </div>
         </div>
       </form>
+    </div>
+  );
+}
+
+function PatientStatusDialog({
+  patientName,
+  mode,
+  initialDateKey,
+  isSaving,
+  onClose,
+  onConfirm,
+}: {
+  patientName: string;
+  mode: 'discharge' | 'readmit';
+  initialDateKey: string;
+  isSaving: boolean;
+  onClose: () => void;
+  onConfirm: (dateKey: string) => void | Promise<void>;
+}) {
+  const [dateKey, setDateKey] = useState(initialDateKey);
+  const isValidDate = isValidClinicalDateInput(dateKey);
+  const isReadmit = mode === 'readmit';
+
+  return (
+    <div className="fixed inset-0 z-[75] flex items-end bg-zinc-950/30 p-3 sm:items-center sm:justify-center">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={isReadmit ? '재입원 처리' : '퇴원 처리'}
+        className="w-full rounded-lg border border-zinc-200 bg-white shadow-xl sm:max-w-md"
+      >
+        <div className="border-b border-zinc-200 px-4 py-3">
+          <h2 className="text-[14px] font-medium text-zinc-900">
+            {isReadmit ? '재입원 처리' : '퇴원 처리'}
+          </h2>
+          <p className="mt-1 text-[12px] text-zinc-500">
+            {patientName} 환자를 {isReadmit ? '다시 입원 환자로 변경할까요?' : '퇴원 환자로 변경할까요?'}
+          </p>
+        </div>
+        <div className="grid gap-2 p-4">
+          <Field label={isReadmit ? '재입원일' : '퇴원일'}>
+            <Input
+              value={dateKey}
+              type="date"
+              min="1900-01-01"
+              max={formatDateInput(new Date())}
+              onChange={setDateKey}
+            />
+            {dateKey && !isValidDate && (
+              <span className="text-[10.5px] text-red-600">1900년부터 오늘 사이로 입력</span>
+            )}
+          </Field>
+        </div>
+        <div className="flex justify-end gap-2 px-4 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSaving}
+            className="h-8 rounded-md border border-zinc-200 px-3 text-[12px] font-medium text-zinc-600 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            disabled={isSaving || !isValidDate}
+            onClick={() => void onConfirm(dateKey)}
+            className="h-8 rounded-md bg-zinc-900 px-3 text-[12px] font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:bg-zinc-300"
+          >
+            {isSaving ? '저장 중' : isReadmit ? '재입원' : '퇴원'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1546,10 +1717,11 @@ function validatePatientDraft(
   indexes: PatientListIndexes,
   excludePatientId?: string
 ) {
-  if (draft.patientType === 'admitted' && !draft.roomBed.trim()) return '병실을 입력해주세요.';
+  if (!draft.roomBed.trim()) return '병실을 입력해주세요.';
   if (!draft.registrationNumber.trim()) return '등록번호를 입력해주세요.';
   if (!draft.name.trim()) return '이름을 입력해주세요.';
   if (!isValidBirthDateInput(draft.birthDate)) return '생년월일을 확인해주세요.';
+  if (!isValidClinicalDateInput(draft.admissionDate)) return '입원일을 확인해주세요.';
 
   const registrationNumberOwner = indexes.registrationNumbers.get(
     normalizePatientKey(draft.registrationNumber)
@@ -1571,6 +1743,7 @@ function areAddPatientDraftsEqual(left: AddPatientDraft, right: AddPatientDraft)
     left.name === right.name &&
     left.registrationNumber === right.registrationNumber &&
     left.birthDate === right.birthDate &&
+    left.admissionDate === right.admissionDate &&
     left.sex === right.sex &&
     left.patientType === right.patientType &&
     left.attendingPhysician === right.attendingPhysician &&
@@ -1582,10 +1755,11 @@ function buildAddPatientPanelValidationMessages(draft: AddPatientDraft) {
   const messages: string[] = [];
   if (!draft.name.trim()) messages.push('이름을 입력해주세요.');
   if (!draft.registrationNumber.trim()) messages.push('등록번호를 입력해주세요.');
-  if (draft.patientType === 'admitted' && !draft.roomBed.trim())
-    messages.push('병실을 입력해주세요.');
+  if (!draft.roomBed.trim()) messages.push('병실을 입력해주세요.');
   if (!isValidBirthDateInput(draft.birthDate))
     messages.push('생년월일은 1900년부터 오늘 사이로 입력해주세요.');
+  if (!isValidClinicalDateInput(draft.admissionDate))
+    messages.push('입원일은 1900년부터 오늘 사이로 입력해주세요.');
   return messages;
 }
 
@@ -1603,10 +1777,11 @@ function isValidClinicalDateInput(value: string) {
 
 function draftFromPatient(patient: Patient): AddPatientDraft {
   return {
-    roomBed: patient.patientType === 'consult' ? '' : patient.roomBed,
+    roomBed: patient.roomBed,
     name: patient.name,
     registrationNumber: patient.registrationNumber,
     birthDate: formatDateInput(patient.birthDate),
+    admissionDate: formatDateInput(patient.admissionDate),
     sex: patient.sex,
     patientType: patient.patientType,
     attendingPhysician: patient.attendingPhysician,

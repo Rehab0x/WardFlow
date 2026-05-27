@@ -322,14 +322,23 @@ const PatientRowItem = memo(function PatientRowItem({
       fullAge={formatDetailedAge(patient.birthDate)}
       chiefComplaint={patient.chiefComplaint}
       selected={selected}
-      attention={patient.attention}
-      reminder={indicators?.reminder}
-      schedule={indicators?.schedule}
-      antibiotic={indicators?.antibiotic}
-      lab={indicators?.lab}
-      changed={indicators?.changed}
-      changedDetail={indicators?.changedDetail}
+      attention={patient.status === 'discharged' ? false : patient.attention}
+      reminder={patient.status === 'discharged' ? false : indicators?.reminder}
+      schedule={patient.status === 'discharged' ? false : indicators?.schedule}
+      antibiotic={patient.status === 'discharged' ? false : indicators?.antibiotic}
+      lab={patient.status === 'discharged' ? false : indicators?.lab}
+      changed={patient.status === 'discharged' ? false : indicators?.changed}
+      changedDetail={patient.status === 'discharged' ? undefined : indicators?.changedDetail}
+      rightLabel={
+        patient.status === 'discharged' && patient.dischargeDate
+          ? formatRailDate(patient.dischargeDate)
+          : undefined
+      }
       onClick={handleClick}
     />
   );
 });
+
+function formatRailDate(date: Date) {
+  return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
+}
