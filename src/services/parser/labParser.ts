@@ -1,5 +1,5 @@
 import { getLabInfo, getLabInfoForXls, findLabByName, extractCleanName } from './labCodeMap';
-import { getHLFlag, getLabReference, getLabReferenceByName } from '@/utils/labReference';
+import { getHLFlag, getLabReference, getLabReferenceByName } from '../../utils/labReference';
 
 export interface ParsedLabItem {
   code: string;

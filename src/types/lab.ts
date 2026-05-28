@@ -3,7 +3,7 @@
  */
 
 // Re-export from database
-export type { LabResult, LabItem } from '@/db/database';
+export type { LabResult, LabItem } from '../db/database';
 
 /**
  * Lab 카테고리

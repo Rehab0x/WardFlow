@@ -3,7 +3,31 @@
  * Defaults are based on the hospital XLS format and can be overridden in Settings.
  */
 
-import type { LabReference } from '@/types/lab';
+interface LabReference {
+  code: string;
+  name: string;
+  category:
+    | 'CBC'
+    | 'WBC Diff'
+    | 'BC'
+    | 'Chemistry'
+    | 'Electrolyte'
+    | 'LFT'
+    | 'RFT'
+    | 'Coagulation'
+    | 'Cardiac'
+    | 'Infection'
+    | 'Thyroid'
+    | 'UA'
+    | 'Urine Sediment'
+    | 'Serology'
+    | 'Culture'
+    | 'Other';
+  unit: string;
+  referenceMin?: number;
+  referenceMax?: number;
+  referenceText?: string;
+}
 
 export const LAB_REFERENCES: LabReference[] = [
   {
