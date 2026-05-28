@@ -4,7 +4,7 @@ declare const process: { env: Record<string, string | undefined> };
 
 type VercelRequest = {
   method?: string;
-  headers: Record<string, string | string[] | undefined>;
+  headers?: HeaderSource;
   body?: unknown;
   query?: Record<string, string | string[] | undefined>;
 };
@@ -16,31 +16,37 @@ type VercelResponse = {
   end: () => void;
 };
 
+type HeaderSource =
+  | Record<string, string | string[] | undefined>
+  | {
+      get: (name: string) => string | null;
+    };
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Lab-Import-Key');
+  try {
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Lab-Import-Key');
 
-  if (req.method === 'OPTIONS') {
-    res.status(204).end();
-    return;
-  }
-
-  if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Method not allowed. Use POST.' });
-    return;
-  }
-
-  const configuredApiKey = process.env.LAB_IMPORT_API_KEY?.trim();
-  if (configuredApiKey) {
-    const providedKey =
-      getHeader(req, 'x-lab-import-key') ?? getBearerToken(getHeader(req, 'authorization'));
-    if (providedKey !== configuredApiKey) {
-      res.status(401).json({ error: 'Unauthorized.' });
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
       return;
     }
-  }
 
-  try {
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Method not allowed. Use POST.' });
+      return;
+    }
+
+    const configuredApiKey = process.env.LAB_IMPORT_API_KEY?.trim();
+    if (configuredApiKey) {
+      const providedKey =
+        getHeader(req, 'x-lab-import-key') ?? getBearerToken(getHeader(req, 'authorization'));
+      if (providedKey !== configuredApiKey) {
+        res.status(401).json({ error: 'Unauthorized.' });
+        return;
+      }
+    }
+
     const body = parseBody(req.body);
     const syncKey = String(
       readInput(body, 'syncKey') ?? readInput(req.query ?? {}, 'syncKey') ?? ''
@@ -83,10 +89,19 @@ function parseBody(body: unknown): Record<string, unknown> {
 }
 
 function getHeader(req: VercelRequest, name: string) {
-  const direct = req.headers[name];
-  const lower = req.headers[name.toLowerCase()];
-  const value = direct ?? lower;
-  return Array.isArray(value) ? value[0] : value;
+  const headers = req.headers;
+  if (!headers) return undefined;
+
+  if ('get' in headers && typeof headers.get === 'function') {
+    return headers.get(name)?.trim() || undefined;
+  }
+
+  const headerMap = headers as Record<string, string | string[] | undefined>;
+  const lowerName = name.toLowerCase();
+  const key = Object.keys(headerMap).find((headerName) => headerName.toLowerCase() === lowerName);
+  const value = key ? headerMap[key] : undefined;
+  const firstValue = Array.isArray(value) ? value[0] : value;
+  return firstValue?.trim() || undefined;
 }
 
 function getBearerToken(value: string | undefined) {
