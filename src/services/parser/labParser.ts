@@ -635,6 +635,13 @@ function extractGroupsFromRows(rows: string[][]): XlsPatientGroup[] {
 function inferCategory(code: string, name: string): string {
   const lower = name.toLowerCase();
   if (
+    lower.includes('culture') ||
+    lower.includes('諛곗뼇') ||
+    lower.startsWith('cre-') ||
+    lower.startsWith('cre ')
+  )
+    return 'Culture';
+  if (
     lower.includes('cbc') ||
     lower.includes('혈액검사') ||
     lower.includes('백혈구') ||

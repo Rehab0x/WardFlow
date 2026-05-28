@@ -170,11 +170,47 @@ export function getLabInfoForXls(code: string, rawName: string): LabCodeInfo | u
   const normalizedCode = code.trim();
   const normalizedName = rawName.trim().toLowerCase();
 
+  const culture = resolveCultureName(rawName);
+  if (culture) return { name: culture, category: 'Culture', unit: '' };
+
+  const wbcDiff = resolveWbcDiffName(rawName);
+  if (wbcDiff) return { name: wbcDiff, category: 'WBC Diff', unit: '%' };
+
   if (normalizedCode.toUpperCase() === 'B00301' && normalizedName.includes('leukocyte')) {
     return { name: 'Leukocyte', category: 'UA', unit: '' };
   }
 
   return getLabInfo(normalizedCode);
+}
+
+function resolveCultureName(rawName: string): string | undefined {
+  const normalized = rawName.trim().toLowerCase();
+  if (!/(culture|cre|배양)/i.test(normalized)) return undefined;
+  if (/urine|소변|尿/.test(normalized)) return 'CRE-Urine Culture';
+  if (/blood|혈액/.test(normalized)) return 'CRE-Blood Culture';
+  if (/sputum|객담/.test(normalized)) return 'Sputum Culture';
+  if (/wound|상처/.test(normalized)) return 'Wound Culture';
+  if (/rectal|rectum|직장/.test(normalized)) return 'CRE-Rectal swab';
+  return normalized.includes('cre') ? 'CRE Culture' : 'Culture';
+}
+
+function resolveWbcDiffName(rawName: string): string | undefined {
+  const normalized = rawName.trim().toLowerCase();
+  const aliases: Array<[RegExp, string]> = [
+    [/^n\.?\s*segment|segmented|neutrophil/, 'Neutrophil'],
+    [/lymphocyte|^lymph\b/, 'Lymphocyte'],
+    [/monocyte|^mono\b/, 'Monocyte'],
+    [/eosinophil|^eosino?\b/, 'Eosinophil'],
+    [/basophil|^baso\b/, 'Basophil'],
+    [/promyelocyte/, 'Promyelocyte'],
+    [/myelocyte/, 'Myelocyte'],
+    [/metamyelocyte/, 'Metamyelocyte'],
+    [/band/, 'Band neutrophil'],
+    [/large\s+unstained|luc\b/, 'Large unstained cell'],
+    [/blast/, 'Blast'],
+  ];
+
+  return aliases.find(([pattern]) => pattern.test(normalized))?.[1];
 }
 
 /** Lookup by name (fuzzy match) */
@@ -206,6 +242,13 @@ const NAME_ALIASES: Record<string, string> = {
   Mono: 'Monocyte',
   Eosino: 'Eosinophil',
   Baso: 'Basophil',
+  Myelocyte: 'Myelocyte',
+  Metamyelocyte: 'Metamyelocyte',
+  Promyelocyte: 'Promyelocyte',
+  'Band neutrophil': 'Band neutrophil',
+  'Large unstained cell': 'Large unstained cell',
+  LUC: 'Large unstained cell',
+  Blast: 'Blast',
   Creatinine: 'Creatinine',
   Cr: 'Creatinine',
   GGT: 'γ-GTP',

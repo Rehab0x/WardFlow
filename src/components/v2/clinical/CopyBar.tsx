@@ -11,9 +11,13 @@ export function CopyBar({ title, text, emptyText = '복사할 내용 없음' }: 
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
   const resetTimerRef = useRef<number | null>(null);
-  const lines = useMemo(() => text.split('\n').map((line) => line.trim()).filter(Boolean), [text]);
-  const preview = lines.slice(0, 3).join(' / ');
-  const disabled = lines.length === 0;
+  const normalizedText = useMemo(() => text.replace(/\r\n/g, '\n').replace(/\r/g, '\n'), [text]);
+  const previewLines = useMemo(
+    () => normalizedText.split('\n').map((line) => line.trim()).filter(Boolean),
+    [normalizedText]
+  );
+  const preview = previewLines.slice(0, 3).join(' / ');
+  const disabled = normalizedText.trim().length === 0;
 
   useEffect(() => {
     setCopied(false);
@@ -50,7 +54,7 @@ export function CopyBar({ title, text, emptyText = '복사할 내용 없음' }: 
     }
 
     try {
-      await navigator.clipboard.writeText(lines.join('\n'));
+      await navigator.clipboard.writeText(normalizedText);
       setCopied(true);
       setFailed(false);
       scheduleReset(() => setCopied(false), 1400);
@@ -66,9 +70,9 @@ export function CopyBar({ title, text, emptyText = '복사할 내용 없음' }: 
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">
           <div className="text-[12px] font-medium text-zinc-900">{title}</div>
-          {lines.length > 0 && (
+          {previewLines.length > 0 && (
             <span className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 font-mono text-[10px] text-zinc-500">
-              {lines.length}
+              {previewLines.length}
             </span>
           )}
         </div>

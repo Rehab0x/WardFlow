@@ -192,16 +192,16 @@ export function LabTable({ results, categories: categoriesProp, onItemClick, onC
       {/* Main Lab Table */}
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
-            <thead className="bg-muted/30 sticky top-0">
+          <table className="w-max min-w-full table-fixed text-sm border-collapse">
+            <thead className="bg-muted/30 sticky top-0 z-30">
               <tr>
-                <th className="border-r bg-background px-3 py-2 text-left font-semibold sticky left-0 z-10 min-w-[120px]">
+                <th className="border-r bg-background px-3 py-2 text-left font-semibold sticky left-0 z-40 w-[150px] min-w-[150px] shadow-[1px_0_0_hsl(var(--border))]">
                   항목
                 </th>
                 {allDates.map((date) => (
                   <th
                     key={date}
-                    className="border-r px-2 py-2 text-center font-medium whitespace-nowrap min-w-[100px] group/date"
+                    className="border-r bg-muted/30 px-2 py-2 text-center font-medium whitespace-nowrap w-[108px] min-w-[108px] group/date"
                   >
                     <div className="flex items-center justify-center gap-1">
                       <span>{formatDate(new Date(date))}</span>
@@ -234,7 +234,7 @@ export function LabTable({ results, categories: categoriesProp, onItemClick, onC
                     </div>
                   </th>
                 ))}
-                <th className="bg-background px-3 py-2 text-left font-medium sticky right-0 z-10 min-w-[100px]">
+                <th className="bg-background px-3 py-2 text-left font-medium sticky right-0 z-40 w-[116px] min-w-[116px] shadow-[-1px_0_0_hsl(var(--border))]">
                   참조범위
                 </th>
               </tr>
@@ -244,13 +244,13 @@ export function LabTable({ results, categories: categoriesProp, onItemClick, onC
                 if (row.type === 'header') {
                   return (
                     <tr key={`header-${row.category}-${idx}`}>
-                      <td className="px-3 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider sticky left-0 z-10 bg-muted/50 border-t">
+                      <td className="px-3 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider sticky left-0 z-30 w-[150px] min-w-[150px] bg-muted border-t shadow-[1px_0_0_hsl(var(--border))]">
                         {row.category}
                       </td>
                       {allDates.map((date) => (
-                        <td key={date} className="bg-muted/40 border-t" />
+                        <td key={date} className="w-[108px] min-w-[108px] bg-muted/40 border-t" />
                       ))}
-                      <td className="sticky right-0 z-10 bg-muted/40 border-t" />
+                      <td className="sticky right-0 z-30 w-[116px] min-w-[116px] bg-muted border-t shadow-[-1px_0_0_hsl(var(--border))]" />
                     </tr>
                   );
                 }
@@ -263,11 +263,11 @@ export function LabTable({ results, categories: categoriesProp, onItemClick, onC
                   >
                     {/* Item Name (Sticky Left) - Click for trend chart */}
                     <td
-                      className="border-r bg-background px-3 py-2 font-medium sticky left-0 z-10 cursor-pointer hover:bg-muted/30"
+                      className="border-r bg-background px-3 py-2 font-medium sticky left-0 z-20 w-[150px] min-w-[150px] cursor-pointer shadow-[1px_0_0_hsl(var(--border))] hover:bg-muted"
                       onClick={() => handleItemClick(item.code, item.name)}
                       title="클릭하여 추이 차트 보기"
                     >
-                      <div className="font-semibold">{item.name}</div>
+                      <div className="truncate font-semibold">{item.name}</div>
                     </td>
 
                     {/* Values by Date - Click to edit */}
@@ -277,7 +277,7 @@ export function LabTable({ results, categories: categoriesProp, onItemClick, onC
                         return (
                           <td
                             key={date}
-                            className="border-r px-3 py-2 text-center text-muted-foreground cursor-pointer hover:bg-muted/20"
+                            className="border-r px-3 py-2 text-center text-muted-foreground cursor-pointer hover:bg-muted/20 w-[108px] min-w-[108px]"
                             onClick={(e) => {
                               e.stopPropagation();
                               onCellClick?.(date, item.name, '');
@@ -293,7 +293,7 @@ export function LabTable({ results, categories: categoriesProp, onItemClick, onC
                         <td
                           key={date}
                           className={cn(
-                            'border-r px-3 py-2 text-center font-semibold cursor-pointer hover:opacity-70 transition-opacity',
+                            'border-r px-3 py-2 text-center font-semibold cursor-pointer hover:opacity-70 transition-opacity w-[108px] min-w-[108px]',
                             (() => {
                               // Use store-based reference range check first, fallback to DB flags
                               const numVal = typeof labItem.value === 'number' ? labItem.value : parseFloat(String(labItem.value));
@@ -321,7 +321,7 @@ export function LabTable({ results, categories: categoriesProp, onItemClick, onC
                     })}
 
                     {/* Reference Range (Sticky Right) */}
-                    <td className="bg-background px-3 py-2 text-xs text-muted-foreground sticky right-0 z-10">
+                    <td className="bg-background px-3 py-2 text-xs text-muted-foreground sticky right-0 z-20 w-[116px] min-w-[116px] shadow-[-1px_0_0_hsl(var(--border))]">
                       {item.referenceMin !== undefined && item.referenceMax !== undefined
                         ? `${item.referenceMin}-${item.referenceMax}`
                         : item.referenceMax !== undefined

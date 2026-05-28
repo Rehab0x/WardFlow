@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseLabText } from './labParser';
+import { getLabInfoForXls } from './labCodeMap';
 
 describe('parseLabText', () => {
   it('parses OCS paste text with section headers, default references, and HbA1c NGSP value', () => {
@@ -41,5 +42,22 @@ describe('parseLabText', () => {
     expect(byName.get('HbA1c')?.value).toBe('7.4');
     expect(byName.get('HbA1c')?.flag).toBe('H');
     expect(result.unmatched).not.toContain('HbA1c-IFCC   : 58');
+  });
+});
+
+describe('getLabInfoForXls', () => {
+  it('keeps culture and uncommon WBC differential names in their clinical categories', () => {
+    expect(getLabInfoForXls('B00301', 'CRE-Urine culture')).toMatchObject({
+      name: 'CRE-Urine Culture',
+      category: 'Culture',
+    });
+    expect(getLabInfoForXls('B10911', 'Myelocyte')).toMatchObject({
+      name: 'Myelocyte',
+      category: 'WBC Diff',
+    });
+    expect(getLabInfoForXls('B10911', 'Large unstained cell')).toMatchObject({
+      name: 'Large unstained cell',
+      category: 'WBC Diff',
+    });
   });
 });

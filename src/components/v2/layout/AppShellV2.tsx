@@ -98,6 +98,7 @@ export function AppShellV2({
         onSearchChange={onSearchChange}
         onAddPatient={handleAddPatient}
         onOpenLabImport={onOpenLabImport}
+        onToday={handleToday}
         onSettings={handleSettings}
         onLogout={onLogout}
         onTogglePatients={openPatients}

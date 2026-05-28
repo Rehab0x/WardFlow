@@ -2159,7 +2159,26 @@ function buildStandardLabItemOptions(): StandardLabItemOption[] {
 }
 
 function areDraftsEqual(left: ChartingDraft, right: ChartingDraft) {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return JSON.stringify(normalizeChartingDraft(left)) === JSON.stringify(normalizeChartingDraft(right));
+}
+
+function normalizeChartingDraft(draft: ChartingDraft): ChartingDraft {
+  return {
+    chiefComplaint: normalizeChartingText(draft.chiefComplaint),
+    onset: normalizeChartingText(draft.onset),
+    presentIllness: normalizeChartingText(draft.presentIllness),
+    pastHistory: normalizeChartingText(draft.pastHistory),
+    reviewOfSystem: normalizeChartingText(draft.reviewOfSystem),
+    physicalExam: normalizeChartingText(draft.physicalExam),
+    problemListText: normalizeChartingText(draft.problemListText),
+    plan: normalizeChartingText(draft.plan),
+    guardianExplanation: normalizeChartingText(draft.guardianExplanation),
+    etc: normalizeChartingText(draft.etc),
+  };
+}
+
+function normalizeChartingText(value: string) {
+  return value.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trimEnd();
 }
 
 function normalizeClockTime(value?: string) {
