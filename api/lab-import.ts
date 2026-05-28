@@ -1,4 +1,4 @@
-import { processStorageInboxFromApi } from '../src/services/server/storageLabImportApi';
+import { processStorageInboxFromApi } from '../src/services/server/storageLabImportApi.js';
 
 declare const process: { env: Record<string, string | undefined> };
 

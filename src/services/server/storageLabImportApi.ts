@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { parseLabXls, type ParsedLabItem } from '../parser/labParser';
+import { parseLabXls, type ParsedLabItem } from '../parser/labParser.js';
 import type { Database } from '../../types/supabase';
 
 declare const process: { env: Record<string, string | undefined> };
