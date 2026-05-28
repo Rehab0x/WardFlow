@@ -8,14 +8,17 @@ import {
   type ReactNode,
   type SetStateAction,
 } from 'react';
+import { Bot, Check, Copy, Loader2, X } from 'lucide-react';
 import type { Patient } from '@/db/database';
 import type { BriefingData } from '@/services/briefingService';
 import { LabParseInput } from '@/components/lab/LabParseInput';
 import { TemplatePopup } from '@/components/charting/TemplatePopup';
+import { generateSOAP } from '@/services/aiService';
 import type { ParsedLabItem } from '@/services/parser/labParser';
 import { parseOCSMedication, type ParsedMedication } from '@/services/parser/medParser';
 import type { TemplateField } from '@/services/templateService';
 import { DEFAULT_LAB_CATEGORIES, labCategoryService } from '@/services/labCategoryService';
+import { useAIStore } from '@/stores/useAIStore';
 import { getLabReferenceByName } from '@/utils/labReference';
 import type { LabResult } from '@/types/lab';
 import type { Medication } from '@/types/medication';
@@ -1482,6 +1485,12 @@ function NotesTab({
   const [content, setContent] = useState('');
   const [type, setType] = useState<'progress' | 'reminder'>('progress');
   const [saving, setSaving] = useState(false);
+  const [soapResult, setSoapResult] = useState('');
+  const [soapLoading, setSoapLoading] = useState(false);
+  const [soapSaving, setSoapSaving] = useState(false);
+  const [soapCopied, setSoapCopied] = useState(false);
+  const [soapError, setSoapError] = useState('');
+  const aiConfigured = useAIStore((state) => state.isConfigured());
   const notes = useMemo(
     () => [
       ...data.reminders
@@ -1493,12 +1502,26 @@ function NotesTab({
     ],
     [data.progressNotes, data.reminders, patient.id]
   );
+  const patientProgressNotes = useMemo(
+    () => notes.filter((item) => item.type === 'progress'),
+    [notes]
+  );
+  const soapContext = useMemo(
+    () => buildSoapContext(patient, data, content, patientProgressNotes),
+    [content, data, patient, patientProgressNotes]
+  );
   const hasDraft = Boolean(content.trim());
+  const canGenerateSoap = aiConfigured && Boolean(soapContext.progressNote.trim());
 
   useEffect(() => {
     setContent('');
     setType('progress');
     setSaving(false);
+    setSoapResult('');
+    setSoapLoading(false);
+    setSoapSaving(false);
+    setSoapCopied(false);
+    setSoapError('');
   }, [patient.id]);
   useEffect(() => onDirtyChange?.(hasDraft), [hasDraft, onDirtyChange]);
 
@@ -1515,6 +1538,47 @@ function NotesTab({
       setSaving(false);
     }
   }, [content, onAddNote, saving, type]);
+
+  const generateSoapNote = useCallback(async () => {
+    if (!canGenerateSoap || soapLoading) return;
+    setSoapLoading(true);
+    setSoapError('');
+    setSoapCopied(false);
+    try {
+      const result = await generateSOAP(soapContext);
+      setSoapResult(result.trim());
+    } catch (error) {
+      setSoapError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSoapLoading(false);
+    }
+  }, [canGenerateSoap, soapContext, soapLoading]);
+
+  const copySoapNote = useCallback(async () => {
+    if (!soapResult.trim()) return;
+    try {
+      await navigator.clipboard.writeText(soapResult);
+      setSoapCopied(true);
+      window.setTimeout(() => setSoapCopied(false), 1400);
+    } catch {
+      setSoapError('클립보드 복사에 실패했습니다.');
+    }
+  }, [soapResult]);
+
+  const saveSoapNote = useCallback(async () => {
+    const text = soapResult.trim();
+    if (!text || soapSaving) return;
+    setSoapSaving(true);
+    setSoapError('');
+    try {
+      await onAddNote?.(text, 'progress');
+      setSoapResult('');
+    } catch (error) {
+      setSoapError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSoapSaving(false);
+    }
+  }, [onAddNote, soapResult, soapSaving]);
 
   return (
     <div className="space-y-3">
@@ -1543,6 +1607,75 @@ function NotesTab({
           <SaveButton disabled={!hasDraft} pending={saving} onClick={save}>
             저장
           </SaveButton>
+        </div>
+      </DataSection>
+      <DataSection title="AI SOAP 생성">
+        <div className="space-y-2 p-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={!canGenerateSoap || soapLoading}
+              onClick={generateSoapNote}
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 text-[12px] font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300"
+            >
+              {soapLoading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Bot className="h-3.5 w-3.5" />
+              )}
+              SOAP 생성
+            </button>
+            <span className="text-[11px] text-zinc-400">
+              {!aiConfigured
+                ? '설정 > AI 설정에서 API 키를 먼저 입력하세요.'
+                : soapContext.progressNote.trim()
+                  ? '입력 중인 메모와 최근 정보를 바탕으로 초안을 만듭니다.'
+                  : '메모를 입력하거나 최근 경과 메모가 필요합니다.'}
+            </span>
+          </div>
+
+          {soapError && (
+            <div className="rounded border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-700">
+              {soapError}
+            </div>
+          )}
+
+          {soapResult && (
+            <div className="rounded-md border border-zinc-200 bg-white">
+              <div className="flex items-center justify-between border-b border-zinc-100 px-2 py-1.5">
+                <span className="text-[12px] font-medium text-zinc-800">SOAP 초안</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={copySoapNote}
+                    className="inline-flex h-7 items-center justify-center gap-1 rounded-md px-2 text-[11px] text-zinc-600 hover:bg-zinc-100"
+                  >
+                    {soapCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                    복사
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveSoapNote}
+                    disabled={soapSaving}
+                    className="inline-flex h-7 items-center justify-center rounded-md bg-zinc-900 px-2 text-[11px] font-medium text-white hover:bg-zinc-700 disabled:bg-zinc-300"
+                  >
+                    {soapSaving ? '저장 중' : '메모로 저장'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSoapResult('')}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+                    aria-label="SOAP 초안 닫기"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+              <pre className="max-h-80 overflow-auto whitespace-pre-wrap p-2 font-mono text-[12px] leading-5 text-zinc-700">
+                {soapResult}
+              </pre>
+            </div>
+          )}
         </div>
       </DataSection>
       <DataSection title="메모" count={notes.length}>
@@ -2054,6 +2187,51 @@ function buildChartingCopy(draft: ChartingDraft) {
   ].filter(Boolean);
 
   return [headerLines.join('\n'), ...bodySections].filter(Boolean).join('\n\n');
+}
+
+function buildSoapContext(
+  patient: Patient,
+  data: BriefingData,
+  draftNote: string,
+  progressNotes: Array<{ content: string }>
+) {
+  const noteLines = [
+    draftNote.trim() && `[작성 중]\n${draftNote.trim()}`,
+    ...progressNotes.slice(0, 5).map((item) => item.content.trim()).filter(Boolean),
+  ].filter(Boolean);
+  const medicationLines = data.antibiotics
+    .filter((item) => item.patientId === patient.id)
+    .map((item) =>
+      [
+        item.drugName,
+        item.dosage,
+        item.frequency,
+        `D+${item.dDay}`,
+        item.endDate ? `until ${formatDateInput(item.endDate)}` : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
+    );
+  const labLines = data.recentLabs
+    .filter((item) => item.patientId === patient.id)
+    .slice(0, 5)
+    .map((item) =>
+      [
+        item.dateKey,
+        item.abnormalItems.length > 0
+          ? item.abnormalItems.join(', ')
+          : `abnormal 0/${item.totalItems}`,
+      ].join(': ')
+    );
+
+  return {
+    patientName: patient.name,
+    chiefComplaint: patient.chiefComplaint,
+    onset: patient.onset,
+    progressNote: noteLines.join('\n\n'),
+    currentMedications: medicationLines.join('\n'),
+    recentLab: labLines.join('\n'),
+  };
 }
 
 function buildLabValueTable(labs: LabResult[], extraDateKey?: string) {
