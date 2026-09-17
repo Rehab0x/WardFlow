@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseLabText } from './labParser';
-import { getLabInfoForXls } from './labCodeMap';
+import { getLabInfoForXls, findLabByName } from './labCodeMap';
 
 describe('parseLabText', () => {
   it('parses OCS paste text with section headers, default references, and HbA1c NGSP value', () => {
@@ -59,5 +59,59 @@ describe('getLabInfoForXls', () => {
       name: 'Large unstained cell',
       category: 'WBC Diff',
     });
+  });
+
+  it('maps Creatinine chemistry codes/names without treating them as CRE culture', () => {
+    expect(getLabInfoForXls('B2740', 'Creatinine')).toMatchObject({
+      name: 'Creatinine',
+      category: 'BC',
+      unit: 'mg/dL',
+    });
+    expect(getLabInfoForXls('D2280', 'Creatinine')).toMatchObject({
+      name: 'Creatinine',
+      category: 'BC',
+      unit: 'mg/dL',
+    });
+    expect(getLabInfoForXls('B2740', 'Cr')).toMatchObject({
+      name: 'Creatinine',
+      category: 'BC',
+    });
+  });
+
+  it('maps CRE culture names and b4114 codes to culture, not Creatinine', () => {
+    expect(getLabInfoForXls('b4114U', 'CRE-Urine')).toMatchObject({
+      name: 'CRE-Urine Culture',
+      category: 'Culture',
+    });
+    expect(getLabInfoForXls('b4114R', 'CRE-Rectal swab')).toMatchObject({
+      name: 'CRE-Rectal swab',
+      category: 'Culture',
+    });
+    expect(getLabInfoForXls('b4114B', 'CRE-Blood')).toMatchObject({
+      name: 'CRE-Blood Culture',
+      category: 'Culture',
+    });
+    expect(getLabInfoForXls('X', 'CRE-Urine')).toMatchObject({
+      name: 'CRE-Urine Culture',
+      category: 'Culture',
+    });
+    expect(getLabInfoForXls('X', 'CRE-Rectal swab')).toMatchObject({
+      name: 'CRE-Rectal swab',
+      category: 'Culture',
+    });
+    expect(getLabInfoForXls('X', 'CRE-Blood')).toMatchObject({
+      name: 'CRE-Blood Culture',
+      category: 'Culture',
+    });
+  });
+});
+
+describe('findLabByName CRE vs Creatinine', () => {
+  it('resolves Cr/Creatinine to chemistry and CRE* names to culture', () => {
+    expect(findLabByName('Creatinine')?.name).toBe('Creatinine');
+    expect(findLabByName('Cr')?.name).toBe('Creatinine');
+    expect(findLabByName('CRE-Urine Culture')?.name).toBe('CRE-Urine Culture');
+    expect(findLabByName('CRE-Blood Culture')?.name).toBe('CRE-Blood Culture');
+    expect(findLabByName('cre')?.name).not.toBe('Creatinine');
   });
 });

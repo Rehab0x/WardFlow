@@ -122,6 +122,8 @@ export const LAB_CODE_MAP: Record<string, LabCodeInfo> = {
 
   // Culture
   b4114B: { name: 'CRE-Blood Culture', category: 'Culture', unit: '' },
+  b4114U: { name: 'CRE-Urine Culture', category: 'Culture', unit: '' },
+  b4114R: { name: 'CRE-Rectal swab', category: 'Culture', unit: '' },
   B4051: { name: 'Wound Culture', category: 'Culture', unit: '' },
 
   // Serology
@@ -170,6 +172,13 @@ export function getLabInfoForXls(code: string, rawName: string): LabCodeInfo | u
   const normalizedCode = code.trim();
   const normalizedName = rawName.trim().toLowerCase();
 
+  const byCode = getLabInfo(normalizedCode);
+
+  // Prefer explicit Culture code mappings (b4114B/U/R, B4051, …)
+  if (byCode?.category === 'Culture') {
+    return byCode;
+  }
+
   const culture = resolveCultureName(rawName);
   if (culture) return { name: culture, category: 'Culture', unit: '' };
 
@@ -180,18 +189,26 @@ export function getLabInfoForXls(code: string, rawName: string): LabCodeInfo | u
     return { name: 'Leukocyte', category: 'UA', unit: '' };
   }
 
-  return getLabInfo(normalizedCode);
+  return byCode;
 }
 
+/**
+ * Detect culture specimen names.
+ * Align with labParser (`^cre-|^cre `): do NOT treat Creatinine / Cr as CRE culture.
+ */
 function resolveCultureName(rawName: string): string | undefined {
   const normalized = rawName.trim().toLowerCase();
-  if (!/(culture|cre|배양)/i.test(normalized)) return undefined;
+  const hasCultureWord = /culture|배양/.test(normalized);
+  // Word-boundary CRE- / CRE  (not the "cre" substring inside "creatinine")
+  const hasCrePrefix = /(^|\s)cre([-\s]|$)/.test(normalized);
+  if (!hasCultureWord && !hasCrePrefix) return undefined;
+
   if (/urine|소변|尿/.test(normalized)) return 'CRE-Urine Culture';
   if (/blood|혈액/.test(normalized)) return 'CRE-Blood Culture';
   if (/sputum|객담/.test(normalized)) return 'Sputum Culture';
   if (/wound|상처/.test(normalized)) return 'Wound Culture';
   if (/rectal|rectum|직장/.test(normalized)) return 'CRE-Rectal swab';
-  return normalized.includes('cre') ? 'CRE Culture' : 'Culture';
+  return hasCrePrefix ? 'CRE Culture' : 'Culture';
 }
 
 function resolveWbcDiffName(rawName: string): string | undefined {
@@ -213,19 +230,48 @@ function resolveWbcDiffName(rawName: string): string | undefined {
   return aliases.find(([pattern]) => pattern.test(normalized))?.[1];
 }
 
+function resolveNameAlias(name: string): string {
+  const trimmed = name.trim();
+  const direct = NAME_ALIASES[trimmed];
+  if (direct) return direct;
+  const lower = trimmed.toLowerCase();
+  for (const [alias, target] of Object.entries(NAME_ALIASES)) {
+    if (alias.toLowerCase() === lower) return target;
+  }
+  return trimmed;
+}
+
+/** True when fuzzy match would confuse Creatinine / Cr with CRE culture names. */
+function isCreCreatinineCollision(query: string, infoName: string): boolean {
+  const q = query.toLowerCase();
+  const n = infoName.toLowerCase();
+  const queryIsCreCulture =
+    q === 'cre' || q.startsWith('cre-') || q.startsWith('cre ') || /\bcre[- ]/.test(q);
+  const infoIsCreatinine = n === 'creatinine';
+  const queryIsCreatinine = q === 'creatinine' || q === 'cr';
+  const infoIsCreCulture = n.startsWith('cre-') || n === 'cre culture';
+  return (queryIsCreCulture && infoIsCreatinine) || (queryIsCreatinine && infoIsCreCulture);
+}
+
 /** Lookup by name (fuzzy match) */
 export function findLabByName(name: string): (LabCodeInfo & { code: string }) | undefined {
   const lower = name.toLowerCase().trim();
+  const aliased = resolveNameAlias(name).toLowerCase();
+
   for (const [code, info] of Object.entries(LAB_CODE_MAP)) {
-    if (info.name.toLowerCase() === lower) {
+    const infoName = info.name.toLowerCase();
+    if (infoName === lower || infoName === aliased) {
       return { ...info, code };
     }
   }
-  // Partial match fallback
+  // Partial match fallback — skip CRE ↔ Creatinine collisions
   for (const [code, info] of Object.entries(LAB_CODE_MAP)) {
-    if (info.name.toLowerCase().includes(lower) || lower.includes(info.name.toLowerCase())) {
-      return { ...info, code };
+    const infoName = info.name.toLowerCase();
+    if (!(infoName.includes(lower) || lower.includes(infoName))) continue;
+    if (isCreCreatinineCollision(lower, infoName) || isCreCreatinineCollision(aliased, infoName)) {
+      continue;
     }
+    return { ...info, code };
   }
   return undefined;
 }
