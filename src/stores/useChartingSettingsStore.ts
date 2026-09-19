@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { DEFAULT_COPY_FORMAT } from '@/types/charting';
@@ -119,3 +120,31 @@ export const useChartingSettingsStore = create<ChartingSettingsStore>()(
     }
   )
 );
+
+/**
+ * 복사 포맷을 **참조가 안정적인 형태로** 구독한다.
+ *
+ * `getCopyFormat()`은 호출할 때마다 새 객체를 만들기 때문에
+ * `useChartingSettingsStore((s) => s.getCopyFormat())`처럼 selector 안에서 부르면
+ * zustand(useSyncExternalStore)가 매번 새 스냅샷으로 판단해 무한 렌더 루프에 빠진다.
+ * 컴포넌트에서는 반드시 이 훅을 쓸 것.
+ */
+export function useChartingCopyFormat(): ChartingCopyFormat {
+  const sectionSeparator = useChartingSettingsStore((state) => state.sectionSeparator);
+  const includeFieldNames = useChartingSettingsStore((state) => state.includeFieldNames);
+  const excludeEmptySections = useChartingSettingsStore((state) => state.excludeEmptySections);
+  const problemListStyle = useChartingSettingsStore((state) => state.problemListStyle);
+  const sectionNames = useChartingSettingsStore((state) => state.sectionNames);
+
+  return useMemo(
+    () => ({
+      sectionSeparator,
+      fieldSeparator: DEFAULT_COPY_FORMAT.fieldSeparator,
+      includeFieldNames,
+      excludeEmptySections,
+      problemListStyle,
+      sectionNames,
+    }),
+    [sectionSeparator, includeFieldNames, excludeEmptySections, problemListStyle, sectionNames]
+  );
+}

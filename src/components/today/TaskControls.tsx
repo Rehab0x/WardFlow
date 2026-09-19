@@ -10,7 +10,11 @@ export function TaskFilterControl({
   onChange: (value: TaskFilter) => void;
 }) {
   return (
-    <div className="flex max-w-full overflow-x-auto rounded-md border border-zinc-200 bg-zinc-50 p-0.5">
+    <div
+      role="group"
+      aria-label="할 일 필터"
+      className="flex max-w-full overflow-x-auto rounded-md border border-zinc-200 bg-zinc-50 p-0.5"
+    >
       {options.map((option) => (
         <button
           key={option.value}

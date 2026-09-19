@@ -4,7 +4,7 @@ import { DataSection } from '@/components/clinical/DataSection';
 import { formatClockTime } from '@/components/clinical/dateLabels';
 import { TemplatePopup } from '@/components/charting/TemplatePopup';
 import type { TemplateField } from '@/services/templateService';
-import { useChartingSettingsStore } from '@/stores/useChartingSettingsStore';
+import { useChartingCopyFormat } from '@/stores/useChartingSettingsStore';
 import { ChartField } from '../controls';
 import type { ChartingDraft } from '../types';
 import { buildChartingCopy } from '../workspaceData';
@@ -58,7 +58,7 @@ export function ChartingTab({
   } | null>(null);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [saving, setSaving] = useState(false);
-  const copyFormat = useChartingSettingsStore((state) => state.getCopyFormat());
+  const copyFormat = useChartingCopyFormat();
   const isDirty = !areDraftsEqual(draft, initialDraft);
   const copyText = useMemo(() => buildChartingCopy(draft, copyFormat), [draft, copyFormat]);
 

@@ -392,7 +392,7 @@
 
 ### 5.6 검증 `@Reviewer`
 - [x] `npm run type-check` 통과
-- [x] `npx vitest run` 전체 통과 — **159 tests / 27 files** (기존 131 → Dexie 성능 테스트 10건 제거, 신규 38건 추가)
+- [x] `npx vitest run` 전체 통과 — **171 tests / 30 files** (기존 131 → Dexie 성능 테스트 10건 제거, 신규 38건 추가)
 - [x] `npm run build` 통과
 - [x] `npm run lint` **에러 0** (경고 15건은 shadcn/ui fast-refresh 권고 등 기존 항목)
 - [x] 삭제된 기능에 대한 죽은 테스트 정리
@@ -406,6 +406,15 @@
 - [ ] `PRD.md` 인덱싱/오프라인 관련 기술 전제 재검토 — Dexie 인덱싱 전략(7.3절) 등 Supabase 기준으로 다시 쓸 필요
 
 ---
+
+### 5.9 차팅 탭 렌더 회귀 수정 `@Coder-Logic` `@Reviewer`
+> 사용자 제보: 차팅 탭 진입 시 화면이 비어 있음. 5.4에서 차팅 설정 연동을 붙이며 들어간 회귀.
+- [x] 원인 규명 — `useChartingSettingsStore((s) => s.getCopyFormat())`가 selector마다 새 객체를 반환해 `useSyncExternalStore` 무한 렌더 루프 (Maximum update depth exceeded)
+- [x] `useChartingCopyFormat()` 훅 신설 — 원시값 단위 구독 + `useMemo`로 참조 고정
+- [x] 전 스토어 selector 전수 점검 (`isConfigured()`는 boolean 반환이라 안전)
+- [x] 회귀 테스트: `PatientWorkspace.test.tsx` 6개 탭 렌더 스모크 + 탭 전환 (수정 되돌리면 실패하는 것 확인)
+- [x] `TodayDashboard.test.tsx` 렌더/필터/검색 스모크 추가
+- [x] 접근성 개선: 지표 타일 그룹 `aria-label="오늘 지표"`, 할 일 필터 그룹 `aria-label="할 일 필터"`
 
 ## 이슈 / 메모
 > 작업 중 발견된 이슈, 결정 사항, 보류 항목을 기록

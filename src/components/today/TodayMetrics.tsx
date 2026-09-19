@@ -24,7 +24,11 @@ export function TodayMetrics({
   onSelectFilter,
 }: TodayMetricsProps) {
   return (
-    <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-7">
+    <div
+      role="group"
+      aria-label="오늘 지표"
+      className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-7"
+    >
       <MetricTile label="입원" value={summary.admitted} />
       <MetricTile label="협진" value={summary.consult} />
       <MetricTile

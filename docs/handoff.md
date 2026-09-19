@@ -356,7 +356,7 @@ Use `docs/supabase-validation.md` for the current Supabase validation checklist.
 
 ### 검증 (2026-09-19)
 - `npm run type-check` 통과
-- `npx vitest run` — 27 files / **159 tests** 통과
+- `npx vitest run` — 30 files / **171 tests** 통과
   (Dexie 성능 테스트 10건 제거, 신규 38건 추가: `workspaceInput`, `workspaceData`,
   `todayTasks`, `patientDraft`, `optimisticBriefing`, `registrationNumber`)
 - `npm run build` 통과. recharts(≈380kB)는 `chart-vendor` 청크로 분리되어
@@ -372,6 +372,17 @@ Use `docs/supabase-validation.md` for the current Supabase validation checklist.
   (`VITE_DATA_BACKEND`는 더 이상 읽지 않으므로 남아 있어도 무해)
 - 배포본 `index.html` modulepreload = react-vendor / ui-vendor / supabase-vendor 만.
   recharts(≈387kB)는 `LabChart` 동적 청크로만 로드된다
+
+### 배포 후 수정 (2026-09-19)
+- **차팅 탭이 빈 화면으로 뜨는 회귀** — 5.4에서 차팅 설정을 연동하며
+  `useChartingSettingsStore((s) => s.getCopyFormat())`로 구독했는데, 이 getter가 호출할 때마다
+  새 객체를 반환해 `useSyncExternalStore`가 매번 새 스냅샷으로 판단 → 무한 렌더 루프
+  (Maximum update depth exceeded) → 탭이 아무것도 그리지 못했다.
+- 수정: `useChartingCopyFormat()` 훅 신설 (원시값 단위 구독 + `useMemo`로 참조 고정).
+  `getCopyFormat()`에는 selector에서 직접 쓰지 말라는 주석을 달아두었다.
+- **테스트 공백이 원인**: 순수 함수는 테스트했지만 컴포넌트가 실제로 렌더되는지는 보지 않았다.
+  `PatientWorkspace.test.tsx`(탭 6개 렌더 + 전환)와 `TodayDashboard.test.tsx`를 추가했고,
+  수정을 되돌리면 실패하는 것까지 확인했다.
 
 ### 다음 세션이 먼저 볼 것
 1. **배포된 앱에서 수동 스모크 테스트** — 로그인, 환자 추가/수정/삭제, 퇴원·재입원,
