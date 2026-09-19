@@ -1,23 +1,17 @@
 import { create } from 'zustand';
-import { db } from '@/db/database';
-import type { LabResult, LabItem } from '@/types/lab';
-import type { LabTrendData } from '@/types/lab';
-import { useSupabaseBackend } from '@/config/backend';
+import type { LabItem, LabResult, LabTrendData } from '@/types/lab';
 import { useAuthStore } from './useAuthStore';
 import {
-  createLabResult as createSupabaseLabResult,
+  createLabResult,
   type LabItemValueMetadata,
-  listLabsByPatient as listSupabaseLabsByPatient,
-  softDeleteLabResult as softDeleteSupabaseLabResult,
-  updateLabItemValue as updateSupabaseLabItemValue,
+  listLabsByPatient,
+  softDeleteLabResult,
+  updateLabItemValue as updateLabItemValueRow,
 } from '@/data/labs.repository';
-import {
-  fromDomainLabResult,
-  toDomainLabItemCreateInput,
-} from '@/mappers/legacyClinical.mapper';
+import { fromDomainLabResult, toDomainLabItemCreateInput } from '@/mappers/clinicalView.mapper';
 import { formatUserFacingError } from '@/lib/errorMessages';
 import { removeById, replaceById, upsertById } from './storeUtils';
-import { getHLFlag, getLabReferenceByName } from '@/utils/labReference';
+import { formatDate } from '@/utils/dateUtils';
 
 interface LabStore {
   labs: LabResult[];
@@ -41,7 +35,11 @@ interface LabStore {
     newValue: string | number,
     metadata?: LabItemValueMetadata
   ) => Promise<void>;
-  getLabTrendData: (patientId: string, itemCode: string, itemName: string) => Promise<LabTrendData | null>;
+  getLabTrendData: (
+    patientId: string,
+    itemCode: string,
+    itemName: string
+  ) => Promise<LabTrendData | null>;
 }
 
 export const useLabStore = create<LabStore>((set) => ({
@@ -52,20 +50,8 @@ export const useLabStore = create<LabStore>((set) => ({
   fetchLabsByPatient: async (patientId: string) => {
     set({ isLoading: true, error: null });
     try {
-      if (useSupabaseBackend) {
-        const labs = (await listSupabaseLabsByPatient(patientId)).map(fromDomainLabResult);
-        set({ labs, isLoading: false });
-        return;
-      }
-
-      const labs = await db.labResults
-        .where('patientId')
-        .equals(patientId)
-        .reverse() // Most recent first
-        .sortBy('testDate');
-
-      const nextLabs = labs.reverse();
-      set({ labs: nextLabs, isLoading: false });
+      const labs = (await listLabsByPatient(patientId)).map(fromDomainLabResult);
+      set({ labs, isLoading: false });
     } catch (error) {
       set({
         error: formatUserFacingError(error, 'Lab 결과를 불러오지 못했습니다.'),
@@ -76,45 +62,21 @@ export const useLabStore = create<LabStore>((set) => ({
 
   addLabResult: async (patientId, category, items, testDate, source = 'manual') => {
     try {
-      if (useSupabaseBackend) {
-        const { currentUser } = useAuthStore.getState();
-        if (!currentUser) throw new Error('로그인이 필요합니다.');
-        const labResult = await createSupabaseLabResult({
-          patientId,
-          category,
-          items: items.map((item, index) => toDomainLabItemCreateInput(item, index)),
-          testDate,
-          source,
-          createdBy: currentUser.id,
-        });
-        const legacyLab = fromDomainLabResult(labResult);
-        set((state) => ({
-          labs: upsertById(state.labs, legacyLab),
-        }));
-        return legacyLab.id;
-      }
-
-      const id = `lab${Date.now()}`;
-      const now = new Date();
-
-      const labResult: LabResult = {
-        id,
+      const { currentUser } = useAuthStore.getState();
+      if (!currentUser) throw new Error('로그인이 필요합니다.');
+      const labResult = await createLabResult({
         patientId,
-        testDate,
         category,
-        items,
+        items: items.map((item, index) => toDomainLabItemCreateInput(item, index)),
+        testDate,
         source,
-        createdAt: now,
-      };
-
-      await db.labResults.add(labResult);
-
-      // Update local state
+        createdBy: currentUser.id,
+      });
+      const viewLab = fromDomainLabResult(labResult);
       set((state) => ({
-        labs: upsertById(state.labs, labResult),
+        labs: upsertById(state.labs, viewLab),
       }));
-
-      return id;
+      return viewLab.id;
     } catch (error) {
       set({
         error: formatUserFacingError(error, 'Lab 결과를 추가하지 못했습니다.'),
@@ -125,17 +87,7 @@ export const useLabStore = create<LabStore>((set) => ({
 
   deleteLabResult: async (id: string) => {
     try {
-      if (useSupabaseBackend) {
-        await softDeleteSupabaseLabResult(id);
-        set((state) => ({
-          labs: removeById(state.labs, id),
-        }));
-        return;
-      }
-
-      await db.labResults.delete(id);
-
-      // Update local state
+      await softDeleteLabResult(id);
       set((state) => ({
         labs: removeById(state.labs, id),
       }));
@@ -155,161 +107,21 @@ export const useLabStore = create<LabStore>((set) => ({
     metadata?: LabItemValueMetadata
   ) => {
     try {
-      if (useSupabaseBackend) {
-        const updatedLab = await updateSupabaseLabItemValue({
-          patientId,
-          date,
-          itemName,
-          newValue,
-          metadata,
-        });
-        if (!updatedLab) return;
+      const updatedLab = await updateLabItemValueRow({
+        patientId,
+        date,
+        itemName,
+        newValue,
+        metadata,
+      });
+      if (!updatedLab) return;
 
-        const legacyLab = fromDomainLabResult(updatedLab);
-        set((state) => {
-          const existingIndex = state.labs.findIndex((lab) => lab.id === legacyLab.id);
-          if (existingIndex === -1) {
-            return { labs: [legacyLab, ...state.labs] };
-          }
-
-          return { labs: replaceById(state.labs, legacyLab.id, legacyLab) };
-        });
-        return;
-      }
-
-      // Find the lab result matching patient + date + item
-      const allLabs = await db.labResults
-        .where('patientId')
-        .equals(patientId)
-        .toArray();
-
-      // 순수 숫자 판별 (공백 trim 후 -?digits.digits 만 허용)
-      // "1+", "2+", "+", "trace" 같은 질적 값은 문자열로 유지
-      const PURE_NUMERIC = /^-?\d+(\.\d+)?$/;
-      const valueStr = typeof newValue === 'string' ? newValue.trim() : String(newValue);
-      const isNumeric = PURE_NUMERIC.test(valueStr);
-      const numVal = isNumeric ? parseFloat(valueStr) : NaN;
-      const reference = getLabReferenceByName(itemName);
-      const referenceMin = metadata?.referenceMin ?? reference?.referenceMin;
-      const referenceMax = metadata?.referenceMax ?? reference?.referenceMax;
-      const unit = metadata?.unit ?? reference?.unit ?? '';
-      const hlFlag = isNumeric
-        ? getHLFlag(numVal, {
-            code: metadata?.code ?? reference?.code ?? '',
-            name: itemName,
-            category: (metadata?.category ?? reference?.category ?? 'Other') as never,
-            unit,
-            referenceMin,
-            referenceMax,
-          })
-        : undefined;
-      const isAbnormal = Boolean(hlFlag);
-
-      // Find labs matching date
-      let targetLab: LabResult | undefined;
-      let itemIndex = -1;
-
-      for (const lab of allLabs) {
-        const labDateKey = `${lab.testDate.getFullYear()}-${String(lab.testDate.getMonth() + 1).padStart(2, '0')}-${String(lab.testDate.getDate()).padStart(2, '0')}`;
-        if (labDateKey !== date) continue;
-
-        const idx = lab.items.findIndex((i) => i.name === itemName);
-        if (idx !== -1) {
-          targetLab = lab;
-          itemIndex = idx;
-          break;
-        }
-        // Remember first non-Culture lab on that date as fallback for adding new item
-        if (!targetLab && lab.category !== 'Culture') targetLab = lab;
-      }
-
-      if (targetLab && itemIndex !== -1) {
-        // If value is empty, remove the item
-        if (valueStr === '') {
-          const updatedItems = targetLab.items.filter((_, i) => i !== itemIndex);
-          await db.labResults.update(targetLab.id, { items: updatedItems });
-          set((state) => ({
-            labs: state.labs.map((l) =>
-              l.id === targetLab!.id ? { ...l, items: updatedItems } : l
-            ),
-          }));
-          return;
-        }
-
-        // Update existing item with recalculated abnormal flags
-        const updatedItems = [...targetLab.items];
-        const existingItem = updatedItems[itemIndex]!;
-        const refMin = existingItem.referenceMin;
-        const refMax = existingItem.referenceMax;
-        updatedItems[itemIndex] = {
-          ...existingItem,
-          value: isNumeric ? numVal : valueStr,
-          isAbnormal: isNumeric
-            ? (refMin !== undefined && (numVal as number) < refMin) ||
-              (refMax !== undefined && (numVal as number) > refMax)
-            : false,
-          hlFlag: isNumeric
-            ? (refMax !== undefined && (numVal as number) > refMax ? 'H'
-              : refMin !== undefined && (numVal as number) < refMin ? 'L'
-              : undefined)
-            : undefined,
-        };
-
-        await db.labResults.update(targetLab.id, { items: updatedItems });
-
-        set((state) => ({
-          labs: state.labs.map((l) =>
-            l.id === targetLab!.id ? { ...l, items: updatedItems } : l
-          ),
-        }));
-      } else if (targetLab) {
-        // Add new item to existing non-Culture lab result on that date
-        const newItem: LabItem = {
-          code: metadata?.code ?? reference?.code,
-          name: itemName,
-          value: isNumeric ? numVal : valueStr,
-          unit,
-          referenceMin,
-          referenceMax,
-          isAbnormal,
-          hlFlag,
-        };
-        const updatedItems = [...targetLab.items, newItem];
-        await db.labResults.update(targetLab.id, { items: updatedItems });
-        set((state) => ({
-          labs: state.labs.map((l) =>
-            l.id === targetLab!.id ? { ...l, items: updatedItems } : l
-          ),
-        }));
-      } else {
-        // No non-Culture lab result on that date — create a new one
-        const [y, m, d] = date.split('-').map(Number);
-        const testDate = new Date(y ?? 0, (m ?? 1) - 1, d ?? 1);
-        const newId = `lab${Date.now()}`;
-        const newItem: LabItem = {
-          code: metadata?.code ?? reference?.code,
-          name: itemName,
-          value: isNumeric ? numVal : valueStr,
-          unit,
-          referenceMin,
-          referenceMax,
-          isAbnormal,
-          hlFlag,
-        };
-        const newLab: LabResult = {
-          id: newId,
-          patientId,
-          testDate,
-          category: metadata?.category ?? reference?.category ?? 'Other',
-          items: [newItem],
-          source: 'manual',
-          createdAt: new Date(),
-        };
-        await db.labResults.add(newLab);
-        set((state) => ({
-          labs: [...state.labs, newLab],
-        }));
-      }
+      const viewLab = fromDomainLabResult(updatedLab);
+      set((state) => {
+        const exists = state.labs.some((lab) => lab.id === viewLab.id);
+        if (!exists) return { labs: [viewLab, ...state.labs] };
+        return { labs: replaceById(state.labs, viewLab.id, viewLab) };
+      });
     } catch (error) {
       set({
         error: formatUserFacingError(error, 'Lab 항목을 수정하지 못했습니다.'),
@@ -320,48 +132,7 @@ export const useLabStore = create<LabStore>((set) => ({
 
   getLabTrendData: async (patientId: string, itemCode: string, itemName: string) => {
     try {
-      if (useSupabaseBackend) {
-        const allLabs = await listSupabaseLabsByPatient(patientId);
-        const dataPoints: LabTrendData['dataPoints'] = [];
-        let unit = '';
-        let referenceMin: number | undefined;
-        let referenceMax: number | undefined;
-
-        for (const lab of allLabs) {
-          const item = lab.items.find(
-            (i) => (itemCode && i.code === itemCode) || i.name === itemName
-          );
-
-          if (!item) continue;
-
-          if (!unit && item.unit) unit = item.unit;
-          if (referenceMin === undefined && item.referenceMin !== undefined) {
-            referenceMin = item.referenceMin;
-          }
-          if (referenceMax === undefined && item.referenceMax !== undefined) {
-            referenceMax = item.referenceMax;
-          }
-
-          const dateKey = `${lab.testDate.getFullYear()}-${String(lab.testDate.getMonth() + 1).padStart(2, '0')}-${String(lab.testDate.getDate()).padStart(2, '0')}`;
-          dataPoints.push({
-            date: dateKey,
-            value: item.valueNumeric ?? item.valueText,
-            isAbnormal: item.isAbnormal,
-            hlFlag: item.hlFlag,
-          });
-        }
-
-        if (dataPoints.length === 0) return null;
-        return { itemCode, itemName, unit, referenceMin, referenceMax, dataPoints };
-      }
-
-      // Fetch all lab results for this patient
-      const allLabs = await db.labResults
-        .where('patientId')
-        .equals(patientId)
-        .sortBy('testDate');
-
-      // Extract data points for the specific item
+      const allLabs = await listLabsByPatient(patientId);
       const dataPoints: LabTrendData['dataPoints'] = [];
       let unit = '';
       let referenceMin: number | undefined;
@@ -372,42 +143,28 @@ export const useLabStore = create<LabStore>((set) => ({
           (i) => (itemCode && i.code === itemCode) || i.name === itemName
         );
 
-        if (item) {
-          // Set unit and reference range from first occurrence
-          if (!unit && item.unit) {
-            unit = item.unit;
-          }
-          if (referenceMin === undefined && item.referenceMin !== undefined) {
-            referenceMin = item.referenceMin;
-          }
-          if (referenceMax === undefined && item.referenceMax !== undefined) {
-            referenceMax = item.referenceMax;
-          }
+        if (!item) continue;
 
-          // Use local date to avoid timezone shift (toISOString uses UTC)
-          const td = lab.testDate;
-          const localDate = `${td.getFullYear()}-${String(td.getMonth() + 1).padStart(2, '0')}-${String(td.getDate()).padStart(2, '0')}`;
-          dataPoints.push({
-            date: localDate,
-            value: item.value,
-            isAbnormal: item.isAbnormal,
-            hlFlag: item.hlFlag,
-          });
+        if (!unit && item.unit) unit = item.unit;
+        if (referenceMin === undefined && item.referenceMin !== undefined) {
+          referenceMin = item.referenceMin;
         }
+        if (referenceMax === undefined && item.referenceMax !== undefined) {
+          referenceMax = item.referenceMax;
+        }
+
+        dataPoints.push({
+          date: formatDate(lab.testDate),
+          value: item.valueNumeric ?? item.valueText,
+          isAbnormal: item.isAbnormal,
+          hlFlag: item.hlFlag,
+        });
       }
 
-      if (dataPoints.length === 0) {
-        return null;
-      }
+      if (dataPoints.length === 0) return null;
 
-      return {
-        itemCode,
-        itemName,
-        unit,
-        referenceMin,
-        referenceMax,
-        dataPoints,
-      };
+      dataPoints.sort((a, b) => a.date.localeCompare(b.date));
+      return { itemCode, itemName, unit, referenceMin, referenceMax, dataPoints };
     } catch (error) {
       console.error('Lab 추세 데이터를 불러오지 못했습니다:', error);
       return null;

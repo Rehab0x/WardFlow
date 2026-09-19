@@ -1,7 +1,14 @@
 /**
- * Note related types
- * Re-export from database.ts
+ * Note — 앱 레벨(뷰모델) 메모 타입.
  */
-export type { Note } from '../db/database';
+export type NoteType = 'progress' | 'reminder';
 
-export type NoteType = 'rounding' | 'progress' | 'todo';
+export interface Note {
+  id: string;
+  patientId: string;
+  content: string;
+  type: NoteType;
+  alertDate?: Date; // 알림 날짜 (reminder 타입일 때만 사용)
+  createdAt: Date;
+  updatedAt: Date;
+}

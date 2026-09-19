@@ -1,13 +1,4 @@
-import {
-  Bot,
-  Calendar,
-  FileText,
-  FlaskConical,
-  HardDrive,
-  Lock,
-  Shield,
-  Unlock,
-} from 'lucide-react';
+import { Bot, Calendar, FileText, FlaskConical, HardDrive, Shield } from 'lucide-react';
 import {
   SETTINGS_GROUPS,
   type SettingsSectionDescriptor,
@@ -22,22 +13,18 @@ const SECTION_ICONS: Record<SettingsSectionIconKey, React.ComponentType<{ classN
   fileText: FileText,
   flask: FlaskConical,
   hardDrive: HardDrive,
-  lock: Lock,
   shield: Shield,
-  unlock: Unlock,
 };
 
 export function SettingsSidebar({
   sections,
   activeSection,
   userName,
-  backendLabel,
   onSelect,
 }: {
   sections: SettingsSectionDescriptor[];
   activeSection: SettingsSectionId;
   userName: string;
-  backendLabel: string;
   onSelect: (id: SettingsSectionId) => void;
 }) {
   return (
@@ -45,7 +32,6 @@ export function SettingsSidebar({
       <div className="mb-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
         <div className="text-xs font-medium text-zinc-500">현재 사용자</div>
         <div className="mt-1 truncate text-sm font-semibold text-zinc-950">{userName}</div>
-        <div className="mt-0.5 text-xs text-zinc-500">{backendLabel} 모드</div>
       </div>
       {SETTINGS_GROUPS.map((group) => {
         const items = sections.filter((section) => section.group === group);

@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createUserAccessDraft } from '@/lib/adminAccess';
 import { DEFAULT_CATEGORIES, useScheduleCategoryStore } from '@/stores/useScheduleCategoryStore';
-import type { Patient } from '@/db/database';
+import type { Patient } from '@/types/patient';
 import type { User } from '@/types/user';
 import { AdminMemberAccess } from './AdminMemberAccess';
 import { AdminPatientOwnership } from './AdminPatientOwnership';

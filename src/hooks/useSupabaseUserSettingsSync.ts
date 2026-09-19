@@ -1,8 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { useSupabaseBackend } from '@/config/backend';
 import { getUserSetting, setUserSetting } from '@/data/settings.repository';
 import { useAuthStore } from '@/stores/useAuthStore';
-import { useCalendarColorStore } from '@/stores/useCalendarColorStore';
 import { useChartingSettingsStore } from '@/stores/useChartingSettingsStore';
 import { useLabReferenceStore } from '@/stores/useLabReferenceStore';
 import { useScheduleCategoryStore } from '@/stores/useScheduleCategoryStore';
@@ -21,10 +19,6 @@ type ScheduleCategoriesPayload = {
   categories?: ReturnType<typeof useScheduleCategoryStore.getState>['categories'];
 };
 
-type CalendarColorsPayload = {
-  colors?: ReturnType<typeof useCalendarColorStore.getState>['colors'];
-};
-
 type LabReferencesPayload = {
   overrides?: ReturnType<typeof useLabReferenceStore.getState>['overrides'];
 };
@@ -35,7 +29,7 @@ export function useSupabaseUserSettingsSync() {
   const saveTimersRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
-    if (!useSupabaseBackend || !currentUser) return;
+    if (!currentUser) return;
 
     let cancelled = false;
     hydratedRef.current = false;
@@ -43,10 +37,9 @@ export function useSupabaseUserSettingsSync() {
 
     const hydrate = async () => {
       try {
-        const [chartingRaw, scheduleCategoriesRaw, calendarColorsRaw, labReferencesRaw] = await Promise.all([
+        const [chartingRaw, scheduleCategoriesRaw, labReferencesRaw] = await Promise.all([
           getUserSetting<Json>('charting-settings'),
           getUserSetting<Json>('schedule-categories'),
-          getUserSetting<Json>('calendar-colors'),
           getUserSetting<Json>('lab-references'),
         ]);
 
@@ -54,7 +47,6 @@ export function useSupabaseUserSettingsSync() {
 
         const charting = chartingRaw as ChartingSettingsPayload | null;
         const scheduleCategories = scheduleCategoriesRaw as ScheduleCategoriesPayload | null;
-        const calendarColors = calendarColorsRaw as CalendarColorsPayload | null;
         const labReferences = labReferencesRaw as LabReferencesPayload | null;
 
         if (charting) {
@@ -63,10 +55,6 @@ export function useSupabaseUserSettingsSync() {
 
         if (scheduleCategories?.categories) {
           useScheduleCategoryStore.getState().replaceCategories(scheduleCategories.categories);
-        }
-
-        if (calendarColors?.colors) {
-          useCalendarColorStore.getState().replaceColors(calendarColors.colors);
         }
 
         if (labReferences?.overrides) {
@@ -88,7 +76,7 @@ export function useSupabaseUserSettingsSync() {
   }, [currentUser]);
 
   useEffect(() => {
-    if (!useSupabaseBackend || !currentUser) return;
+    if (!currentUser) return;
 
     const scheduleSave = (key: string, value: unknown) => {
       if (!hydratedRef.current) return;
@@ -122,10 +110,6 @@ export function useSupabaseUserSettingsSync() {
       scheduleSave('schedule-categories', { categories: state.categories });
     });
 
-    const unsubCalendar = useCalendarColorStore.subscribe((state) => {
-      scheduleSave('calendar-colors', { colors: state.colors });
-    });
-
     const unsubLabReferences = useLabReferenceStore.subscribe((state) => {
       scheduleSave('lab-references', { overrides: state.overrides });
     });
@@ -133,7 +117,6 @@ export function useSupabaseUserSettingsSync() {
     return () => {
       unsubCharting();
       unsubSchedule();
-      unsubCalendar();
       unsubLabReferences();
       Object.values(saveTimersRef.current).forEach((timer) => window.clearTimeout(timer));
       saveTimersRef.current = {};

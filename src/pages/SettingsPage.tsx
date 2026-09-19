@@ -5,8 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { AdminSettings } from '@/components/settings/AdminSettings';
-import { BackupSettings } from '@/components/settings/BackupSettings';
-import { PinSettings } from '@/components/settings/PinSettings';
+import { SupabaseBackupSettings } from '@/components/settings/SupabaseBackupSettings';
 import { SettingsMobileNav, SettingsSidebar } from '@/components/settings/SettingsNavigation';
 import {
   LabCategorySettings,
@@ -15,12 +14,9 @@ import {
 } from '@/components/settings/LabSettings';
 import {
   AISettings,
-  CalendarColorSettings,
   ChartingSettings,
   ScheduleCategorySettings,
 } from '@/components/settings/WorkSettings';
-import { useSupabaseBackend } from '@/config/backend';
-import { usePinLockStore } from '@/hooks/usePinLock';
 import {
   buildSettingsSections,
   getInitialSettingsSection,
@@ -33,21 +29,16 @@ const SettingsPage = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { currentUser } = useAuthStore();
-  const hasPin = usePinLockStore((state) => state.hasPin);
   const isAdmin = currentUser?.role === 'admin';
   const requestedSection = searchParams.get('section');
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(
     getInitialSettingsSection(requestedSection)
   );
 
-  const sections = useMemo(
-    () => buildSettingsSections({ hasPin, isAdmin, useSupabaseBackend }),
-    [hasPin, isAdmin, useSupabaseBackend]
-  );
+  const sections = useMemo(() => buildSettingsSections({ isAdmin }), [isAdmin]);
   const sectionPanels = useMemo(
     () =>
       ({
-        pin: <PinSettings />,
         admin: isAdmin ? (
           <AdminSettings />
         ) : (
@@ -55,12 +46,11 @@ const SettingsPage = () => {
         ),
         charting: <ChartingSettings />,
         'schedule-cat': <ScheduleCategorySettings />,
-        'calendar-color': <CalendarColorSettings />,
         'lab-cat': <LabCategorySettings />,
         'lab-ref': <LabReferenceSettings />,
         'lab-import': <LabImportSettings />,
         ai: <AISettings />,
-        backup: <BackupSettings />,
+        backup: <SupabaseBackupSettings />,
       }) satisfies Record<SettingsSectionId, React.ReactNode>,
     [isAdmin]
   );
@@ -88,12 +78,12 @@ const SettingsPage = () => {
           <div className="min-w-0">
             <h1 className="truncate text-sm font-semibold text-zinc-950">WardFlow 설정</h1>
             <p className="hidden text-xs text-muted-foreground sm:block">
-              {useSupabaseBackend ? 'Supabase v2 환경' : 'Legacy IndexedDB 환경'}
+              계정, 차팅, Lab, 백업 설정
             </p>
           </div>
         </div>
-        <Badge variant={useSupabaseBackend ? 'default' : 'outline'} className="text-[11px]">
-          {useSupabaseBackend ? 'Supabase' : 'Legacy'}
+        <Badge variant="default" className="text-[11px]">
+          {currentUser?.role === 'admin' ? '관리자' : '사용자'}
         </Badge>
       </header>
 
@@ -102,7 +92,6 @@ const SettingsPage = () => {
           sections={sections}
           activeSection={activeSection}
           userName={currentUser?.name ?? '-'}
-          backendLabel={useSupabaseBackend ? 'Supabase' : 'Legacy'}
           onSelect={selectSection}
         />
         <SettingsMobileNav

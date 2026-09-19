@@ -1,4 +1,4 @@
-import type { Patient } from '@/db/database';
+import type { Patient } from '@/types/patient';
 import type { User, UserRole, UserStatus } from '@/types/user';
 
 export type AdminPatientStatusFilter = 'all' | 'active' | 'discharged' | 'attention';

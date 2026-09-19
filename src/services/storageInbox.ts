@@ -1,3 +1,11 @@
+type StorageListEntry = {
+  name: string;
+  updated_at?: string | null;
+  created_at?: string | null;
+  size?: number | null;
+  metadata?: { size?: number | null } | null;
+};
+
 /**
  * Supabase Storage Inbox Service
  *
@@ -119,8 +127,9 @@ export async function listInboxFiles(syncKey: string): Promise<StorageFile[]> {
   return xlsFiles
     .map((f) => {
       const fullPath = `${syncKey}/${f.name}`;
-      const updatedAt = (f as any).updated_at || (f as any).created_at || '';
-      const size = (f.metadata as any)?.size ?? (f as any).size ?? 0;
+      const entry = f as StorageListEntry;
+      const updatedAt = entry.updated_at || entry.created_at || '';
+      const size = entry.metadata?.size ?? entry.size ?? 0;
       const record = findProcessedRecord(fullPath, size, updatedAt);
 
       return {

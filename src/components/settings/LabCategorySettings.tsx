@@ -12,7 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import type { LabDisplayCategory } from '@/db/database';
+import type { LabDisplayCategory } from '@/types/lab';
 import { useToast } from '@/hooks/use-toast';
 import { DEFAULT_LAB_CATEGORIES, labCategoryService } from '@/services/labCategoryService';
 

@@ -2,7 +2,6 @@ import { Search, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useSupabaseBackend } from '@/config/backend';
 import {
   ROLE_LABELS,
   STATUS_LABELS,
@@ -227,13 +226,7 @@ function MemberAccessRow({
             onClick={() => onDeactivate(user)}
             disabled={processing || !canDeactivate}
             aria-label={`${user.name} 회원 비활성화`}
-            title={
-              canDeactivate
-                ? useSupabaseBackend
-                  ? '거절 상태로 전환'
-                  : '회원 삭제'
-                : '이미 비활성화된 회원'
-            }
+            title={canDeactivate ? '거절 상태로 전환' : '이미 비활성화된 회원'}
           >
             <Trash2 className="h-3.5 w-3.5" />
           </Button>

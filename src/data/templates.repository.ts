@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import type { Template } from '@/db/database';
+import type { Template } from '@/types/template';
 import type { TemplateField } from '@/services/templateService';
 import type { Tables, Updates } from '@/types/supabase';
 

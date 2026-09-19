@@ -72,8 +72,9 @@ export default defineConfig({
       output: {
         manualChunks: {
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'ui-vendor': ['recharts', 'lucide-react'],
-          'db-vendor': ['dexie', 'dexie-react-hooks'],
+          'ui-vendor': ['lucide-react'],
+          'chart-vendor': ['recharts'],
+          'supabase-vendor': ['@supabase/supabase-js'],
         },
       },
     },

@@ -1,10 +1,9 @@
-import { useSupabaseBackend } from '@/config/backend';
 import { useSettingsSyncStatusStore } from '@/stores/useSettingsSyncStatusStore';
 
 export function AutoSaveStatus({ settingKey }: { settingKey: string }) {
   const status = useSettingsSyncStatusStore((state) => state.statuses[settingKey]);
 
-  if (!useSupabaseBackend || !status || status.state === 'idle') return null;
+  if (!status || status.state === 'idle') return null;
 
   if (status.state === 'pending') {
     return (

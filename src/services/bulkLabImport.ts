@@ -23,11 +23,10 @@
  * ────────────────────────────────────────────────
  */
 
-import { db } from '@/db/database';
-import type { Patient, LabItem } from '@/db/database';
+import type { LabItem } from '@/types/lab';
+import type { Patient } from '@/types/patient';
 import { parseLabXls, type XlsPatientGroup, type ParsedLabItem } from './parser/labParser';
 import { parseLocalDate } from '@/utils/dateUtils';
-import { useSupabaseBackend } from '@/config/backend';
 import {
   createLabResult,
   listNonCultureLabHeadersByPatients,
@@ -35,9 +34,10 @@ import {
   softDeleteLabResult,
 } from '@/data/labs.repository';
 import { listActivePatients } from '@/data/patients.repository';
+import { normalizeRegistrationNumber } from '@/lib/registrationNumber';
 import { supabase } from '@/lib/supabase';
-import { toDomainLabItemCreateInput } from '@/mappers/legacyClinical.mapper';
-import { fromDomainPatient } from '@/mappers/legacyPatient.mapper';
+import { toDomainLabItemCreateInput } from '@/mappers/clinicalView.mapper';
+import { fromDomainPatient } from '@/mappers/patientView.mapper';
 
 // ─────────────────────────────────────────────────
 // Types (exported for UI and automation use)
@@ -78,29 +78,22 @@ export interface BulkImportResult {
 async function processFile(buffer: ArrayBuffer): Promise<BulkImportPreview> {
   const groups = await parseLabXls(buffer);
 
-  // Load all patients from the active backend
-  const allPatients = useSupabaseBackend
-    ? (await listActivePatients()).map(fromDomainPatient)
-    : await db.patients.where('status').equals('active').toArray();
+  // Load all active patients from the server.
+  // 매칭 기준(앞자리 0 무시)은 `lib/registrationNumber`에 한 번만 정의되어 있으며
+  // 환자 등록 화면의 중복 검사도 같은 함수를 쓴다.
+  const allPatients = (await listActivePatients()).map(fromDomainPatient);
   const byRegNum = new Map<string, Patient>();
   for (const p of allPatients) {
-    if (p.registrationNumber) {
-      const raw = p.registrationNumber.trim();
-      byRegNum.set(raw, p);
-      // Also index by stripped leading zeros (e.g. "0000004532" → "4532")
-      byRegNum.set(raw.replace(/^0+/, ''), p);
-    }
+    const key = normalizeRegistrationNumber(p.registrationNumber);
+    if (key) byRegNum.set(key, p);
   }
 
   const matched: MatchedPatient[] = [];
   const unmatched: XlsPatientGroup[] = [];
 
   for (const group of groups) {
-    const regNum = group.registrationNumber?.trim();
-    // Match by exact or leading-zero-stripped registration number
-    const patient = regNum
-      ? (byRegNum.get(regNum) ?? byRegNum.get(regNum.replace(/^0+/, '')))
-      : undefined;
+    const regNumKey = normalizeRegistrationNumber(group.registrationNumber);
+    const patient = regNumKey ? byRegNum.get(regNumKey) : undefined;
 
     if (patient) {
       const testDate = group.orderDate
@@ -180,10 +173,13 @@ async function savePatient(match: MatchedPatient): Promise<void> {
   const { patient, group, testDate } = match;
   const grouped = groupByCategory(group.items);
 
-  // 날짜를 YYYY-MM-DD 문자열로 비교 (timezone 무관)
-  const dateKey = `${testDate.getFullYear()}-${String(testDate.getMonth() + 1).padStart(2, '0')}-${String(testDate.getDate()).padStart(2, '0')}`;
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  if (!user) throw new Error('User not authenticated.');
 
-  const now = new Date();
   for (const [category, items] of grouped.entries()) {
     const labItems: LabItem[] = items.map((item) => ({
       code: item.code || undefined,
@@ -196,54 +192,23 @@ async function savePatient(match: MatchedPatient): Promise<void> {
       hlFlag: item.flag || undefined,
     }));
 
-    if (useSupabaseBackend) {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-      if (userError) throw userError;
-      if (!user) throw new Error('User not authenticated.');
-
-      const existing = await listLabsByPatientDateAndCategory({
-        patientId: patient.id,
-        testDate,
-        category,
-      });
-      for (const lab of existing) {
-        await softDeleteLabResult(lab.id);
-      }
-
-      await createLabResult({
-        patientId: patient.id,
-        testDate,
-        category,
-        source: 'xls',
-        createdBy: user.id,
-        items: labItems.map((item, index) => toDomainLabItemCreateInput(item, index)),
-      });
-      continue;
-    }
-
-    // 같은 환자+카테고리의 기존 레코드 중 날짜가 같은 것을 삭제 (upsert)
-    const existing = await db.labResults
-      .where('[patientId+category]')
-      .equals([patient.id, category])
-      .toArray();
-    for (const e of existing) {
-      const eDateKey = `${e.testDate.getFullYear()}-${String(e.testDate.getMonth() + 1).padStart(2, '0')}-${String(e.testDate.getDate()).padStart(2, '0')}`;
-      if (eDateKey === dateKey) {
-        await db.labResults.delete(e.id);
-      }
-    }
-
-    await db.labResults.add({
-      id: crypto.randomUUID(),
+    // 같은 환자+날짜+카테고리의 기존 레코드를 지우고 다시 저장한다 (upsert)
+    const existing = await listLabsByPatientDateAndCategory({
       patientId: patient.id,
       testDate,
       category,
-      items: labItems,
+    });
+    for (const lab of existing) {
+      await softDeleteLabResult(lab.id);
+    }
+
+    await createLabResult({
+      patientId: patient.id,
+      testDate,
+      category,
       source: 'xls',
-      createdAt: now,
+      createdBy: user.id,
+      items: labItems.map((item, index) => toDomainLabItemCreateInput(item, index)),
     });
   }
 }
@@ -277,63 +242,11 @@ export interface RecentLabStatus {
  * Lab 파싱 시작 전 "누가 언제까지 Lab 이 들어가있는지" 한눈에 보기 위함.
  */
 async function getRecentLabStatus(): Promise<RecentLabStatus[]> {
-  if (useSupabaseBackend) {
-    const patients = (await listActivePatients()).map(fromDomainPatient);
-    const labs = await listNonCultureLabHeadersByPatients(patients.map((patient) => patient.id));
-    const latestByPatient = new Map<string, Date>();
-
-    for (const lab of labs) {
-      const existing = latestByPatient.get(lab.patientId);
-      if (!existing || lab.testDate > existing) {
-        latestByPatient.set(lab.patientId, lab.testDate);
-      }
-    }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const toDateStr = (d: Date) =>
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-    const result = patients.map((patient): RecentLabStatus => {
-      const latest = latestByPatient.get(patient.id);
-      let daysSince: number | null = null;
-      if (latest) {
-        const latestStart = new Date(latest.getFullYear(), latest.getMonth(), latest.getDate());
-        daysSince = Math.floor((today.getTime() - latestStart.getTime()) / (1000 * 60 * 60 * 24));
-      }
-
-      return {
-        patientId: patient.id,
-        patientName: patient.name,
-        roomBed: patient.roomBed,
-        patientType: patient.patientType,
-        registrationNumber: patient.registrationNumber ?? '',
-        latestLabDate: latest ? toDateStr(latest) : null,
-        daysSinceLatest: daysSince,
-      };
-    });
-
-    return result.sort((a, b) => {
-      if (a.latestLabDate === null && b.latestLabDate !== null) return -1;
-      if (a.latestLabDate !== null && b.latestLabDate === null) return 1;
-      if (a.latestLabDate && b.latestLabDate) {
-        return a.latestLabDate.localeCompare(b.latestLabDate);
-      }
-      return a.roomBed.localeCompare(b.roomBed, 'ko-KR', { numeric: true });
-    });
-  }
-
-  const patients = await db.patients
-    .where('status')
-    .equals('active')
-    .toArray();
-
-  const allLabs = await db.labResults.toArray();
-
-  // Latest non-Culture lab per patient
+  const patients = (await listActivePatients()).map(fromDomainPatient);
+  const labs = await listNonCultureLabHeadersByPatients(patients.map((patient) => patient.id));
   const latestByPatient = new Map<string, Date>();
-  for (const lab of allLabs) {
-    if (lab.category === 'Culture') continue;
+
+  for (const lab of labs) {
     const existing = latestByPatient.get(lab.patientId);
     if (!existing || lab.testDate > existing) {
       latestByPatient.set(lab.patientId, lab.testDate);
@@ -342,30 +255,29 @@ async function getRecentLabStatus(): Promise<RecentLabStatus[]> {
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-
   const toDateStr = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-  const result: RecentLabStatus[] = patients.map((p) => {
-    const latest = latestByPatient.get(p.id);
+  const result = patients.map((patient): RecentLabStatus => {
+    const latest = latestByPatient.get(patient.id);
     let daysSince: number | null = null;
     if (latest) {
       const latestStart = new Date(latest.getFullYear(), latest.getMonth(), latest.getDate());
       daysSince = Math.floor((today.getTime() - latestStart.getTime()) / (1000 * 60 * 60 * 24));
     }
+
     return {
-      patientId: p.id,
-      patientName: p.name,
-      roomBed: p.roomBed,
-      patientType: p.patientType,
-      registrationNumber: p.registrationNumber ?? '',
+      patientId: patient.id,
+      patientName: patient.name,
+      roomBed: patient.roomBed,
+      patientType: patient.patientType,
+      registrationNumber: patient.registrationNumber ?? '',
       latestLabDate: latest ? toDateStr(latest) : null,
       daysSinceLatest: daysSince,
     };
   });
 
-  // Sort: never-lab first, then oldest lab first (most urgent to update)
-  result.sort((a, b) => {
+  return result.sort((a, b) => {
     if (a.latestLabDate === null && b.latestLabDate !== null) return -1;
     if (a.latestLabDate !== null && b.latestLabDate === null) return 1;
     if (a.latestLabDate && b.latestLabDate) {
@@ -373,8 +285,6 @@ async function getRecentLabStatus(): Promise<RecentLabStatus[]> {
     }
     return a.roomBed.localeCompare(b.roomBed, 'ko-KR', { numeric: true });
   });
-
-  return result;
 }
 
 // ─────────────────────────────────────────────────

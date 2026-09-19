@@ -2,8 +2,37 @@
  * Lab (검사 결과) 관련 타입 정의
  */
 
-// Re-export from database
-export type { LabResult, LabItem } from '../db/database';
+export interface LabItem {
+  code?: string; // B2500, B1050, etc.
+  name: string; // 'Na', 'K', 'WBC'
+  value: number | string; // Can be text for culture results
+  unit: string;
+  referenceMin?: number;
+  referenceMax?: number;
+  isAbnormal: boolean;
+  hlFlag?: 'H' | 'L'; // High/Low flag from OCS
+}
+
+export interface LabResult {
+  id: string;
+  patientId: string;
+  testDate: Date;
+  category: string; // 'Chemistry', 'CBC', 'Electrolyte', 'UA', etc.
+  items: LabItem[];
+  source: 'manual' | 'parsed' | 'csv' | 'xls';
+  rawText?: string;
+  createdAt: Date;
+}
+
+/**
+ * Lab 표시 카테고리 (사용자가 설정에서 편집하는 그룹)
+ */
+export interface LabDisplayCategory {
+  id: string;
+  name: string; // "CBC", "LFT", "Electrolyte", etc.
+  order: number; // Sort order for display (0 = first)
+  items: string[]; // Ordered display names of items in this category
+}
 
 /**
  * Lab 카테고리

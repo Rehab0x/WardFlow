@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { templateService, type TemplateField } from '@/services/templateService';
-import type { Template } from '@/db/database';
+import type { Template } from '@/types/template';
 
 
 interface TemplatePopupProps {

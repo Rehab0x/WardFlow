@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_SETTINGS_SECTION,
   KNOWN_SETTINGS_SECTIONS,
   SETTINGS_GROUPS,
   buildSettingsSections,
@@ -9,25 +10,28 @@ import {
 
 describe('settingsNavigation', () => {
   it('recognizes known settings section ids', () => {
-    expect(isSettingsSectionId('pin')).toBe(true);
+    expect(isSettingsSectionId('charting')).toBe(true);
     expect(isSettingsSectionId('backup')).toBe(true);
     expect(isSettingsSectionId('unknown')).toBe(false);
     expect(isSettingsSectionId(null)).toBe(false);
   });
 
-  it('falls back to the pin section for invalid route params', () => {
+  it('no longer recognizes removed sections', () => {
+    expect(isSettingsSectionId('pin')).toBe(false);
+    expect(isSettingsSectionId('calendar-color')).toBe(false);
+  });
+
+  it('falls back to the default section for invalid route params', () => {
     expect(getInitialSettingsSection('lab-ref')).toBe('lab-ref');
-    expect(getInitialSettingsSection('bad-section')).toBe('pin');
-    expect(getInitialSettingsSection(null)).toBe('pin');
+    expect(getInitialSettingsSection('bad-section')).toBe(DEFAULT_SETTINGS_SECTION);
+    expect(getInitialSettingsSection(null)).toBe(DEFAULT_SETTINGS_SECTION);
   });
 
   it('keeps section ids and group order stable', () => {
     expect(KNOWN_SETTINGS_SECTIONS).toEqual([
-      'pin',
       'admin',
       'charting',
       'schedule-cat',
-      'calendar-color',
       'lab-cat',
       'lab-ref',
       'lab-import',
@@ -37,31 +41,12 @@ describe('settingsNavigation', () => {
     expect(SETTINGS_GROUPS).toEqual(['계정', '업무', 'Lab', '시스템']);
   });
 
-  it('builds visible sections from auth/backend state', () => {
-    const adminSupabase = buildSettingsSections({
-      hasPin: true,
-      isAdmin: true,
-      useSupabaseBackend: true,
-    });
+  it('shows the admin section only to admins', () => {
+    const admin = buildSettingsSections({ isAdmin: true });
+    expect(admin.map((section) => section.id)).toContain('admin');
 
-    expect(adminSupabase.map((section) => section.id)).toContain('admin');
-    expect(adminSupabase.find((section) => section.id === 'pin')).toMatchObject({ icon: 'lock' });
-    expect(adminSupabase.find((section) => section.id === 'backup')).toMatchObject({
-      label: 'Supabase 백업',
-    });
-
-    const memberLegacy = buildSettingsSections({
-      hasPin: false,
-      isAdmin: false,
-      useSupabaseBackend: false,
-    });
-
-    expect(memberLegacy.map((section) => section.id)).not.toContain('admin');
-    expect(memberLegacy.find((section) => section.id === 'pin')).toMatchObject({
-      icon: 'unlock',
-    });
-    expect(memberLegacy.find((section) => section.id === 'backup')).toMatchObject({
-      label: '백업 / 복원',
-    });
+    const member = buildSettingsSections({ isAdmin: false });
+    expect(member.map((section) => section.id)).not.toContain('admin');
+    expect(member[0]?.id).toBe(DEFAULT_SETTINGS_SECTION);
   });
 });

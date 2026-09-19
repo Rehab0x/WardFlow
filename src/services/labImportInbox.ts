@@ -1,3 +1,10 @@
+type FileSystemPermissionDescriptor = { mode: 'read' | 'readwrite' };
+
+interface FileSystemHandlePermissions {
+  queryPermission(descriptor: FileSystemPermissionDescriptor): Promise<PermissionState>;
+  requestPermission(descriptor: FileSystemPermissionDescriptor): Promise<PermissionState>;
+}
+
 // File System Access API type declarations
 declare global {
   interface Window {
@@ -79,10 +86,12 @@ export async function removeDirHandle(): Promise<void> {
  */
 export async function verifyDirHandle(handle: FileSystemDirectoryHandle): Promise<FileSystemDirectoryHandle | null> {
   try {
-    const perm = await (handle as any).queryPermission({ mode: 'read' });
+    // File System Access API의 권한 메서드는 아직 lib.dom 타입에 없다.
+    const permissionHandle = handle as FileSystemDirectoryHandle & FileSystemHandlePermissions;
+    const perm = await permissionHandle.queryPermission({ mode: 'read' });
     if (perm === 'granted') return handle;
     // Try requesting permission (requires user gesture)
-    const req = await (handle as any).requestPermission({ mode: 'read' });
+    const req = await permissionHandle.requestPermission({ mode: 'read' });
     return req === 'granted' ? handle : null;
   } catch {
     return null;

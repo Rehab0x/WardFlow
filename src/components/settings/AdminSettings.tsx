@@ -2,10 +2,8 @@
 import { RotateCcw, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { useSupabaseBackend } from '@/config/backend';
-import { listPatients as listSupabasePatients } from '@/data/patients.repository';
-import { db } from '@/db/database';
-import type { Patient } from '@/db/database';
+import { listPatients } from '@/data/patients.repository';
+import type { Patient } from '@/types/patient';
 import { useToast } from '@/hooks/use-toast';
 import {
   createUserAccessDraft,
@@ -18,7 +16,7 @@ import {
   type UserAccessDraft,
 } from '@/lib/adminAccess';
 import { formatUserFacingError } from '@/lib/errorMessages';
-import { fromDomainPatient } from '@/mappers/legacyPatient.mapper';
+import { fromDomainPatient } from '@/mappers/patientView.mapper';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { cn } from '@/utils/cn';
 import type { User, UserRole, WardLinkModule } from '@/types/user';
@@ -95,9 +93,7 @@ export function AdminSettings() {
   const loadPatients = useCallback(async () => {
     setPatientsLoading(true);
     try {
-      const patients = useSupabaseBackend
-        ? (await listSupabasePatients()).map(fromDomainPatient)
-        : await db.patients.toArray();
+      const patients = (await listPatients()).map(fromDomainPatient);
       setAllPatients(patients);
       setLoadError(null);
     } catch (err) {
@@ -224,28 +220,21 @@ export function AdminSettings() {
   };
 
   const removeUser = async (user: User) => {
-    const message = useSupabaseBackend
-      ? `"${user.name}" 회원을 거절 상태로 전환하시겠습니까? Supabase Auth 계정 자체는 대시보드에서 별도로 관리해야 합니다.`
-      : `"${user.name}" 회원을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`;
+    const message = `"${user.name}" 회원을 거절 상태로 전환하시겠습니까? Supabase Auth 계정 자체는 대시보드에서 별도로 관리해야 합니다.`;
     if (!window.confirm(message)) return;
     setProcessingId(user.id);
     try {
       await deleteUser(user.id);
       toast({
-        title: useSupabaseBackend ? '회원 비활성화 완료' : '삭제 완료',
-        description: useSupabaseBackend
-          ? `${user.name} 회원을 거절 상태로 전환했습니다.`
-          : `${user.name} 회원을 삭제했습니다.`,
+        title: '회원 비활성화 완료',
+        description: `${user.name} 회원을 거절 상태로 전환했습니다.`,
       });
       await loadUsers();
       setLastLoadedAt(new Date());
     } catch (err) {
       toast({
-        title: useSupabaseBackend ? '회원 비활성화 실패' : '삭제 실패',
-        description: formatUserFacingError(
-          err,
-          useSupabaseBackend ? '회원 비활성화에 실패했습니다.' : '회원 삭제에 실패했습니다.'
-        ),
+        title: '회원 비활성화 실패',
+        description: formatUserFacingError(err, '회원 비활성화에 실패했습니다.'),
         variant: 'destructive',
       });
     } finally {
@@ -272,9 +261,8 @@ export function AdminSettings() {
         </Button>
       </div>
       <div className="mx-4 mb-4 rounded-lg border border-sky-200 bg-sky-50/80 p-3 text-sm text-sky-950 sm:mx-6">
-        {useSupabaseBackend
-          ? '새 가입자는 승인 대기 상태로 생성됩니다. 승인된 사용자만 앱에 로그인할 수 있으며, 회원 비활성화는 프로필을 거절 상태로 바꿉니다.'
-          : '로컬 모드의 사용자와 권한을 관리합니다.'}
+        새 가입자는 승인 대기 상태로 생성됩니다. 승인된 사용자만 앱에 로그인할 수 있으며, 회원
+        비활성화는 프로필을 거절 상태로 바꿉니다.
         <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-sky-800">
           <span>대기 {pendingUsers.length}명</span>
           <span>회원 {approvedMemberCount}명</span>

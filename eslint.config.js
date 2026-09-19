@@ -5,7 +5,14 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 
 export default [
   {
-    ignores: ['dist/**', 'node_modules/**', 'dev-dist/**', 'coverage/**'],
+    // src/types/supabase.ts는 `npm run types:supabase`가 생성하는 파일이라 린트 대상에서 제외한다.
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      'dev-dist/**',
+      'coverage/**',
+      'src/types/supabase.ts',
+    ],
   },
   {
     files: ['**/*.{ts,tsx}'],
@@ -30,8 +37,8 @@ export default [
         clearTimeout: 'readonly',
         setInterval: 'readonly',
         clearInterval: 'readonly',
-        indexedDB: 'readonly',
-        IDBDatabase: 'readonly',
+        FileSystemDirectoryHandle: 'readonly',
+        PermissionState: 'readonly',
       },
     },
     plugins: {
@@ -50,5 +57,11 @@ export default [
       ],
     },
   },
+  {
+    // 빌드 설정 파일은 Node 모듈 형식(require)을 쓴다.
+    files: ['*.config.ts', '*.config.js'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
 ];
-

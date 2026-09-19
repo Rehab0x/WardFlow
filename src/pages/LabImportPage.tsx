@@ -5,8 +5,6 @@ import { StorageLabInbox } from '@/components/lab/StorageLabInbox';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { db } from '@/db/database';
-import { useSupabaseBackend } from '@/config/backend';
 import { listActivePatients } from '@/data/patients.repository';
 
 type ImportMode = 'storage' | 'local';
@@ -20,9 +18,7 @@ const LabImportPage = () => {
 
   useEffect(() => {
     const loadPatientCount = async () => {
-      const count = useSupabaseBackend
-        ? (await listActivePatients()).length
-        : await db.patients.where('status').equals('active').count();
+      const count = (await listActivePatients()).length;
       setPatientCount(count);
     };
 

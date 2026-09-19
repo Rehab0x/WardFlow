@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import type { Patient } from '@/db/database';
+import type { Patient } from '@/types/patient';
 import {
   buildPatientOwnershipEntries,
   countAdminPatients,

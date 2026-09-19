@@ -5,7 +5,7 @@ import {
   countAdminPatients,
   filterAdminPatients,
 } from './adminPatients';
-import type { Patient } from '@/db/database';
+import type { Patient } from '@/types/patient';
 import type { User } from '@/types/user';
 
 const makePatient = (overrides: Partial<Patient>): Patient => ({

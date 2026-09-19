@@ -1,7 +1,22 @@
 /**
- * Template related types
- * Re-export from database.ts
+ * Template — 차팅 템플릿 타입.
  */
-export type { Template } from '../db/database';
+export type TemplateField =
+  | 'chiefComplaint'
+  | 'onset'
+  | 'presentIllness'
+  | 'pastHistory'
+  | 'reviewOfSystem'
+  | 'physicalExam'
+  | 'plan'
+  | 'guardianExplanation'
+  | 'etc'
+  | 'global';
 
-export type TemplateField = 'chiefComplaint' | 'presentIllness' | 'pastHistory' | 'reviewOfSystem' | 'physicalExam' | 'plan' | 'etc' | 'global';
+export interface Template {
+  id: string;
+  field: string; // TemplateField 값 또는 'global'
+  name: string;
+  content: string;
+  createdAt: Date;
+}

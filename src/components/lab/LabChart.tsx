@@ -15,6 +15,24 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { LabTrendData } from '@/types/lab';
 
+type ChartPoint = {
+  date: string;
+  value: number | null;
+  isAbnormal?: boolean;
+  hlFlag?: 'H' | 'L';
+};
+
+type ChartTooltipProps = {
+  active?: boolean;
+  payload?: Array<{ payload: ChartPoint }>;
+};
+
+type ChartDotProps = {
+  cx?: number;
+  cy?: number;
+  payload?: ChartPoint;
+};
+
 interface LabChartProps {
   trendData: LabTrendData;
   height?: number;
@@ -66,9 +84,9 @@ export function LabChart({ trendData, height = 300 }: LabChartProps) {
   }
 
   // Custom tooltip
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
+  const CustomTooltip = ({ active, payload }: ChartTooltipProps) => {
+    const data = active ? payload?.[0]?.payload : undefined;
+    if (data) {
       return (
         <div className="rounded-lg border bg-background p-3 shadow-lg">
           <p className="mb-1 text-xs text-muted-foreground">{data.date}</p>
@@ -103,9 +121,9 @@ export function LabChart({ trendData, height = 300 }: LabChartProps) {
   };
 
   // Custom dot to highlight abnormal values
-  const CustomDot = (props: any) => {
+  const CustomDot = (props: ChartDotProps) => {
     const { cx, cy, payload } = props;
-    if (payload.isAbnormal) {
+    if (payload?.isAbnormal) {
       // High: red, Low: blue
       const fillColor = payload.hlFlag === 'H' ? '#dc2626' : '#2563eb';
       return (
