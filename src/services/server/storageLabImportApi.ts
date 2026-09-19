@@ -1,5 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { parseLabXls, type ParsedLabItem } from '../parser/labParser.js';
+import { normalizeRegistrationNumber } from '../../lib/registrationNumber.js';
+import { maskErrorMessage, maskFileName, maskId, maskRegistrationNumber } from './logMasking.js';
 import type { Database } from '../../types/supabase';
 
 declare const process: { env: Record<string, string | undefined> };
@@ -105,6 +107,10 @@ export async function processStorageInboxFromApi(
       }
     } catch (error) {
       failedCount++;
+      // 파일명에 환자 이름/등록번호가 들어 있는 경우가 있어 로그에는 마스킹해 남긴다.
+      console.error(
+        `[lab-import] file failed ${maskFileName(file.name)}: ${maskErrorMessage(error)}`
+      );
       detail.error = error instanceof Error ? error.message : String(error);
       errors.push({ fileName: file.name, error: detail.error });
     }
@@ -181,11 +187,16 @@ async function processStorageFile(supabase: SupabaseClient<Database>, fullPath: 
 
   for (const group of groups) {
     const registrationNumber = group.registrationNumber?.trim();
-    const patient = registrationNumber
-      ? patients.get(registrationNumber) ?? patients.get(registrationNumber.replace(/^0+/, ''))
-      : undefined;
+    // 매칭 규칙(앞자리 0 무시)은 `lib/registrationNumber`에 한 곳에만 정의돼 있다.
+    const registrationKey = normalizeRegistrationNumber(registrationNumber);
+    const patient = registrationKey ? patients.get(registrationKey) : undefined;
 
     if (!patient) {
+      // 응답에는 원본을 담아 호출자가 어떤 행이 안 붙었는지 볼 수 있게 하되,
+      // 로그에는 마스킹한 값만 남긴다.
+      console.warn(
+        `[lab-import] unmatched reg=${maskRegistrationNumber(registrationNumber)} items=${group.items.length}`
+      );
       unmatchedPatients.push({
         registrationNumber,
         patientName: group.patientName,
@@ -201,6 +212,9 @@ async function processStorageFile(supabase: SupabaseClient<Database>, fullPath: 
       savedPatients++;
       savedItems += group.items.length;
     } catch (error) {
+      console.error(
+        `[lab-import] save failed patient=${maskId(patient.id)}: ${maskErrorMessage(error)}`
+      );
       errors.push({
         patientId: patient.id,
         name: patient.name,
@@ -228,10 +242,9 @@ async function listActivePatientsByRegistration(supabase: SupabaseClient<Databas
 
   const patients = new Map<string, PatientRow>();
   for (const patient of (data ?? []) as PatientRow[]) {
-    const raw = patient.registration_number?.trim();
-    if (!raw) continue;
-    patients.set(raw, patient);
-    patients.set(raw.replace(/^0+/, ''), patient);
+    const key = normalizeRegistrationNumber(patient.registration_number);
+    if (!key) continue;
+    patients.set(key, patient);
   }
   return patients;
 }

@@ -15,14 +15,14 @@
 |------|------|------|
 | Phase 1 Foundation | ✅ 완료 | 잔여는 수동 테스트 2건 (성능 측정, 반응형) |
 | Phase 2 Smart Input | ✅ 완료 | 캘린더 뷰는 취소, 알림은 3.2로 통합 |
-| Phase 3 WardAide AI | 🔶 3.1 완료 / 3.4 대부분 완료 | 3.2 알림, 3.3 음성 질의가 실제 남은 일 |
+| Phase 3 WardAide AI | 🔶 3.1 · 3.4 완료 | 3.2 알림, 3.3 음성 질의가 실제 남은 일 |
 | Phase 4 WardLink 통합 | ⬜ 미착수 | Phase 3 이후 |
 | Phase 5 v2 리팩토링 | ✅ 완료 | 문서 동기화까지 완료 |
 
 **다음에 할 일** (합의된 순서)
 1. ~~`PRD.md` Supabase 기준 갱신~~ ✅ 완료 (5.7)
-2. **3.4 잔여 — rate limit + 로그 마스킹** ← 진행 예정. 이미 공개된 엔드포인트라 우선
-3. 3.3.1 AI 음성 질의 — 재사용 전제 충족됨. `[?]` Whisper 키 저장 위치만 정하면 착수 가능
+2. ~~3.4 rate limit + 로그 마스킹~~ ✅ 완료 (인증 fail-closed 전환 포함)
+3. **3.3.1 AI 음성 질의** ← 진행 예정. `[?]` Whisper 키 저장 위치 결정 필요
 4. 3.2 알림 고도화 — 규칙 저장 스키마 설계부터
 
 ---
@@ -344,7 +344,7 @@
 - [ ] 근거연결 AI (가이드라인 키워드 추천, 논문/근거 연결)
 - [ ] 간호사 대화 녹음 → 환자별 SOAP 자동 분리 (3.3.1 파이프라인 검증 후 재사용 예정 — STT/aiService 패턴 동일, 세그멘테이션 프롬프트만 신규)
 
-### 3.4 Lab 서버 API 엔드포인트 — **대부분 구현 완료** (2026-09-19 코드 확인)
+### 3.4 Lab 서버 API 엔드포인트 — ✅ **완료** (2026-09-19)
 > TODO에는 미착수로 남아 있었지만 `api/lab-import.ts`가 이미 프로덕션에 배포되어 동작 중이다.
 - [x] `POST /api/lab-import` 서버 엔드포인트 → `api/lab-import.ts` + `src/services/server/storageLabImportApi.ts`
 - [x] 호스팅 선택 — **Vercel Serverless**로 확정·구현
@@ -353,8 +353,15 @@
 - [x] 처리 완료 파일 관리 — `deleteAfterProcessing` 옵션
 - ~~백업 다운로드 → 복호화 → … → 재암호화 → 업로드~~
   — Dexie 암호화 백업 시절 설계. 지금은 Supabase에 직접 쓰므로 불필요
-- [ ] **rate limit 추가** (현재 없음 — API 키만으로 보호 중)
-- [ ] **로그 마스킹 점검** (환자 식별정보가 서버 로그로 새지 않는지)
+- [x] **rate limit 추가** → `src/services/server/rateLimit.ts` (슬라이딩 윈도우 60초/10회, 429 + `Retry-After`)
+  - 인스턴스 메모리 기반이라 전역 상한은 보장하지 않음 — 한계를 코드 주석에 명시. 엄격한 제한이 필요해지면 Supabase/Upstash로 이전
+- [x] **로그 마스킹** → `src/services/server/logMasking.ts` (이름/등록번호/ID/파일명/에러 메시지)
+  - 응답 본문은 마스킹하지 않음 (인증된 호출자는 미매칭 행을 알아야 함), **로그에만** 적용
+- [x] **인증 fail-closed 전환** — `LAB_IMPORT_API_KEY` 미설정 시 예전에는 인증을 통째로 건너뛰어 엔드포인트가 공개됐음. 이제 503으로 거부
+- [x] 상수 시간 키 비교, 인증 실패는 rate limit 할당량을 소모하지 않도록 순서 조정
+- [x] 내부 오류 원문이 응답에 노출되지 않도록 정리 (입력 검증 오류만 원문 유지)
+- [x] 등록번호 매칭을 `lib/registrationNumber`로 통일 (서버 모듈에 남아 있던 3번째 중복 정의 제거)
+- [x] 테스트 19건 — `rateLimit.test.ts`(4), `logMasking.test.ts`(6), `api/lab-import.test.ts`(9)
 
 ---
 
@@ -516,3 +523,4 @@
 | 2026-09-19 | **등록번호 중복 판정 통일 (Phase 5.8)**: 환자 등록(`validatePatientDraft`)은 정확 일치, Lab 일괄 입력(`bulkLabImport`)은 앞자리 0 제거로 기준이 달라 "4532"와 "0000004532"가 Lab에서는 같은 환자인데 등록 시에는 중복으로 걸리지 않았다. **사용자 결정: 중복으로 판정해야 함.** `src/lib/registrationNumber.ts`에 `normalizeRegistrationNumber()`(trim + 앞자리 0 제거, 전부 0이면 "0" 유지)를 신설하고 환자 인덱스·중복 검증·Lab import 매칭이 모두 이 함수를 쓰도록 통일. `bulkLabImport`의 중복 정의(raw/stripped 이중 인덱싱) 제거. 테스트 `registrationNumber.test.ts`(4건) 추가 + `patientDraft.test.ts` 갱신. | ✅ 완료 | @Architect + @Coder-Logic |
 | 2026-09-19 | Lab 셀 편집 시 참조범위 기반 H/L 재계산이 서버(`labs.repository.updateLabItemValue`)에 있다. v1에서 스토어가 하던 계산 로직은 Dexie 제거와 함께 사라졌으므로, 참조범위 커스텀 설정(`useLabReferenceStore`)이 이 경로에 반영되는지 확인 필요. **사용자 결정: 배포 후 실사용하며 판단.** | 🔶 배포 후 확인 | @Reviewer |
 | 2026-09-19 | **TODO 정리 (Phase 5.11)**: v2 전환으로 무의미해진 항목 5건 취소(PIN 렌더 측정·오프라인 테스트·캘린더 뷰·Dexie 성능 테스트·암호화 백업 경유 Lab import 흐름), 네 군데 중복이던 알림 항목을 3.2로 통합, **3.4 Lab 서버 API가 실제로는 이미 배포·동작 중임을 코드로 확인**해 상태 정정(잔여: rate limit·로그 마스킹), 3.3.1 음성 질의 재사용 전제 충족 확인, 문서 상단 현재 상태 요약 추가. | ✅ 완료 | @Manager |
+| 2026-09-19 | **Lab 서버 API 보안 강화 (Phase 3.4 완료)**: ① **인증 fail-closed 전환** — `LAB_IMPORT_API_KEY` 미설정 시 인증을 건너뛰어 서비스 롤 권한의 쓰기 엔드포인트가 공개되던 구조를 503 거부로 변경 ② rate limit 추가(60초/10회, 429 + `Retry-After`, 인스턴스 메모리 한계 주석 명시) ③ 로그 마스킹(`logMasking.ts` — 이름/등록번호/ID/파일명/에러 숫자열). 응답은 그대로 두고 로그에만 적용 ④ 상수 시간 키 비교, 인증 실패가 정상 호출자 할당량을 깎지 않도록 순서 조정 ⑤ 내부 오류 원문 응답 노출 차단 ⑥ 서버 모듈에 남아 있던 등록번호 매칭 3번째 중복 정의를 `lib/registrationNumber`로 통일. 테스트 19건 추가 (총 196). | ✅ 완료 | @Coder-Logic + @Reviewer |
