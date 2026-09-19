@@ -70,10 +70,12 @@ export default defineConfig({
     target: 'esnext',
     rollupOptions: {
       output: {
+        // recharts는 여기에 나열하지 않는다. 수동 청크로 지정하면 엔트리의 정적 그래프에
+        // 포함된 것으로 취급되어 index.html에 modulepreload가 붙고, 결국 첫 화면에서
+        // 받아버린다. 목록에서 빼두면 Lab 추이 차트의 동적 import 청크로만 들어간다.
         manualChunks: {
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
           'ui-vendor': ['lucide-react'],
-          'chart-vendor': ['recharts'],
           'supabase-vendor': ['@supabase/supabase-js'],
         },
       },

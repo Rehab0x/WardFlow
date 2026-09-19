@@ -368,7 +368,8 @@
 - [x] `.env.example`에서 `VITE_DATA_BACKEND` 제거
 
 ### 5.4 v1 전용 기능 v2로 포팅 `@Coder-UI` `@Coder-Logic`
-- [x] Lab 추이 차트 → Lab 탭에서 항목명 클릭 시 `LabTrendDialog` (참조범위 회색 밴드 유지, recharts는 lazy 로드)
+- [x] Lab 추이 차트 → Lab 탭에서 항목명 클릭 시 `LabTrendDialog` (참조범위 회색 밴드 유지)
+  - [x] recharts를 `React.lazy` 동적 청크로 분리 — `manualChunks`에 나열하면 엔트리 정적 그래프로 잡혀 `modulepreload`가 붙으므로 목록에서 제외 (첫 화면 −105kB gzip)
 - [x] AI Lab 요약 → Lab 탭
 - [x] AI 투약 체크 → 약제 탭
 - [x] AI 인수인계 요약 → 환자 워크스페이스 **요약 탭** (`generateHandoff`가 환자 단위 API라 Today가 아닌 환자별 배치)
