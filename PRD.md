@@ -1,11 +1,15 @@
 # WardFlow PRD (Product Requirements Document)
 
 > WardLink 프로젝트의 첫 번째 모듈 — 입원환자 담당 의사를 위한 환자 관리 및 차팅 보조 도구
+>
+> **최종 개정: 2026-09-19** — v2 전환(Supabase 전용)에 맞춰 7장(기술 요구사항)·8장(개발 페이즈)·
+> 9장(제약사항)을 다시 썼다. 초기 PRD의 "오프라인 우선 + IndexedDB" 전제는 폐기됐으며,
+> 폐기된 항목은 ~~취소선~~과 사유를 함께 남겨 두었다. 진행 상태는 `TODO.md`가 기준이다.
 
 ## 1. 프로젝트 개요
 
 ### 1.1 비전
-WardFlow는 **모든 과의 입원환자를 담당하는 의사**가 병동 업무를 효율적으로 수행할 수 있도록 돕는 **Offline-first PWA** 앱이다. 컴퓨터에서 처방 및 차팅을 하면서 환자 정보를 정리하고, 회진 시에는 모바일로 열람하며, 정리한 내용을 OCS/EMR에 바로 붙여넣을 수 있도록 하는 것이 핵심 목표다.
+WardFlow는 **모든 과의 입원환자를 담당하는 의사**가 병동 업무를 효율적으로 수행할 수 있도록 돕는 **웹앱**이다(v2 기준 Supabase 단일 백엔드, 7.2 참고). 컴퓨터에서 처방 및 차팅을 하면서 환자 정보를 정리하고, 회진 시에는 모바일로 열람하며, 정리한 내용을 OCS/EMR에 바로 붙여넣을 수 있도록 하는 것이 핵심 목표다.
 
 ### 1.2 상위 프로젝트
 WardFlow는 **WardLink** 플랫폼의 하위 모듈이다.
@@ -23,7 +27,7 @@ WardFlow는 **WardLink** 플랫폼의 하위 모듈이다.
 - 환자 정보 조회 3초 이내
 - 아침 회진 준비 시간 50% 단축 (기존 30분 → 15분 목표)
 - 차팅 내용 정리 → OCS 붙여넣기까지 원클릭
-- 오프라인에서도 모든 핵심 기능 동작
+- ~~오프라인에서도 모든 핵심 기능 동작~~ — v2에서 폐기 (7.2 참고). 대신 **로그인 → 첫 화면 1초 이내**를 핵심 지표로 둔다
 
 ---
 
@@ -128,7 +132,7 @@ WardFlow는 **WardLink** 플랫폼의 하위 모듈이다.
   - **Medications**: 현재 투약 목록 (항생제 D-day 자동 계산 포함)
   - **Notes**: 회진 메모 / 경과 기록 (시간순)
   - **Schedule**: 외진, 재활치료, 검사 일정
-- 각 탭은 독립적으로 로딩, 오프라인 캐시 지원
+- 각 탭은 독립적으로 로딩 (탭 진입 시 해당 데이터 조회)
 
 ### 2.4 Lab 결과 관리
 **유저 스토리**:
@@ -207,7 +211,11 @@ OCS에서 복사한 투약 텍스트 형식:
 - 항생제는 별도 색상(Purple 계열)으로 구분
 - 항생제 여부는 수동 태그 또는 향후 약물 DB 연동으로 자동 분류
 
-### 2.6 Morning Briefing
+### 2.6 Today 대시보드 (구 Morning Briefing)
+
+> **구현 기준 (2026-09-19)**: 화면 이름은 **"오늘"(Today)** 이다. v2에서는 아래 섹션에 더해
+> 상단에 지표 타일(입원/협진/할 일/일정/알림/항생제/비정상 Lab)과
+> **우선순위로 정렬된 "오늘 할 일" 목록**(지표 타일로 필터링 가능)이 있다.
 **유저 스토리**:
 - "아침에 앱을 열면, 오늘 주의해야 할 사항이 한눈에 보였으면 한다."
 - "항생제 D-day가 14일 넘은 환자, 오늘 외진 있는 환자 등을 놓치고 싶지 않다."
@@ -254,6 +262,14 @@ OCS에서 복사한 투약 텍스트 형식:
 ---
 
 ## 4. 데이터 모델 (핵심 엔티티)
+
+> **구현 기준 (2026-09-19)**: 실제 스키마는 `supabase/migrations/`의 SQL이 원본이다.
+> 코드에서는 서버 스키마용 도메인 타입(`src/domain/`)과 화면용 뷰모델 타입(`src/types/`)을
+> 분리해 두고 `src/mappers/*View.mapper.ts`가 변환한다.
+> 아래는 개념 모델이며, 필드 추가·변경 시 마이그레이션과 함께 갱신할 것.
+>
+> `Alert`(4.6)는 아직 구현되지 않았다. 현재 "알림"은 `type: 'reminder'` 메모로 대체돼 있으며,
+> 규칙 엔진·히스토리는 TODO 3.2에서 다룬다.
 
 ### 4.1 Patient (환자)
 ```
@@ -605,35 +621,25 @@ const LAB_CODE_MAP = {
 
 ### 6.3 핵심 화면 구성
 
-**데스크톱 레이아웃** (주 사용 환경):
+**데스크톱 레이아웃** (주 사용 환경, v2 구현 기준):
 ```
-┌─────────────────────────────────────────────────┐
-│  Header: WardFlow 로고 | 검색 | 알림 | 설정     │
-├──────────┬──────────────────────────────────────┤
-│ Sidebar  │  Main Content Area                   │
-│          │                                      │
-│ 🏠 Home  │  [환자 목록 / 상세 / 차팅 폼 등]     │
-│ 👥 환자  │                                      │
-│ 📅 일정  │                                      │
-│ ⚙️ 설정  │                                      │
-│          │                                      │
-└──────────┴──────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  TopBar: WardFlow | 검색(Ctrl+K) | 환자추가 Lab 설정 로그아웃 │
+├─────────────┬───────────────────────────────┬───────────────┤
+│ PatientRail │  Today  또는  환자 워크스페이스  │ ContextPanel  │
+│ (환자 목록)  │  ┌──────────────────────────┐ │ (환자별 오늘   │
+│  입원/협진/  │  │ 요약 차팅 Lab 약제 메모 일정│ │  알림·일정·    │
+│  퇴원 그룹   │  └──────────────────────────┘ │  항생제·Lab)   │
+└─────────────┴───────────────────────────────┴───────────────┘
 ```
-- 좌측 사이드바 네비게이션 (접기/펼치기 가능)
-- 환자 목록 클릭 시 우측에 상세/차팅 폼 표시 (마스터-디테일 패턴)
-- 넓은 화면에서 환자 목록 + 상세를 동시에 볼 수 있는 분할 뷰
+- 좌측 환자 레일에서 환자를 고르면 가운데가 6탭 워크스페이스로 바뀐다
+- 환자 미선택 시 가운데는 Today 대시보드 (할 일 우선순위 정렬 + 도메인별 목록)
+- 우측 컨텍스트 패널은 넓은 화면에서만 표시되며, 항목 클릭 시 해당 탭으로 딥링크
 
 **모바일 레이아웃** (회진 시):
-```
-[Bottom Navigation]
-├── 🏠 Home (Morning Briefing)
-├── 👥 Patients (환자 목록 → 탭하면 상세)
-├── 📅 Schedule (일정)
-└── ⚙️ Settings
-```
-- 하단 네비게이션 바 (엄지 접근성)
+- 환자 목록은 드로어로 열고 닫는다 (상단 햄버거 / 하단 액션)
 - 열람 중심 + 간단 메모 입력 가능
-- 차팅 폼은 모바일에서도 접근 가능하나, 데스크톱 사용 권장 안내
+- 차팅 폼은 모바일에서도 접근 가능하나, 데스크톱 사용 권장
 
 ### 6.4 반응형 전략
 - **Desktop (≥1024px)**: 사이드바 + 마스터-디테일 분할 뷰
@@ -647,170 +653,168 @@ const LAB_CODE_MAP = {
 ## 7. 기술 요구사항
 
 ### 7.1 Tech Stack
-- **Framework**: React 18+ with TypeScript
+- **Framework**: React 18+ with TypeScript (strict)
 - **Build Tool**: Vite
 - **Routing**: React Router v6+
 - **State Management**: Zustand (경량, 간단)
-- **Local DB**: Dexie.js (IndexedDB wrapper)
-- **Charts**: Recharts 또는 Chart.js
+- **Database / Auth**: **Supabase (PostgreSQL + Auth + Storage, RLS)** — 단일 데이터 소스
+- **Charts**: Recharts (Lab 추이 차트, 온디맨드 lazy 로드)
 - **UI Components**: Tailwind CSS + shadcn/ui
-- **PWA**: Vite PWA Plugin (vite-plugin-pwa)
+- **PWA**: Vite PWA Plugin (`VITE_ENABLE_PWA=true`일 때만 활성)
 - **Testing**: Vitest + React Testing Library
+- **Deploy**: Vercel (정적 빌드 + `api/` 서버리스 함수)
 
-### 7.2 PWA 요구사항
-- Service Worker로 앱 셸 캐싱
-- IndexedDB에 모든 데이터 로컬 저장
-- 오프라인 시 모든 CRUD 동작
-- 온라인 복귀 시 Background Sync (v2)
-- 설치 가능한 PWA (A2HS)
-- 앱 아이콘 및 스플래시 스크린
+> ⚠️ **Dexie.js / IndexedDB는 사용하지 않는다.** 2026-09-19 리팩토링(TODO Phase 5)에서
+> 이중 백엔드를 제거하고 Supabase 전용으로 전환했다. 아래 7.2·7.3의 오프라인/인덱싱 전제도
+> 그에 맞춰 다시 쓰였다.
+
+### 7.2 PWA / 오프라인 정책 (2026-09-19 개정)
+
+초기 PRD는 "오프라인 우선(Offline-first)"을 전제로 IndexedDB에 모든 데이터를 두고
+오프라인 CRUD를 지원하는 설계였다. v2에서 **Supabase를 단일 진실의 원천으로** 바꾸면서
+이 전제는 폐기했다. 로컬 캐시를 권위 있는 데이터로 취급하면 빈 캐시가 서버 데이터를
+덮어쓰는 사고가 나기 때문이다(`docs/rebuild-plan.md` 참고).
+
+**현재 정책**:
+- 모든 영속 데이터는 **Supabase에 먼저 저장**한다
+- 브라우저 저장소는 UI 편의 상태(로그인 ID 기억, 설정 persist)에만 쓴다
+- **오프라인 편집은 지원 범위 밖**이다. 네트워크 오류는 쓰기 배너로 명확히 드러낸다
+- PWA(Service Worker)는 `VITE_ENABLE_PWA=true`일 때만 켜지며, 현재 기본 비활성이다
+- 설치 가능 PWA(A2HS), 앱 아이콘/스플래시 리소스는 유지한다
+
+**재검토 시점**: 병동 Wi-Fi 불안정이 실사용에서 문제가 되면 Phase 4에서
+"읽기 캐시 + 오프라인 쓰기 큐"를 별도 설계한다. 그때도 서버가 원본이라는 원칙은 유지한다.
 
 ### 7.3 성능 요구사항 ⭐ 최우선
 
-> **핵심 원칙**: 로그인 후 환자 목록 / Today's Note가 **1초 이내**에 화면에 표시되어야 한다. 이전 프로토타입에서 로그인 후 로딩이 길어 사용 경험이 나빴던 문제를 반드시 해결해야 함.
+> **핵심 원칙**: 로그인 후 환자 목록 / Today가 **1초 이내**에 화면에 표시되어야 한다.
+> 이전 프로토타입에서 로그인 후 로딩이 길어 사용 경험이 나빴던 문제를 반드시 해결해야 함.
 
-**목표 성능 지표**:
+**목표 성능 지표** (2026-09-19 개정 — 네트워크 왕복이 포함되도록 재조정):
 | 지표 | 목표 | 설명 |
 |------|------|------|
-| 로그인 → 첫 화면 렌더 | < 500ms | PIN 입력 후 환자 목록 또는 Today's Note 표시 |
-| 환자 목록 전체 로딩 | < 300ms | 50명 기준 |
-| 환자 상세 전환 | < 200ms | 목록에서 클릭 → 상세 뷰 |
-| Lab 추이 차트 렌더 | < 500ms | 30일치 데이터 기준 |
-| 투약 파싱 (붙여넣기) | < 100ms | 20개 항목 기준 |
+| 로그인 → 첫 화면 렌더 | < 1s | Supabase 세션 확인 + 환자 목록/Today 병렬 로드 포함 |
+| 앱 셸 렌더 | < 200ms | 데이터와 무관한 정적 UI |
+| 환자 상세 전환 | < 200ms | 이미 받아온 목록에서 클릭 → 워크스페이스 |
+| Lab 추이 차트 렌더 | < 500ms | 차트 청크 로드 + 30일치 데이터 |
+| 투약 파싱 (붙여넣기) | < 100ms | 20개 항목 기준, 클라이언트 연산 |
 
-**Dexie.js 인덱싱 전략**:
-```typescript
-// db/database.ts
-const db = new Dexie('WardFlowDB');
+**Supabase 쿼리 전략** (기존 Dexie 복합 인덱스 전략을 대체):
 
-db.version(1).stores({
-  patients: 'id, status, roomBed, name, admissionDate, [status+roomBed]',
-  //         PK  ↑활성환자 빠른 필터  ↑병실순 정렬  ↑이름검색  ↑입원일순  ↑복합인덱스
+DB 접근은 전부 `src/data/*.repository.ts`를 거친다. 컴포넌트·페이지·훅에서
+Supabase 클라이언트를 직접 부르지 않는다.
 
-  labResults: 'id, patientId, testDate, [patientId+testDate], [patientId+category]',
-  //           PK  ↑환자별 조회        ↑환자+날짜순(추이차트)   ↑환자+카테고리 필터
-
-  medications: 'id, patientId, isActive, isAntibiotic, [patientId+isActive], [isAntibiotic+isActive]',
-  //            PK  ↑환자별    ↑활성약물  ↑항생제       ↑환자의 현재 투약     ↑항생제 D-day 조회
-
-  notes: 'id, patientId, createdAt, [patientId+createdAt], *tags',
-  //      PK  ↑환자별     ↑시간순     ↑환자별 최신순         ↑태그 멀티 인덱스
-
-  schedules: 'id, patientId, scheduledDate, [patientId+scheduledDate], [scheduledDate+isCompleted]',
-  //          PK  ↑환자별      ↑날짜별         ↑환자일정 조회            ↑오늘 일정 빠른 조회
-
-  alerts: 'id, patientId, isRead, severity, triggeredAt, [isRead+severity]',
-  //       PK  ↑환자별     ↑안읽은 알림  ↑심각도     ↑시간순   ↑안읽은+심각도순
-
-  templates: 'id, field, name',
-  //          PK  ↑필드별 템플릿  ↑이름 검색
-});
-```
-
-**복합 인덱스 활용 포인트**:
-- `[status+roomBed]`: 활성 환자만 병실순으로 바로 조회 — 메인 화면 환자 목록
-- `[patientId+testDate]`: 특정 환자의 Lab 결과를 날짜순으로 — 추이 차트
-- `[patientId+isActive]`: 특정 환자의 현재 복용 약물만 — 투약 탭
-- `[isAntibiotic+isActive]`: 전체 활성 항생제 목록 — Morning Briefing D-day
-- `[scheduledDate+isCompleted]`: 오늘 미완료 일정 — Morning Briefing
-- `[isRead+severity]`: 안 읽은 알림 심각도순 — 알림 뱃지
+1. **컬럼 명시 select** — `select('*')` 금지. 테이블이 커져도 전송량이 예측 가능해야 한다.
+   Today 브리핑처럼 요약만 필요한 화면은 식별자 + 표시용 컬럼만 가져오는 별도 쿼리를 쓴다
+   (`listActivePatientBriefingRows`, `listLabSummaryRowsByPatientIdsDateRange`)
+2. **활성 환자 ID로 스코프** — 환자 목록 기반 조회는 전체 테이블을 훑지 않고
+   활성 환자 ID 집합으로 제한한다
+3. **`.in()` 청크 + 병렬 실행** — 환자 수가 한 번에 넣기 어려울 만큼 늘어나면
+   `data/chunk.ts`로 나눠 병렬 요청한다 (메모/일정/투약/Lab 요약)
+4. **권한은 RLS가 최종 방어선** — 프론트엔드 필터링만으로 접근 제어를 판단하지 않는다
+5. **인덱스는 서버에서** — 조회 패턴에 맞는 인덱스는 `supabase/migrations/`의 스키마에 둔다.
+   클라이언트가 인덱스를 관리하던 Dexie 시절 전략은 더 이상 해당하지 않는다
 
 **첫 화면 로딩 최적화 전략**:
 
 1. **앱 셸 즉시 렌더**: 네비게이션, 헤더 등 정적 UI는 즉시 표시. 데이터 영역만 로딩
-2. **PIN 입력 중 프리페치**: PIN 화면이 표시되는 동안 백그라운드에서 주요 데이터 미리 로드
-   ```typescript
-   // PIN 화면 마운트 시 프리페치 시작
-   const prefetchPromise = Promise.all([
-     db.patients.where('status').equals('active').sortBy('roomBed'),
-     db.alerts.where('[isRead+severity]').between([0, 'critical'], [0, 'info']).toArray(),
-     db.schedules.where('scheduledDate').equals(today).toArray(),
-   ]);
-   // PIN 인증 성공 시 이미 로드된 데이터로 즉시 렌더
-   ```
-3. **Zustand 초기 스토어 하이드레이션**: 앱 시작 시 핵심 데이터를 Zustand 스토어에 한번만 로드, 이후는 메모리에서 읽기
+2. **초기 로드 병렬화**: 인증이 확인되면 환자 목록과 Today 브리핑을 **동시에** 요청한다
+   (`useBriefingData`). 순차 대기가 곧 첫 화면 지연이다
+3. **중복 요청 합치기**: 같은 사용자에 대한 동시 갱신 요청은 하나로 합치고,
+   그 사이 쌓인 요청은 마지막에 한 번만 더 확인한다
 4. **점진적 로딩 (Progressive Loading)**:
-   - 1단계 (즉시): 환자 목록 (이름, 병실, C/C만)
-   - 2단계 (백그라운드): Lab 최신 결과, 투약 목록, 알림
-   - 3단계 (온디맨드): 차트 데이터, 히스토리 등은 사용자가 해당 탭 클릭 시
-5. **가상 스크롤링**: 환자가 50명 이상일 경우 목록 가상화 (react-virtual 등)
-6. **코드 스플리팅**: 각 페이지/탭을 lazy import로 분리
-   ```typescript
-   const PatientDetail = lazy(() => import('./pages/PatientDetailPage'));
-   const SchedulePage = lazy(() => import('./pages/SchedulePage'));
-   const SettingsPage = lazy(() => import('./pages/SettingsPage'));
-   ```
+   - 1단계 (즉시): 환자 목록 + Today 브리핑
+   - 2단계 (탭 진입 시): Lab 상세, 투약 목록
+   - 3단계 (온디맨드): 추이 차트, 히스토리
+5. **코드 스플리팅**: 페이지는 `React.lazy` + `Suspense`로 분리.
+   **recharts(≈380kB)는 Lab 추이 차트를 실제로 열 때만 로드**한다.
+   수동 청크(`manualChunks`)에 올리면 엔트리 정적 그래프로 잡혀 `modulepreload`가 붙으므로
+   목록에 넣지 않는다
+6. **가상 스크롤링**: 환자가 50명 이상으로 늘어나면 목록 가상화를 검토한다 (아직 미적용)
 
-**Morning Briefing 데이터 준비**:
-- Today's Note에 필요한 데이터는 여러 테이블 조인이 필요 (알림 + 일정 + 항생제 D-day + 새 Lab)
-- **앱 시작 시 한번 집계하여 캐시**, 이후 변경 시에만 갱신
-- `briefingService.ts`에서 집계 → Zustand briefingStore에 저장
+**쓰기 후 갱신 전략**:
+- 작은 임상 데이터 쓰기(메모/Lab/항생제/일정) 후에는 **Today 브리핑만 낙관적으로 갱신**하고,
+  서버 확인 갱신은 합쳐서 한 번만 실행한다
+- 환자 목록이 바뀔 수 있는 작업(추가/퇴원/삭제)에서만 전체 새로고침을 한다
+- 포커스가 돌아왔을 때는 60초 이상 지난 데이터만 조용히 다시 불러오고,
+  **미저장 작업이 있으면 건너뛴다**
 
-**IndexedDB 쿼리 최적화 규칙**:
-- 항상 인덱스가 있는 필드로 쿼리 (`.where()` 사용)
-- `.filter()`는 인덱스 이후 추가 필터링에만 사용 (전체 스캔 방지)
-- 대량 쓰기는 반드시 `db.transaction()` 사용
-- 읽기 전용 조회는 `db.transaction('r', ...)` 명시하여 락 최소화
+**Today 브리핑 데이터 준비**:
+- Today에 필요한 데이터는 여러 테이블에 걸쳐 있다 (알림 메모 + 일정 + 항생제 D-day + 최근 Lab)
+- `briefingService.ts`가 활성 환자 ID로 스코프된 쿼리를 **병렬 실행**해 한 번에 집계한다
+- 활성 환자가 없으면 하위 쿼리를 아예 실행하지 않는다
 
-### 7.4 보안 고려사항 (MVP)
-- 앱 진입 시 PIN 또는 패턴 잠금
-- 데이터는 로컬에만 저장 (서버 전송 없음)
-- 환자 식별정보 최소화 (이름 이니셜 표시 옵션)
-- 자동 잠금 타이머 (설정 가능, 기본 5분)
+### 7.4 보안 고려사항 (2026-09-19 개정)
+- 인증은 **Supabase Auth**. 신규 가입자는 승인 대기(`pending`)이며 관리자 승인 후 로그인 가능
+- 첫 가입자는 DB 트리거로 `admin` + `approved` 자동 부여
+- 환자 접근 권한은 **RLS 정책으로 강제**한다 (프론트엔드 필터링은 보조 수단)
+- 쓰기 실패 메시지는 `lib/errorMessages.ts`를 거쳐 사용자 문구로 변환한다
+  (RLS/제약조건 원문이 화면에 노출되지 않도록)
+- 파괴적 작업(삭제/복원)은 실행 전 영향받는 레코드 수를 보여준다
+- 백업은 `backup_snapshots` 기반 **클라이언트 암호화 스냅샷** + 복원 미리보기 경로만 사용한다
+- AI 기능은 사용자가 명시적으로 실행할 때만 환자 데이터를 외부 LLM에 전송한다.
+  API 키는 사용자별 설정에 저장한다
+- 서버 엔드포인트(`api/lab-import`)는 `LAB_IMPORT_API_KEY` 헤더로 보호한다
+- ~~앱 진입 시 PIN 잠금 / 자동 잠금 타이머~~ — IndexedDB 자격증명 모델에 의존해
+  Phase 5.2에서 제거. 공용 PC 대응이 필요해지면 Supabase 기반으로 재설계한다
+- ~~데이터는 로컬에만 저장 (서버 전송 없음)~~ — Supabase 전환으로 더 이상 성립하지 않는다
 
 ---
 
 ## 8. 개발 페이즈
 
 > 상세 태스크 목록, 담당 에이전트 배정, 진행 상태는 **`TODO.md`** 를 참고할 것.
-> `TODO.md`가 Single Source of Truth이며, 아래는 페이즈별 개요만 기술한다.
+> `TODO.md`가 Single Source of Truth이며, 아래는 페이즈별 개요만 기술한다. (개요 기준: 2026-09-19)
 
-### Phase 1: Foundation (MVP Core) — 현재
-- [ ] 프로젝트 셋업 (Vite + React + TS + Tailwind + Dexie)
-- [ ] PWA 기본 구성 (Service Worker, manifest)
-- [ ] Desktop-First 레이아웃 (사이드바 + 마스터-디테일)
-- [ ] ⚡ Dexie.js 복합 인덱스 스키마 설계 및 적용
-- [ ] ⚡ PIN 프리페치 + 앱 셸 즉시 렌더 + 코드 스플리팅
-- [ ] 환자 CRUD (목록 + 상세)
-- [ ] 환자 차팅 폼 (C/C ~ Etc 구조화된 입력)
-- [ ] 📋 통합 복사 기능 (차팅 → 클립보드 → OCS 붙여넣기)
-- [ ] 텍스트 영역 리사이즈 + 자동 확장
-- [ ] Lab 결과 수동 입력 + 조회 + 추이 차트
-- [ ] 투약 관리 (항생제 D-day)
-- [ ] 투약 처방 붙여넣기 파싱 (OCS 복붙 → 자동 파싱)
-- [ ] 약물명 → 네이버 의약품사전 링크
-- [ ] 회진 메모
-- [ ] Morning Briefing 대시보드
-- [ ] PIN 잠금
-- [ ] 반응형 (모바일 열람 + 간단 메모)
+### Phase 1: Foundation (MVP Core) — ✅ 완료
+- 프로젝트 셋업 (Vite + React + TS + Tailwind)
+- Desktop-First 레이아웃 (환자 레일 + 워크스페이스)
+- ⚡ 앱 셸 즉시 렌더 + 병렬 초기 로드 + 코드 스플리팅
+- 환자 CRUD (목록 + 상세 워크스페이스)
+- 환자 차팅 폼 (C/C ~ Etc 구조화된 입력)
+- 📋 통합 복사 기능 (차팅 → 클립보드 → OCS 붙여넣기, 포맷 커스텀 설정 연동)
+- Lab 결과 입력 + 수치 표 인라인 편집 + 추이 차트
+- 투약 관리 (항생제 D-day) + OCS 처방 붙여넣기 파싱
+- 회진 메모, Today 대시보드
+- 반응형 (모바일 열람 + 간단 메모)
 
-### Phase 2: Smart Input
-- [ ] Lab 스마트 파싱 (복사-붙여넣기)
-- [ ] CSV/엑셀 업로드
-- [ ] 차팅 템플릿 시스템 (`/` 명령으로 빠른 삽입)
-- [ ] 복사 포맷 커스텀 설정
-- [ ] 일정 관리 (Schedule)
-- [ ] 알림 시스템 고도화
+> 취소된 항목: ~~Dexie 복합 인덱스 스키마~~, ~~PIN 프리페치·PIN 잠금~~,
+> ~~PWA 오프라인 CRUD~~ — Phase 5에서 Supabase 전용으로 전환하며 제거.
 
-### Phase 3: WardAide (AI)
-- [ ] AI 사이드바 UI
-- [ ] 로컬 DB 쿼리 AI (자연어 → Dexie 쿼리)
-- [ ] Lab 추이 분석 AI
-- [ ] Renal dose 가이드
+### Phase 2: Smart Input — ✅ 완료
+- Lab 스마트 파싱 (XLS BIFF/cp949 + 붙여넣기), 일괄 입력
+- 차팅 템플릿 시스템
+- 복사 포맷 커스텀 설정
+- 일정 관리 (환자별 오늘 일정)
+
+> 취소된 항목: ~~CSV 파서~~ (XLS + 붙여넣기로 충분), ~~전체 환자 캘린더 뷰~~ (사용자 결정)
+
+### Phase 3: WardAide (AI) — 🔶 진행 중
+- ✅ 멀티 LLM 기반 (Claude/GPT/Gemini/Grok) + SOAP 변환
+- ✅ Lab 요약 / 인수인계 요약 / 투약 안전성 체크
+- ✅ Lab 서버 API 엔드포인트 (`api/lab-import`) — rate limit·로그 마스킹만 잔여
+- [ ] 알림 고도화 (규칙 설정, 히스토리, AI 분석)
+- [ ] AI 음성 질의 (회진 중 자연어 조회) — 설계는 `CLAUDE.md` 기능 스펙 참고
+- [ ] 근거연결 AI (가이드라인/논문)
+
+> 취소된 항목: ~~로컬 DB 쿼리 AI (자연어 → Dexie 쿼리)~~ — Dexie 제거.
+> 자연어 조회는 AI 음성 질의가 대체한다.
 
 ### Phase 4: WardLink Integration
 - [ ] 공통 로그인 시스템
 - [ ] 모듈 간 데이터 공유
 - [ ] WardCare 연동
 - [ ] EMR API 연동 탐색
+- [ ] (재검토) 읽기 캐시 + 오프라인 쓰기 큐 — 7.2 참고
 
 ---
 
 ## 9. 제약사항 및 가정
 
 ### 제약사항
-- 서버 없이 로컬 전용 (MVP 단계)
-- EMR 직접 연동 불가 (병원 보안 정책)
+- ~~서버 없이 로컬 전용~~ — v2에서 **Supabase(서버) 전용**으로 전환 (2026-09-19)
+- 네트워크가 끊기면 조회·저장이 불가하다 (오프라인 편집 미지원, 7.2 참고)
+- EMR 직접 연동 불가 (병원 보안 정책) — OCS 텍스트 복사/붙여넣기로 우회
 - 의료기기 인증 대상 아님 (보조 도구 목적)
 
 ### 가정
