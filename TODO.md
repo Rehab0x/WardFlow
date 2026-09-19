@@ -3,7 +3,27 @@
 > ⚠️ **이 파일은 프로젝트의 Single Source of Truth입니다.**
 > 모든 작업 시작 전 이 파일을 확인하고, 작업 완료 후 반드시 업데이트하세요.
 >
-> 상태: `[ ]` 미완료 | `[/]` 진행 중 | `[x]` 완료
+> 상태: `[ ]` 미완료 | `[/]` 진행 중 | `[x]` 완료 | `[?]` 결정 대기 | ~~취소선~~ 취소·불필요 판단
+
+---
+
+## 📍 현재 상태 (2026-09-19)
+
+**배포 중**: https://ward-flow.vercel.app · Supabase 단일 백엔드 · `main` = `5.10` 반영분
+
+| Phase | 상태 | 비고 |
+|------|------|------|
+| Phase 1 Foundation | ✅ 완료 | 잔여는 수동 테스트 2건 (성능 측정, 반응형) |
+| Phase 2 Smart Input | ✅ 완료 | 캘린더 뷰는 취소, 알림은 3.2로 통합 |
+| Phase 3 WardAide AI | 🔶 3.1 완료 / 3.4 대부분 완료 | 3.2 알림, 3.3 음성 질의가 실제 남은 일 |
+| Phase 4 WardLink 통합 | ⬜ 미착수 | Phase 3 이후 |
+| Phase 5 v2 리팩토링 | ✅ 완료 | 잔여: `PRD.md` 갱신 1건 (5.7) |
+
+**다음에 할 일 후보**
+1. `PRD.md`를 Supabase 기준으로 갱신 (5.7 마지막 항목)
+2. 3.3.1 AI 음성 질의 — 재사용 전제는 모두 충족됨. `[?]` Whisper 키 저장 위치만 정하면 착수 가능
+3. 3.2 알림 고도화 — 규칙 저장 스키마 설계부터
+4. 3.4 잔여 — rate limit, 로그 마스킹
 
 ---
 
@@ -188,8 +208,8 @@
   - [x] 오늘 알림 환자 (파란색 박스 + 🔔 아이콘)
   - [x] Attention 수동 체크 환자 (빨간색 박스 + ⚠️ 아이콘)
 - [x] Patient.attention 필드 추가 + 개요 탭 토글 스위치
-- [ ] 알림 엔진 → `src/services/alertEngine.ts` (Morning Briefing AI용, Phase 3)
-- [ ] Morning Briefing AI 분석 → Phase 3 (WardAide)
+- ~~알림 엔진 → `src/services/alertEngine.ts`~~ / ~~Morning Briefing AI 분석~~
+  → **3.2 알림 고도화로 일원화** (2.5·3.2·3.3.2에 같은 항목이 중복돼 있었음). `alertEngine.ts`는 만들어진 적 없음
 
 ### 1.13 반응형 (모바일) `@Coder-UI`
 - [x] 전체 패딩/간격 모바일 대응 (p-3 sm:p-6 패턴)
@@ -207,9 +227,12 @@
 - [x] 투약 파싱 정확도 테스트 → `src/services/parser/medParser.test.ts` (16 tests)
 - [x] 날짜 유틸 테스트 → `src/utils/dateUtils.test.ts` (26 tests)
 - [x] 차팅 포맷터 테스트 → `src/services/chartingFormatter.test.ts` (13 tests)
-- [x] DB 인덱스 쿼리 성능 테스트 (50명 환자 기준 < 300ms) → `src/db/database.perf.test.ts` (10 tests)
-- [ ] PIN → 첫 화면 렌더 성능 측정 (< 500ms) — 수동 테스트 영역
-- [ ] 오프라인 동작 테스트 — 수동 테스트 영역 (Service Worker)
+- ~~DB 인덱스 쿼리 성능 테스트 → `src/db/database.perf.test.ts`~~ — Dexie 제거로 삭제 (Phase 5.3)
+- [x] 컴포넌트 렌더 스모크 테스트 → `PatientWorkspace.test.tsx`(탭 6개 + 전환), `TodayDashboard.test.tsx`, `ChartingTab.test.tsx` (Phase 5.9)
+- [x] 미저장 변경 플래그 동작 테스트 → `unsavedState.test.tsx` (Phase 5.10)
+- ~~PIN → 첫 화면 렌더 성능 측정~~ — PIN 잠금 제거로 대상 없음 (Phase 5.2)
+- [ ] **로그인 → 첫 화면 렌더 성능 측정 (< 1초)** — 수동 측정. Supabase 왕복이 들어가므로 기준 재확인 필요
+- ~~오프라인 동작 테스트 (Service Worker)~~ — 오프라인 우선 아키텍처 폐기, PWA도 기본 비활성. 필요해지면 Phase 4에서 재정의
 - [ ] 반응형 레이아웃 테스트 — 수동 테스트 영역 (Desktop / Tablet / Mobile)
 
 ---
@@ -258,12 +281,11 @@
 - [x] 일정 카테고리 커스텀 설정 → `useScheduleCategoryStore` (persist) + SettingsPage 편집 UI
   - [x] 카테고리 추가/수정/삭제 (이름 + 색상 10종)
   - [x] DB Schedule.category를 string으로 유연화
-- [ ] 일정 페이지 → `src/pages/SchedulePage.tsx` (전체 환자 일정 캘린더뷰, 향후)
+- ~~일정 페이지 → `src/pages/SchedulePage.tsx` (전체 환자 일정 캘린더뷰)~~
+  — **사용자 결정 (2026-09-19): 캘린더 뷰 제거.** v2에서는 환자별 일정 탭 + Today 일정 카드로 대체
 
-### 2.5 알림 고도화 `@Coder-Logic` → Phase 3로 이관
-- [ ] 커스텀 알림 규칙 설정 (Lab 수치 기반 등)
-- [ ] 알림 히스토리 (과거 알림 열람/삭제)
-- [ ] AI 기반 알림 분석 (WardAide 연동)
+### 2.5 알림 고도화 → **3.2로 통합** (항목 중복 제거, 2026-09-19)
+> 같은 내용이 1.12·2.5·3.2·3.3.2 네 군데에 흩어져 있어 3.2 한 곳으로 합쳤다.
 
 ---
 
@@ -279,9 +301,12 @@
 - [x] AI 날짜 선택 (date picker + 퀵 버튼, 선택 날짜 기준 데이터)
 - [x] 설정 페이지 AI 설정 UI
 
-### 3.2 알림 고도화 `@Coder-Logic` → Phase 3 후반
-- [ ] 커스텀 알림 규칙 설정 (Lab 수치 기반 등)
+### 3.2 알림 고도화 `@Coder-Logic` (1.12 · 2.5 · 3.3.2의 알림 항목을 여기로 통합)
+> **현재**: 알림 = `type: 'reminder'` 메모(당일 `alertDate`)뿐이다. 규칙 엔진도, 히스토리도 없다.
+> v2에서 범용 알림 배너(localStorage 기반)는 제거됐으므로, 다시 만든다면 Supabase 저장이 전제다.
+- [ ] 커스텀 알림 규칙 설정 (Lab 수치 기반 등) — 규칙 저장 테이블 설계부터 필요
 - [ ] 알림 히스토리 (과거 알림 열람/삭제)
+- [ ] AI 기반 알림/Morning Briefing 분석 (WardAide 연동)
 
 ### 3.3 AI 추가 기능 (예정)
 
@@ -289,6 +314,9 @@
 
 > "장영임님 소듐 요즘 어땠지?" 같은 음성 질문에 기존 Lab/투약 데이터를 조회해 텍스트+그래프로 답한다.
 > 설계 배경/결정 사항은 `CLAUDE.md`의 "기능 스펙: AI 음성 질의" 섹션 참고. 새 DB 테이블 불필요 — read-only 조회 기능.
+>
+> **재사용 전제 충족 확인 (2026-09-19)**: `useLabStore.getLabTrendData()` ✅ / `LabChart.tsx` ✅ (Phase 5.4에서 v2로 포팅) /
+> 플로팅 버튼 자리 `AppShell` ✅ / `aiService.callAI()`·`generateSOAP()` 패턴 ✅ → 아래 `[?]`만 정하면 바로 착수 가능.
 
 - [?] Whisper API 키 저장 위치 결정 (`useAIStore`에 필드 추가 vs 신규 `useSTTStore`) — @Architect 확인 필요
 - [ ] STT 연동 → `src/services/sttService.ts`
@@ -314,15 +342,19 @@
 #### 3.3.2 기타 AI 추가 기능 (예정)
 
 - [ ] 근거연결 AI (가이드라인 키워드 추천, 논문/근거 연결)
-- [ ] AI 기반 Morning Briefing 분석
 - [ ] 간호사 대화 녹음 → 환자별 SOAP 자동 분리 (3.3.1 파이프라인 검증 후 재사용 예정 — STT/aiService 패턴 동일, 세그멘테이션 프롬프트만 신규)
 
-### 3.4 Lab 서버 API 엔드포인트 (차기 논의 후 진행)
-- [ ] `POST /api/lab-import` 서버 엔드포인트 (브라우저 UI 없이 lab-inbox XLS 자동 처리)
-- [ ] 호스팅 선택 논의 필요: Vercel Serverless vs Supabase Edge Function vs 별도 Node 서버
-- [ ] 흐름: 백업 다운로드 → 복호화 → Storage 스캔 → XLS 파싱 → 환자 매칭 → Lab 저장 → 재암호화 → 업로드
-- [ ] 보안: HTTPS 전송, 비밀번호 서버 저장 안 함, rate limit, 로그 마스킹
-- [ ] 처리 완료 파일 관리 (processed/ 이동 또는 삭제)
+### 3.4 Lab 서버 API 엔드포인트 — **대부분 구현 완료** (2026-09-19 코드 확인)
+> TODO에는 미착수로 남아 있었지만 `api/lab-import.ts`가 이미 프로덕션에 배포되어 동작 중이다.
+- [x] `POST /api/lab-import` 서버 엔드포인트 → `api/lab-import.ts` + `src/services/server/storageLabImportApi.ts`
+- [x] 호스팅 선택 — **Vercel Serverless**로 확정·구현
+- [x] 흐름: Storage 스캔 → XLS 파싱 → 환자 매칭(등록번호) → Lab 저장
+- [x] 인증: `LAB_IMPORT_API_KEY` 헤더 검증 (Vercel Production Secret으로 설정됨)
+- [x] 처리 완료 파일 관리 — `deleteAfterProcessing` 옵션
+- ~~백업 다운로드 → 복호화 → … → 재암호화 → 업로드~~
+  — Dexie 암호화 백업 시절 설계. 지금은 Supabase에 직접 쓰므로 불필요
+- [ ] **rate limit 추가** (현재 없음 — API 키만으로 보호 중)
+- [ ] **로그 마스킹 점검** (환자 식별정보가 서버 로그로 새지 않는지)
 
 ---
 
@@ -381,15 +413,6 @@
 - [x] `TodayDashboard.tsx` (624 → 138줄) → Metrics / TaskList / DomainSections / todayTasks 분리
 - [x] 500줄 초과 잔여 파일 점검 — 남은 것은 모두 비컴포넌트 모듈 (`labParser` 684, `backupSnapshotService` 623, `labs.repository` 473, 생성 파일 `types/supabase.ts` 435)
 
-### 5.8 등록번호 중복 판정 통일 `@Architect` `@Coder-Logic`
-> **사용자 결정 (2026-09-19)**: "4532"와 "0000004532"는 같은 환자이므로 환자 등록 시 **중복으로 판정해야 한다**.
-> 기존에는 환자 등록(정확 일치)과 Lab import(앞자리 0 제거) 기준이 달라 같은 차트번호가 중복 통과됐다.
-- [x] 공용 정규화 함수 신설 → `src/lib/registrationNumber.ts` (trim + 앞자리 0 제거)
-- [x] `features/app/patientIndexes.ts` 인덱스 구축에 적용
-- [x] `features/app/patientDraft.ts` 중복 검증에 적용
-- [x] `services/bulkLabImport.ts` 환자 매칭을 공용 함수로 교체 (중복 정의 제거)
-- [x] 단위 테스트 갱신/추가
-
 ### 5.6 검증 `@Reviewer`
 - [x] `npm run type-check` 통과
 - [x] `npx vitest run` 전체 통과 — **177 tests / 31 files** (기존 131 → Dexie 성능 테스트 10건 제거, 신규 38건 추가)
@@ -405,7 +428,14 @@
 - [x] `docs/handoff.md`에 v2 전환 완료 체크포인트 추가
 - [ ] `PRD.md` 인덱싱/오프라인 관련 기술 전제 재검토 — Dexie 인덱싱 전략(7.3절) 등 Supabase 기준으로 다시 쓸 필요
 
----
+### 5.8 등록번호 중복 판정 통일 `@Architect` `@Coder-Logic`
+> **사용자 결정 (2026-09-19)**: "4532"와 "0000004532"는 같은 환자이므로 환자 등록 시 **중복으로 판정해야 한다**.
+> 기존에는 환자 등록(정확 일치)과 Lab import(앞자리 0 제거) 기준이 달라 같은 차트번호가 중복 통과됐다.
+- [x] 공용 정규화 함수 신설 → `src/lib/registrationNumber.ts` (trim + 앞자리 0 제거)
+- [x] `features/app/patientIndexes.ts` 인덱스 구축에 적용
+- [x] `features/app/patientDraft.ts` 중복 검증에 적용
+- [x] `services/bulkLabImport.ts` 환자 매칭을 공용 함수로 교체 (중복 정의 제거)
+- [x] 단위 테스트 갱신/추가
 
 ### 5.9 차팅 탭 렌더 회귀 수정 `@Coder-Logic` `@Reviewer`
 > 사용자 제보: 차팅 탭 진입 시 화면이 비어 있음. 5.4에서 차팅 설정 연동을 붙이며 들어간 회귀.
@@ -422,6 +452,19 @@
 - [x] 각 탭에 언마운트 cleanup 추가 — 플래그는 "현재 마운트된 탭"의 것
 - [x] `PatientWorkspace`에서 환자 전환·외부 탭 변경 시 플래그 초기화
 - [x] 회귀 테스트 `unsavedState.test.tsx` 6건 (오탐 4건 + 정상 경고 동작 2건)
+
+### 5.11 TODO 정리 — 낡은 항목 정리 및 중복 제거 `@Manager`
+> v2 전환으로 전제가 사라졌는데 남아 있던 항목들과, 네 군데에 흩어져 있던 알림 항목을 정리.
+- [x] 알림 항목 4중 중복(1.12 · 2.5 · 3.2 · 3.3.2) → **3.2 한 곳으로 통합**
+- [x] PIN 렌더 성능 측정 취소 → "로그인 → 첫 화면 < 1초"로 재정의
+- [x] 오프라인 동작 테스트 취소 (오프라인 우선 아키텍처 폐기, PWA 기본 비활성)
+- [x] 일정 캘린더 뷰 취소 (사용자 결정)
+- [x] Dexie 성능 테스트 항목 취소, Phase 5에서 추가한 렌더 테스트 반영
+- [x] **3.4 Lab 서버 API 실제 상태 반영** — 미착수로 적혀 있었으나 `api/lab-import.ts`가 이미 배포·동작 중. 잔여는 rate limit·로그 마스킹 2건
+- [x] 3.3.1 음성 질의 재사용 전제 충족 여부 확인 표기
+- [x] 문서 상단에 현재 상태 요약 추가, Phase 5 하위 섹션 번호순 재배치
+
+---
 
 ## 이슈 / 메모
 > 작업 중 발견된 이슈, 결정 사항, 보류 항목을 기록
@@ -465,3 +508,4 @@
 | 2026-09-19 | **Phase 5 v2 전면 전환 리팩토링 완료**: ① v1 UI/라우트 전면 제거 (`HomePage`/`PatientDetailPage`/`SchedulePage`/`V2PreviewPage`/레거시 레이아웃·도메인 컴포넌트 삭제, `/`만 남김) ② `components/v2`·`pages/v2` → 정식 경로로 승격 (`AppShellV2`→`AppShell`, `V2AppPage`→`AppPage`) ③ **Dexie 완전 제거** (스토어 6 + 서비스 5의 `useSupabaseBackend` 분기 제거, `src/db/` 삭제, 앱 레벨 타입을 `src/types/`로 이관, `legacy*.mapper`→`*View.mapper` 재명명, `dexie`/`dexie-react-hooks`/`fake-indexeddb` 의존성 제거) ④ PIN 잠금 제거 (`usePinLock`/`PinLockPage`/`PinSettings`, 설정 네비에서 PIN·캘린더 색상 섹션 제거) ⑤ 레거시 백업 경로 제거 (Supabase 스냅샷만 유지) ⑥ **Lab 추이 차트 + AI 3종 포팅** (공용 `AiActionPanel` 신설, recharts는 lazy chunk로 분리) ⑦ **차팅 OCS 복사가 차팅 설정을 실제로 반영하도록 수정** (v2가 자체 포맷터를 쓰고 있어 설정이 무시되던 문제) ⑧ 거대 파일 분해 (`PatientWorkspace` 2,380→287, `AppPage` 1,825→371, `TodayDashboard` 624→138) ⑨ ESLint 9 정리 (`.eslintrc.cjs` 삭제, `any` 8곳 제거 → **에러 0**) ⑩ 신규 단위 테스트 33건 (총 154). 소스 39,732줄 → 23,060줄. type-check/test/build/lint 모두 통과. | ✅ 완료 | @Manager + @Architect + @Coder-UI + @Coder-Logic + @Reviewer |
 | 2026-09-19 | **등록번호 중복 판정 통일 (Phase 5.8)**: 환자 등록(`validatePatientDraft`)은 정확 일치, Lab 일괄 입력(`bulkLabImport`)은 앞자리 0 제거로 기준이 달라 "4532"와 "0000004532"가 Lab에서는 같은 환자인데 등록 시에는 중복으로 걸리지 않았다. **사용자 결정: 중복으로 판정해야 함.** `src/lib/registrationNumber.ts`에 `normalizeRegistrationNumber()`(trim + 앞자리 0 제거, 전부 0이면 "0" 유지)를 신설하고 환자 인덱스·중복 검증·Lab import 매칭이 모두 이 함수를 쓰도록 통일. `bulkLabImport`의 중복 정의(raw/stripped 이중 인덱싱) 제거. 테스트 `registrationNumber.test.ts`(4건) 추가 + `patientDraft.test.ts` 갱신. | ✅ 완료 | @Architect + @Coder-Logic |
 | 2026-09-19 | Lab 셀 편집 시 참조범위 기반 H/L 재계산이 서버(`labs.repository.updateLabItemValue`)에 있다. v1에서 스토어가 하던 계산 로직은 Dexie 제거와 함께 사라졌으므로, 참조범위 커스텀 설정(`useLabReferenceStore`)이 이 경로에 반영되는지 확인 필요. **사용자 결정: 배포 후 실사용하며 판단.** | 🔶 배포 후 확인 | @Reviewer |
+| 2026-09-19 | **TODO 정리 (Phase 5.11)**: v2 전환으로 무의미해진 항목 5건 취소(PIN 렌더 측정·오프라인 테스트·캘린더 뷰·Dexie 성능 테스트·암호화 백업 경유 Lab import 흐름), 네 군데 중복이던 알림 항목을 3.2로 통합, **3.4 Lab 서버 API가 실제로는 이미 배포·동작 중임을 코드로 확인**해 상태 정정(잔여: rate limit·로그 마스킹), 3.3.1 음성 질의 재사용 전제 충족 확인, 문서 상단 현재 상태 요약 추가. | ✅ 완료 | @Manager |
