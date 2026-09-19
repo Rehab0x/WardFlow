@@ -363,6 +363,16 @@ Use `docs/supabase-validation.md` for the current Supabase validation checklist.
   Lab 추이 차트를 실제로 열 때만 로드된다
 - `npm run lint` 에러 0
 
+### 배포 (2026-09-19)
+- 커밋: `9d9d061` v2 전환 / `a83bd6a` 문서 갱신 / `847f196` recharts 청크 수정
+- `main` push → Vercel 프로덕션 자동 배포 완료
+- Production alias: `https://ward-flow.vercel.app` (HTTP 200 확인)
+- Deployment: `https://ward-flow-3t9144x88-randy-kims-projects-6c97c3d7.vercel.app`
+- 프로덕션 env에 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` 존재 확인
+  (`VITE_DATA_BACKEND`는 더 이상 읽지 않으므로 남아 있어도 무해)
+- 배포본 `index.html` modulepreload = react-vendor / ui-vendor / supabase-vendor 만.
+  recharts(≈387kB)는 `LabChart` 동적 청크로만 로드된다
+
 ### 다음 세션이 먼저 볼 것
 1. **배포된 앱에서 수동 스모크 테스트** — 로그인, 환자 추가/수정/삭제, 퇴원·재입원,
    차팅 저장 + OCS 복사(차팅 설정 반영 확인), 메모/Lab/항생제/일정 저장·삭제,
