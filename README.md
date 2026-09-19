@@ -4,22 +4,21 @@
 
 ## 프로젝트 소개
 
-WardFlow는 **모든 과의 입원환자를 담당하는 의사**를 위한 오프라인 우선(Offline-first) 환자 관리 시스템입니다. Desktop-First로 설계되어 병원 컴퓨터에서 OCS/EMR과 병행하며 사용하고, 회진 시에는 모바일로 열람 및 간단 메모를 지원합니다.
+WardFlow는 **모든 과의 입원환자를 담당하는 의사**를 위한 환자 관리 시스템입니다. Supabase를 단일 데이터 소스로 사용하며, Desktop-First로 설계되어 병원 컴퓨터에서 OCS/EMR과 병행하며 사용하고, 회진 시에는 모바일로 열람 및 간단 메모를 지원합니다.
 
 ### 핵심 기능
 
-- **Today's Note 대시보드**: 오늘의 알림/회진/항생제 현황/Lab 요약/일정을 한눈에
+- **Today 대시보드**: 오늘 할 일(알림/일정/항생제/비정상 Lab)을 우선순위로 정렬해 한눈에
 - **환자 관리**: 입원/컨설트/퇴원 환자 사이드바, Attention 플래그, 태그 시스템
 - **차팅 폼**: C/C ~ Etc 구조화된 입력, Problem List 편집/순서변경, 템플릿 시스템
 - **통합 복사**: 차팅 내용을 한 번에 복사하여 OCS에 바로 붙여넣기
 - **Lab 결과 관리**: XLS 스마트 파싱, 추이 차트, 비정상 수치 하이라이트, 셀 편집
 - **투약 관리**: OCS 처방 붙여넣기 파싱, 항생제 D-day 자동 계산, 종료일 자동 비활성화
-- **일정 관리**: 캘린더 뷰, 카테고리별 일정 관리
+- **일정 관리**: 환자별 오늘 일정, 카테고리 커스텀
 - **회원 시스템**: 회원가입 + 관리자 승인, 역할별 권한, 모듈 권한(WardLink 확장 대비)
 - **AI 어시스턴트**: SOAP 변환, Lab 요약, 인수인계 요약, 투약 안전성 체크 (Claude/GPT/Gemini/Grok)
 - **Lab 자동 Import**: Supabase Storage inbox + 로컬 폴더 (OpenClaw 연동)
-- **데이터 백업**: AES-256 암호화 파일/텍스트 백업, Supabase 서버 동기화
-- **PWA**: 앱처럼 설치 가능, 오프라인 동작
+- **데이터 백업**: AES-256 암호화 서버 스냅샷 + 복원 영향 미리보기
 
 ### 스크린샷
 
@@ -33,11 +32,10 @@ WardFlow는 **모든 과의 입원환자를 담당하는 의사**를 위한 오�
 - **Build Tool**: Vite
 - **Routing**: React Router v6
 - **State**: Zustand (persist middleware)
-- **Local DB**: Dexie.js (IndexedDB wrapper with compound indexes)
+- **Database / Auth**: Supabase (PostgreSQL + Auth + Storage, RLS 적용) — 단일 데이터 소스
 - **UI**: Tailwind CSS + shadcn/ui
-- **Charts**: Recharts
-- **PWA**: vite-plugin-pwa
-- **Server Sync**: Supabase (optional, AES-256 encrypted)
+- **Charts**: Recharts (Lab 추이 차트, 온디맨드 lazy 로드)
+- **PWA**: vite-plugin-pwa (`VITE_ENABLE_PWA=true`일 때 활성화)
 - **Testing**: Vitest + React Testing Library
 - **Deploy**: Vercel
 
@@ -47,12 +45,17 @@ WardFlow는 **모든 과의 입원환자를 담당하는 의사**를 위한 오�
 
 - Node.js 18+
 - npm 또는 yarn
+- Supabase 프로젝트 (`supabase/migrations/`의 SQL 적용 필요)
 
 ### 설치
 
 ```bash
 # 패키지 설치
 npm install
+
+# 환경 변수 설정 — Supabase 연결 정보가 없으면 앱이 동작하지 않습니다
+cp .env.example .env.local
+# .env.local 에 VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY 입력
 
 # 개발 서버 실행
 npm run dev
@@ -80,97 +83,80 @@ npm run test:watch
 
 ## 프로젝트 구조
 
+레이어는 **UI → stores → data(repository) → Supabase** 한 방향으로 흐릅니다.
+
 ```
 wardflow/
+├── api/lab-import.ts    # Vercel 서버리스 — Storage inbox XLS 처리
+├── supabase/migrations/ # DB 스키마 + RLS 정책
+├── docs/                # 재구축 계획, 인수인계, Supabase 문서
 ├── src/
-│   ├── components/      # React 컴포넌트
-│   │   ├── ui/         # shadcn/ui 공통 컴포넌트
-│   │   ├── patient/    # 환자 관련
-│   │   ├── charting/   # 차팅 폼
-│   │   ├── lab/        # Lab 결과
-│   │   ├── medication/ # 투약
-│   │   ├── note/       # 회진 메모
-│   │   ├── schedule/   # 일정
-│   │   └── layout/     # 레이아웃 (Header, Sidebar, AppShell)
-│   ├── db/             # Dexie.js 스키마 및 시드
-│   ├── stores/         # Zustand 스토어
-│   ├── hooks/          # 커스텀 훅
-│   ├── services/       # 비즈니스 로직
-│   │   └── parser/     # Lab/투약 파서
-│   ├── utils/          # 유틸리티
-│   ├── types/          # TypeScript 타입 정의
-│   └── pages/          # 페이지 컴포넌트
-├── CLAUDE.md           # Claude Code 가이드
-├── PRD.md              # 상세 요구사항
-└── TODO.md             # 태스크 관리
+│   ├── pages/           # AppPage(메인 셸), Login, Register, Settings, LabImport
+│   ├── components/
+│   │   ├── layout/      # AppShell, TopBar, PatientRail
+│   │   ├── today/       # Today 대시보드
+│   │   ├── workspace/   # 환자 워크스페이스 (탭/폼/섹션)
+│   │   ├── clinical/    # 공용 임상 UI 프리미티브
+│   │   ├── patient/ lab/ charting/ ai/ settings/ ui/
+│   ├── features/app/    # AppPage 전용 순수 로직 (인덱스/검증/낙관적 업데이트)
+│   ├── hooks/           # useBriefingData, useClinicalWriters, usePatientWriters
+│   ├── data/            # Supabase 리포지토리 (모든 DB 접근 지점)
+│   ├── domain/ mappers/ # 도메인 타입 ↔ 뷰모델 변환
+│   ├── stores/          # Zustand 스토어
+│   ├── services/        # 파서, 브리핑 집계, AI, 백업
+│   ├── types/ utils/ lib/ config/
+├── CLAUDE.md            # Claude Code 가이드
+├── PRD.md               # 상세 요구사항
+├── DESIGN.md            # 디자인 시스템
+└── TODO.md              # 태스크 관리
 ```
 
 ## 개발 현황
 
-**v1.0.5** (2026-04-01) — Phase 1~3.1 완료, AI 기능 탑재
+**v2 (2026-09-19)** — Supabase 전용 전환 + v1 UI 제거 리팩토링 완료
 
-### Phase 1: Foundation (MVP Core) — 완료
-- [x] 프로젝트 셋업 (Vite + React + TS + Tailwind + PWA)
-- [x] Dexie.js DB 스키마 + 복합 인덱스
-- [x] 레이아웃 (데스크톱 사이드바 + 모바일 하단 네비 + 반응형)
-- [x] 회원가입 + 로그인 + 관리자 승인 시스템
-- [x] 환자 CRUD (입원/컨설트/퇴원/재입원)
-- [x] 차팅 폼 (C/C~Etc, Problem List, 템플릿)
-- [x] Lab 결과 관리 (XLS 파싱, 추이 차트, 셀 편집, Culture)
-- [x] 투약 관리 (OCS 붙여넣기, 항생제 D-day, 지참약 종료/재활성화)
-- [x] 회진 메모 (경과/알림, 날짜 지정)
-- [x] Today's Note 대시보드 (알림/회진/항생제/Lab/일정)
-- [x] PIN 잠금 + 프리페치
-- [x] 사이드바 플래그 (Attention/알림/항생제, 실시간 반영)
-- [x] 모바일 반응형
-- [x] QA 테스트 65건
+### v2 전환 요약
+- v1 UI/라우트 전면 제거 — 단일 앱 셸(`/`)로 통합
+- Dexie/IndexedDB 이중 백엔드 제거 → **Supabase 단일 데이터 소스**
+- PIN 잠금 제거 (Supabase Auth 세션으로 대체)
+- Lab 추이 차트 · AI 3종(Lab 요약/인수인계/투약 체크)을 새 워크스페이스로 포팅
+- 거대 파일 분해: `PatientWorkspace` 2,380줄 → 탭·폼 단위, `AppPage` 1,825줄 → 페이지 + 훅 3개
+- 차팅 OCS 복사가 **설정 > 차팅 설정**을 실제로 반영하도록 연결
+- 소스 코드 39.7k줄 → 23k줄, lint 에러 0
 
-### Phase 2: Smart Input — 완료
-- [x] Lab 스마트 파싱 (XLS BIFF/cp949, 검사코드 매핑, 일괄 업로드)
-- [x] Lab 카테고리 시스템 (커스텀 카테고리 편집)
-- [x] 템플릿 시스템 (CRUD, 필드별 적용)
-- [x] 차팅 복사 포맷 커스텀 설정
-- [x] 일정 관리 (캘린더 뷰, 카테고리 커스텀)
-- [x] 데이터 백업/복원 (AES-256, 파일/텍스트/서버 동기화)
+### 완료된 기능
+- 회원가입 + 로그인 + 관리자 승인 (Supabase Auth + RLS)
+- 환자 CRUD (입원/협진/퇴원/재입원/삭제)
+- Today 대시보드 (할 일 우선순위 정렬, 필터, 검색)
+- 환자 워크스페이스 6탭 (요약/차팅/Lab/약제/메모/일정)
+- 차팅 폼 + 템플릿 + OCS 통합 복사 (포맷 커스텀 설정)
+- Lab: XLS 스마트 파싱, 일괄 입력, 수치 표 인라인 편집, 추이 차트, Culture
+- 투약: OCS 붙여넣기 파싱, 항생제 D-day
+- AI: SOAP 변환, Lab 요약, 인수인계 요약, 투약 안전성 체크 (Claude/GPT/Gemini/Grok)
+- Lab Import Inbox (Supabase Storage + 로컬 폴더)
+- 암호화 백업 스냅샷 + 복원 영향 미리보기
 
-### Phase 3.1: WardAide — AI 어시스턴트 — 완료
-- [x] 멀티 LLM 지원 (Claude, GPT, Gemini, Grok — 설정에서 선택)
-- [x] AI SOAP 변환 (경과기록 → S/O/A/P, 개별 섹션 복사)
-- [x] AI Lab 요약 (최근 Lab → 임상적 요약)
-- [x] AI 인수인계 요약 (전체 환자 컨텍스트 → 인수인계 보고서)
-- [x] AI 투약 체크 (투약 × Lab 교차 분석 → 안전성 알림)
-- [x] 날짜별 AI 생성 (date picker + 퀵 버튼)
-- [x] Culture 결과 재설계 (Specimen/Culture&ID/Sensitivity 3필드)
-- [x] Lab 참조범위 커스텀 설정
-- [x] 설정 페이지 사이드 네비게이션 리뉴얼
-- [x] Lab Import Inbox (Supabase Storage + 로컬 폴더 듀얼 모드)
-
-### Phase 3.2: 추가 AI + 알림 (예정)
-- [ ] 근거연결 AI (가이드라인/논문 추천)
-- [ ] 로컬 DB 자연어 쿼리
-- [ ] 알림 고도화 (커스텀 규칙, 히스토리)
-
-### Phase 4: WardLink Integration (예정)
-- [ ] CouchDB/PouchDB 자동 동기화
-- [ ] 공통 로그인 시스템
-- [ ] WardCare 모듈 연동
+### 예정
+- 알림 고도화 (커스텀 규칙, 히스토리)
+- AI 음성 질의 (회진 중 자연어 조회) — `CLAUDE.md` 기능 스펙 참고
+- 근거연결 AI (가이드라인/논문 추천)
+- WardLink 통합 (공통 로그인, WardCare 연동)
 
 상세한 진행 상황은 [TODO.md](./TODO.md)를 참고하세요.
 
 ## 성능 최적화 전략
 
-### Dexie.js 복합 인덱스
-- `[status+roomBed]`: 활성 환자 병실순 조회
-- `[patientId+testDate]`: 환자별 Lab 추이
-- `[patientId+isActive]`: 환자별 현재 투약
-- `[isAntibiotic+isActive]`: 항생제 D-day 계산
-- `[patientId+category]`: Lab 카테고리별 조회
+### 쿼리
+- 모든 DB 접근은 `src/data/*.repository.ts`를 거치며, **컬럼을 명시해서 select** 합니다
+- Today 브리핑·사이드바 조회는 **활성 환자 ID로 스코프**하고, `.in()` 청크로 나눠 병렬 실행합니다
+- 작은 임상 데이터 쓰기 후에는 Today 브리핑만 낙관적으로 갱신하고, 서버 확인 갱신은 합쳐서 한 번만 실행합니다
 
-### 로딩 최적화
-- PIN 입력 중 백그라운드 프리페치
+### 로딩
+- 초기 로드는 환자 목록 + Today 브리핑을 병렬로 가져옵니다
 - 앱 셸 즉시 렌더 (정적 UI 우선)
-- 점진적 로딩 (목록 → 상세 → 차트)
-- 코드 스플리팅 (`React.lazy()` + `Suspense`)
+- 점진적 로딩 (목록 → 탭 진입 시 상세 → 차트 온디맨드)
+- 코드 스플리팅 (`React.lazy()` + `Suspense`) — Recharts(≈380kB)는 Lab 추이 차트를 열 때만 로드합니다
+- 포커스 복귀 시 60초 이상 지난 데이터만 조용히 갱신하며, 미저장 작업이 있으면 건너뜁니다
 
 ## 라이선스
 

@@ -284,9 +284,38 @@
 - [ ] 알림 히스토리 (과거 알림 열람/삭제)
 
 ### 3.3 AI 추가 기능 (예정)
+
+#### 3.3.1 AI 음성 질의 — 회진 중 자연어 조회 `@Architect` `@Coder-Logic` `@Coder-UI`
+
+> "장영임님 소듐 요즘 어땠지?" 같은 음성 질문에 기존 Lab/투약 데이터를 조회해 텍스트+그래프로 답한다.
+> 설계 배경/결정 사항은 `CLAUDE.md`의 "기능 스펙: AI 음성 질의" 섹션 참고. 새 DB 테이블 불필요 — read-only 조회 기능.
+
+- [?] Whisper API 키 저장 위치 결정 (`useAIStore`에 필드 추가 vs 신규 `useSTTStore`) — @Architect 확인 필요
+- [ ] STT 연동 → `src/services/sttService.ts`
+  - [ ] MediaRecorder로 오디오 녹음 (webm/opus)
+  - [ ] Whisper API 호출 (`prompt`에 의료 용어 힌트: "소듐, 칼륨, 크레아티닌, 항생제, 헤모글로빈")
+  - [ ] SettingsPage에 Whisper API 키 입력 UI 추가
+- [ ] 자연어 → 구조화 질의 파싱 → `aiService.ts`에 `parseVoiceQuery(transcript, patientNames)` 추가
+  - [ ] 시스템 프롬프트: 활성 환자 명단을 컨텍스트로 전달해 발음 오차 보정 매칭
+  - [ ] 출력 스키마: `{ patientName: string|null, queryType: 'lab'|'medication'|'unknown', item: string|null }`
+  - [ ] JSON 파싱 실패 대비 처리 (마크다운 코드펜스 제거 등)
+- [ ] 조회 로직 → `src/hooks/useVoiceQuery.ts` (신규 훅)
+  - [ ] patientName → patientId 매핑 (`usePatientStore.patients` exact match)
+  - [ ] `queryType === 'lab'` → 기존 `useLabStore.getLabTrendData()` 재사용
+  - [ ] `queryType === 'medication'` → 기존 `useMedicationStore` 조회
+  - [ ] 매칭 실패/`unknown` 시 안내 메시지 분기
+- [ ] UI 구현
+  - [ ] `src/components/voice/VoiceQueryButton.tsx` — 플로팅 마이크 버튼 (AppShell에 전역 배치, 특정 환자 페이지 비종속)
+  - [ ] `src/components/voice/VoiceQueryOverlay.tsx` — 녹음 중→STT 텍스트→답변(텍스트 + 기존 `LabChart` 재사용) 단계별 표시
+  - [ ] 녹음 실패/STT 실패/매칭 실패 각각 다른 에러 안내
+- [ ] 원본 음성/STT 텍스트 미저장 확인 (응답 생성 직후 폐기, DB 기록 없음)
+- [ ] 테스트: `parseVoiceQuery` 출력 파싱 단위 테스트 (Vitest)
+
+#### 3.3.2 기타 AI 추가 기능 (예정)
+
 - [ ] 근거연결 AI (가이드라인 키워드 추천, 논문/근거 연결)
-- [ ] 로컬 DB 자연어 쿼리 (자연어 → Dexie 쿼리)
 - [ ] AI 기반 Morning Briefing 분석
+- [ ] 간호사 대화 녹음 → 환자별 SOAP 자동 분리 (3.3.1 파이프라인 검증 후 재사용 예정 — STT/aiService 패턴 동일, 세그멘테이션 프롬프트만 신규)
 
 ### 3.4 Lab 서버 API 엔드포인트 (차기 논의 후 진행)
 - [ ] `POST /api/lab-import` 서버 엔드포인트 (브라우저 UI 없이 lab-inbox XLS 자동 처리)
@@ -302,6 +331,78 @@
 - [ ] 모듈 간 데이터 공유
 - [ ] WardCare 연동
 - [ ] EMR API 연동 탐색
+
+---
+
+## Phase 5: v2 전면 전환 리팩토링 (완료 — 2026-09-19)
+
+> **배경**: `/` 는 이미 v2 셸(`V2AppPage`)로 동작하지만, v1 UI·라우트와 Dexie 이중 백엔드가 그대로 남아 있다.
+> `docs/rebuild-plan.md` 10단계 중 9~10단계("Remove direct Dexie usage", "Dexie는 캐시로만")가 미완이었다.
+> **사용자 결정 (2026-09-19)**: ① Dexie 완전 제거 — Supabase 전용 ② v1 전용 기능 중 **Lab 추이 차트 + AI 3종만 v2로 포팅** (캘린더/범용 알림/오프라인 인디케이터는 제거) ③ PIN 잠금 완전 제거.
+
+### 5.1 v1 UI/라우트 제거 `@Coder-UI`
+- [x] `App.tsx` 레거시 라우트 제거 (`/legacy`, `/legacy/settings`, `/patients/:patientId`, `/calendar`, `/v2` 프리뷰)
+- [x] 레거시 페이지 삭제 → `HomePage.tsx`, `PatientDetailPage.tsx`, `SchedulePage.tsx`
+- [x] 디자인 프리뷰 목업 삭제 → `src/pages/v2/V2PreviewPage.tsx` (가짜 데이터 + localStorage, 인증 없음)
+- [x] 레거시 레이아웃 삭제 → `components/layout/{AppShell,Sidebar,Header,BottomNav}.tsx`
+- [x] 레거시 도메인 컴포넌트 삭제 → `components/{dashboard,patient,note,schedule}/*`, `components/medication/*`, `components/charting/{ChartingForm,ProblemListEditor,ResizableTextArea}.tsx`, `components/lab/{LabTable,LabManualInput}.tsx`
+- [x] 레거시 전용 스토어/훅 삭제 → `useGlobalAlertStore`, `useOfflineStatus`, `useSidebarFlags`
+- [x] 삭제 후 import 도달성 재검증 (죽은 파일 0개)
+
+### 5.2 PIN 잠금 제거 `@Coder-Logic`
+- [x] `hooks/usePinLock.ts`, `pages/PinLockPage.tsx`, `components/settings/PinSettings.tsx` 삭제
+- [x] `App.tsx` PIN 오버레이/`usePrefetch(isLocked)` 정리
+- [x] `lib/settingsNavigation.ts`에서 PIN 섹션 제거 + 테스트 갱신
+- [x] `db` PIN 자격증명 의존 제거
+
+### 5.3 Dexie 이중 백엔드 제거 — Supabase 전용 `@Architect` ⚡
+- [x] 스토어 분기 제거 (`if (useSupabaseBackend)`) → `usePatientStore`, `useNoteStore`, `useMedicationStore`, `useLabStore`, `useScheduleStore`, `useAuthStore`, `useTemplateStore`
+- [x] 서비스 분기 제거 → `briefingService`, `bulkLabImport`, `labCategoryService`, `templateService`, `backupService`
+- [x] 레거시 백업 경로 제거 → `services/backupService.ts` + `components/settings/LegacyBackupSettings.tsx` (Supabase 스냅샷만 유지)
+- [x] `src/db/` 전체 삭제 (`database.ts`, `seed.ts`, `resetDb.ts`, `database.perf.test.ts`)
+- [x] `db/database.ts`가 내보내던 앱 레벨 타입을 `src/types/`로 이관 (Patient, Medication, LabResult, Note, Schedule …)
+- [x] `mappers/legacy*.mapper.ts` → `*View.mapper.ts`로 재명명 (도메인 ↔ 뷰모델 매퍼로 역할 명확화)
+- [x] `config/backend.ts` 정리 — `dataBackend` 스위치 제거, Supabase 필수화
+- [x] `main.tsx` 개발용 Dexie 헬퍼(`resetDatabase`/`seedDatabase`) 제거
+- [x] `package.json`에서 `dexie`, `dexie-react-hooks` 제거
+- [x] `.env.example`에서 `VITE_DATA_BACKEND` 제거
+
+### 5.4 v1 전용 기능 v2로 포팅 `@Coder-UI` `@Coder-Logic`
+- [x] Lab 추이 차트 → Lab 탭에서 항목명 클릭 시 `LabTrendDialog` (참조범위 회색 밴드 유지, recharts는 lazy 로드)
+- [x] AI Lab 요약 → Lab 탭
+- [x] AI 투약 체크 → 약제 탭
+- [x] AI 인수인계 요약 → 환자 워크스페이스 **요약 탭** (`generateHandoff`가 환자 단위 API라 Today가 아닌 환자별 배치)
+- [x] 기존 `services/aiService.ts` 함수 재사용, 공용 `AiActionPanel`로 통합 (버튼→로딩→에러→결과→복사/저장)
+
+### 5.5 거대 파일 분해 (200줄 규칙) `@Coder-UI` `@Architect`
+- [x] `PatientWorkspace.tsx` (2,380줄) → 탭 6개 + 폼 4개 + 섹션 2개 + 순수 로직 2개로 분리 (최대 287줄)
+- [x] `AppPage.tsx` (1,825 → 371줄) → `useBriefingData` / `useClinicalWriters` / `usePatientWriters` + `features/app/*` 분리
+- [x] `TodayDashboard.tsx` (624 → 138줄) → Metrics / TaskList / DomainSections / todayTasks 분리
+- [x] 500줄 초과 잔여 파일 점검 — 남은 것은 모두 비컴포넌트 모듈 (`labParser` 684, `backupSnapshotService` 623, `labs.repository` 473, 생성 파일 `types/supabase.ts` 435)
+
+### 5.8 등록번호 중복 판정 통일 `@Architect` `@Coder-Logic`
+> **사용자 결정 (2026-09-19)**: "4532"와 "0000004532"는 같은 환자이므로 환자 등록 시 **중복으로 판정해야 한다**.
+> 기존에는 환자 등록(정확 일치)과 Lab import(앞자리 0 제거) 기준이 달라 같은 차트번호가 중복 통과됐다.
+- [x] 공용 정규화 함수 신설 → `src/lib/registrationNumber.ts` (trim + 앞자리 0 제거)
+- [x] `features/app/patientIndexes.ts` 인덱스 구축에 적용
+- [x] `features/app/patientDraft.ts` 중복 검증에 적용
+- [x] `services/bulkLabImport.ts` 환자 매칭을 공용 함수로 교체 (중복 정의 제거)
+- [x] 단위 테스트 갱신/추가
+
+### 5.6 검증 `@Reviewer`
+- [x] `npm run type-check` 통과
+- [x] `npx vitest run` 전체 통과 — **159 tests / 27 files** (기존 131 → Dexie 성능 테스트 10건 제거, 신규 38건 추가)
+- [x] `npm run build` 통과
+- [x] `npm run lint` **에러 0** (경고 15건은 shadcn/ui fast-refresh 권고 등 기존 항목)
+- [x] 삭제된 기능에 대한 죽은 테스트 정리
+- [x] 도달 불가 파일 0개 재확인 (import 그래프 검증)
+- [x] 신규 테스트: `workspaceInput`(7), `workspaceData`(5), `todayTasks`(6), `patientDraft`(11), `optimisticBriefing`(5), `registrationNumber`(4)
+
+### 5.7 문서 동기화 `@Manager`
+- [x] `CLAUDE.md` 프로젝트 구조/기술 스택/설계 원칙을 현재 코드 기준으로 갱신 (Dexie → Supabase, v2 구조 반영)
+- [x] `README.md` 기능/스택 갱신
+- [x] `docs/handoff.md`에 v2 전환 완료 체크포인트 추가
+- [ ] `PRD.md` 인덱싱/오프라인 관련 기술 전제 재검토 — Dexie 인덱싱 전략(7.3절) 등 Supabase 기준으로 다시 쓸 필요
 
 ---
 
@@ -344,3 +445,6 @@
 | 2026-04-03 | **v1.0.6 Release — Lab 파싱 간소화 + 질적 값 유지 + 최근 Lab 현황**: ① **OCS 붙여넣기 파싱 간소화** (검사명+값 2컬럼만으로 파싱 가능, parseTabLine 최소 2컬럼 지원, parseSpaceLine에 코드 없는 케이스 추가, buildItemFromNameValue 헬퍼, placeholder 간단 예시) ② **질적 Lab 값 유지** (PURE_NUMERIC regex로 순수 숫자만 판별, "1+", "2+", "trace" 등 문자열 그대로 저장, valueStr로 통일) ③ **최근 Lab 현황 카드** (getRecentLabStatus 서비스 추가, 활성 환자별 최신 Lab 날짜 집계, 날짜 그룹화 + 오래된 순 정렬, 빨강=없음/주황=3일+/초록=최근, BulkLabImport 업로드 단계 상단 표시) ④ **항생제 표시 변경** (D+N → N+1일, "사용 기간"이 임상적으로 더 의미있음, MedicationList+PatientDetailPage+HomePage 3곳 적용). Lab 파싱 자동화 동작 확인(정상), 서버 API 엔드포인트는 향후 논의로 보류. | ✅ 완료 | @Coder-UI + @Coder-Logic |
 | 2026-03-18 | **개요 탭 알림 시스템 구현 및 날짜 버그 전면 수정**: ① 개요 탭 Quick Stats 카드(Lab/투약/메모 갯수) 제거 ② 개요 탭 최상단 알림 박스 추가 (C/C 위, 앰버 색상) — 오늘 알림 메모(reminder) + 오늘/어제 Lab 결과 유무 표시 ③ Lab 알림 표시 형식: "어제 (2026-03-17) Lab 결과가 있습니다." ④ **날짜 timezone 버그 전면 수정**: `formatDate()` 유틸을 `toISOString()` 대신 로컬 시간 기준으로 수정, `LabTable.tsx` 날짜 키 생성 시 toISOString() → formatDate() 교체, `LabManualInput.tsx` 기본값 및 저장 시 `parseLocalDate()` 적용 ⑤ Tags 카드 제목 "주의사항 (Tags)" → "Tags" 단순화 및 빈 상태 문구 수정. | ✅ 완료 | @Coder-UI + @Coder-Logic |
 | 2026-05-16 | **Clinical Calm v1 디자인 시스템 마이그레이션 (Today's Note + Header)**: ① 신규 컴포넌트 `src/components/dashboard/StatCard.tsx` + `src/components/dashboard/SectionCard.tsx` (Row/Room/Time/Body/Pill/Metric 헬퍼) ② Header 시안 banner 제거 → `bg-white/85 backdrop-blur-md` + Stethoscope + WardFlow zinc 톤, 모바일 햄버거/오프라인 인디케이터/모든 핸들러 보존 ③ HomePage 전면 리팩터 (기존 Zustand/Dexie 로직 그대로, 렌더링만 교체): Today H1 + 4 StatCard + 2×2 SectionCard (알림/항생제/최근 Lab/일정), 항생제 D-day Pill tone (≤5 muted / 6-9 warning / ≥10 또는 isLongTerm danger), 빈 상태도 행 구조 유지 ④ `src/index.css` HSL 변수 cyan(199 89% 38%) → zinc-900(240 6% 10%) 재튜닝, 배경 zinc-50, ring zinc-400, body에 `font-feature-settings: 'tnum'` 추가 ⑤ indigo 액센트 시도 후 사용자 피드백으로 원상복구 (DESIGN.md v1 유지) ⑥ Header.tsx.bak, HomePage.tsx.bak 백업 보관 ⑦ 빌드/타입체크/테스트 65개 통과. ESLint 9 vs `.eslintrc.cjs` 불일치는 사전 이슈. | ✅ 완료 | @Coder-UI + @Coder-Logic |
+| 2026-09-19 | **Phase 5 v2 전면 전환 리팩토링 완료**: ① v1 UI/라우트 전면 제거 (`HomePage`/`PatientDetailPage`/`SchedulePage`/`V2PreviewPage`/레거시 레이아웃·도메인 컴포넌트 삭제, `/`만 남김) ② `components/v2`·`pages/v2` → 정식 경로로 승격 (`AppShellV2`→`AppShell`, `V2AppPage`→`AppPage`) ③ **Dexie 완전 제거** (스토어 6 + 서비스 5의 `useSupabaseBackend` 분기 제거, `src/db/` 삭제, 앱 레벨 타입을 `src/types/`로 이관, `legacy*.mapper`→`*View.mapper` 재명명, `dexie`/`dexie-react-hooks`/`fake-indexeddb` 의존성 제거) ④ PIN 잠금 제거 (`usePinLock`/`PinLockPage`/`PinSettings`, 설정 네비에서 PIN·캘린더 색상 섹션 제거) ⑤ 레거시 백업 경로 제거 (Supabase 스냅샷만 유지) ⑥ **Lab 추이 차트 + AI 3종 포팅** (공용 `AiActionPanel` 신설, recharts는 lazy chunk로 분리) ⑦ **차팅 OCS 복사가 차팅 설정을 실제로 반영하도록 수정** (v2가 자체 포맷터를 쓰고 있어 설정이 무시되던 문제) ⑧ 거대 파일 분해 (`PatientWorkspace` 2,380→287, `AppPage` 1,825→371, `TodayDashboard` 624→138) ⑨ ESLint 9 정리 (`.eslintrc.cjs` 삭제, `any` 8곳 제거 → **에러 0**) ⑩ 신규 단위 테스트 33건 (총 154). 소스 39,732줄 → 23,060줄. type-check/test/build/lint 모두 통과. | ✅ 완료 | @Manager + @Architect + @Coder-UI + @Coder-Logic + @Reviewer |
+| 2026-09-19 | **등록번호 중복 판정 통일 (Phase 5.8)**: 환자 등록(`validatePatientDraft`)은 정확 일치, Lab 일괄 입력(`bulkLabImport`)은 앞자리 0 제거로 기준이 달라 "4532"와 "0000004532"가 Lab에서는 같은 환자인데 등록 시에는 중복으로 걸리지 않았다. **사용자 결정: 중복으로 판정해야 함.** `src/lib/registrationNumber.ts`에 `normalizeRegistrationNumber()`(trim + 앞자리 0 제거, 전부 0이면 "0" 유지)를 신설하고 환자 인덱스·중복 검증·Lab import 매칭이 모두 이 함수를 쓰도록 통일. `bulkLabImport`의 중복 정의(raw/stripped 이중 인덱싱) 제거. 테스트 `registrationNumber.test.ts`(4건) 추가 + `patientDraft.test.ts` 갱신. | ✅ 완료 | @Architect + @Coder-Logic |
+| 2026-09-19 | Lab 셀 편집 시 참조범위 기반 H/L 재계산이 서버(`labs.repository.updateLabItemValue`)에 있다. v1에서 스토어가 하던 계산 로직은 Dexie 제거와 함께 사라졌으므로, 참조범위 커스텀 설정(`useLabReferenceStore`)이 이 경로에 반영되는지 확인 필요. **사용자 결정: 배포 후 실사용하며 판단.** | 🔶 배포 후 확인 | @Reviewer |

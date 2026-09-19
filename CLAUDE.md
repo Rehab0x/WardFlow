@@ -30,10 +30,10 @@
 ├─────────────────────────────────────────────────────────┤
 │  🏗️ @Architect — 설계 담당                               │
 │  ├── 전체 파일/폴더 구조 설계 및 유지                     │
-│  ├── DB 스키마, 인덱스 설계 (Dexie.js)                    │
+│  ├── DB 스키마·RLS 설계 (Supabase), 리포지토리 계층          │
 │  ├── 타입 시스템 설계 (types/)                            │
-│  ├── 성능 아키텍처 (인덱싱, 프리페치, 코드 스플리팅)       │
-│  ├── PWA 구성 (Service Worker, manifest)                  │
+│  ├── 성능 아키텍처 (쿼리 스코프, 병렬 로드, 코드 스플리팅)   │
+│  ├── PWA 구성 (Service Worker, manifest — 선택 활성화)      │
 │  └── 기술 스택 의사결정                                   │
 ├─────────────────────────────────────────────────────────┤
 │  💻 @Coder-UI — 프론트엔드/UI 구현                       │
@@ -54,7 +54,7 @@
 │  🔍 @Reviewer — QA 및 코드 리뷰                          │
 │  ├── 코드 리뷰: 타입 안전성, 컨벤션 준수                  │
 │  ├── 성능 검증: 쿼리 성능, 렌더링 속도 측정               │
-│  ├── 보안 검토: 환자 데이터 처리, PIN 보안                │
+│  ├── 보안 검토: 환자 데이터 처리, RLS 정책                 │
 │  ├── 테스트 작성 (Vitest + React Testing Library)         │
 │  └── 오프라인/반응형 동작 검증                            │
 └─────────────────────────────────────────────────────────┘
@@ -87,10 +87,10 @@
 
 ### 에이전트 간 규칙
 - **단일 책임**: 각 에이전트는 자기 역할 범위의 파일만 수정한다
-  - @Architect: `db/`, `types/`, 설정 파일, 프로젝트 구조
+  - @Architect: `data/`, `domain/`, `mappers/`, `types/`, `supabase/migrations/`, 설정 파일, 프로젝트 구조
   - @Coder-UI: `components/`, `pages/`
-  - @Coder-Logic: `services/`, `stores/`, `hooks/`, `utils/`
-  - @Reviewer: `__tests__/`, TODO.md 이슈 섹션
+  - @Coder-Logic: `services/`, `stores/`, `hooks/`, `features/`, `utils/`, `lib/`
+  - @Reviewer: `*.test.ts(x)`, TODO.md 이슈 섹션
 - **인터페이스 우선**: 다른 에이전트의 코드에 의존할 때는 타입/인터페이스만 참조
 - **충돌 방지**: 같은 파일을 두 에이전트가 동시에 수정하지 않도록 TODO.md에서 조율
 - **환각 방지**: 불확실한 구현은 TODO.md에 `[?]` 표시 후 사용자에게 확인 요청
@@ -101,131 +101,101 @@
 ---
 
 ## 프로젝트 소개
-WardFlow는 **모든 과의 입원환자를 담당하는 의사**를 위한 환자 관리 및 차팅 보조 PWA 앱이다. WardLink 플랫폼의 첫 번째 모듈로, 오프라인 우선(Offline-first) 아키텍처를 사용한다. **Desktop-First**로, 병원 컴퓨터에서 OCS/EMR과 병행하며 사용하고, 회진 시에는 모바일로 열람 및 간단 메모를 지원한다.
+WardFlow는 **모든 과의 입원환자를 담당하는 의사**를 위한 환자 관리 및 차팅 보조 웹앱이다. WardLink 플랫폼의 첫 번째 모듈로, **Supabase를 단일 데이터 소스**로 사용한다. **Desktop-First**로, 병원 컴퓨터에서 OCS/EMR과 병행하며 사용하고, 회진 시에는 모바일로 열람 및 간단 메모를 지원한다.
 
 ### 프로젝트 핵심 문서
 | 파일 | 역할 |
 |------|------|
 | `CLAUDE.md` | Claude Code 가이드 — 기술 스택, 코딩 컨벤션, 설계 원칙 (이 파일) |
-| `PRD.md` | 상세 기능 요구사항, 데이터 모델, 파싱 설계, 성능 요구사항 |
+| `PRD.md` | 상세 기능 요구사항, 데이터 모델, 파싱 설계 |
 | `TODO.md` | 태스크 관리 Single Source of Truth — 진행 상태, 담당 배정 |
+| `DESIGN.md` | Clinical Calm 디자인 시스템 |
+| `docs/rebuild-plan.md` | v2 재구축 계획 (Supabase 전환 설계) |
+| `docs/handoff.md` | 세션 간 인수인계 로그 / 체크포인트 |
+| `docs/supabase-*.md` | Supabase 스키마 계획 · 타입 생성 · 검증 체크리스트 |
 
 ## 기술 스택
 - **React 18+** with **TypeScript** (strict mode)
 - **Vite** (빌드 도구)
 - **React Router v6** (라우팅)
 - **Zustand** (상태 관리 — 가볍고 보일러플레이트 최소)
-- **Dexie.js** (IndexedDB 래퍼, 로컬 데이터베이스)
+- **Supabase** (PostgreSQL + Auth + Storage) — **단일 데이터 소스**
 - **Tailwind CSS** + **shadcn/ui** (UI 컴포넌트)
-- **Recharts** (Lab 추이 차트)
-- **vite-plugin-pwa** (PWA / Service Worker)
+- **Recharts** (Lab 추이 차트 — 온디맨드 lazy 로드)
+- **vite-plugin-pwa** (PWA / Service Worker, `VITE_ENABLE_PWA=true`일 때만)
 - **Vitest** + **React Testing Library** (테스트)
 
+> ⚠️ **Dexie.js / IndexedDB는 사용하지 않는다.** 2026-09-19 리팩토링에서 이중 백엔드를 제거하고
+> Supabase 전용으로 전환했다. 앱 실행에는 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`가 필수다.
+
 ## 프로젝트 구조
+
+레이어는 **UI → stores → data(repository) → Supabase** 한 방향으로 흐른다.
+`domain/`은 서버 스키마에 맞춘 도메인 타입, `types/`는 화면에서 쓰는 뷰모델 타입이며
+둘 사이는 `mappers/*View.mapper.ts`가 변환한다.
+
 ```
 wardflow/
-├── public/
-│   ├── manifest.json
-│   ├── icons/                    # PWA 아이콘들
-│   └── sw.js                     # Service Worker (vite-plugin-pwa 자동 생성)
+├── api/
+│   └── lab-import.ts             # Vercel 서버리스 — Storage inbox XLS 처리
+├── public/                       # PWA 아이콘, manifest
+├── supabase/migrations/          # DB 스키마 + RLS 정책 SQL
+├── docs/                         # 재구축 계획, 인수인계, Supabase 문서
 ├── src/
 │   ├── main.tsx                  # 앱 진입점
-│   ├── App.tsx                   # 라우터 및 레이아웃
+│   ├── App.tsx                   # 라우터 (/, /login, /register, /settings, /lab-import)
+│   ├── pages/
+│   │   ├── AppPage.tsx           # 메인 셸 — Today ↔ 환자 워크스페이스 오케스트레이션
+│   │   ├── LoginPage.tsx  RegisterPage.tsx  SettingsPage.tsx  LabImportPage.tsx
 │   ├── components/
-│   │   ├── ui/                   # shadcn/ui 기반 공통 컴포넌트
-│   │   ├── patient/              # 환자 관련 컴포넌트
-│   │   │   ├── PatientList.tsx
-│   │   │   ├── PatientCard.tsx
-│   │   │   ├── PatientDetail.tsx
-│   │   │   └── PatientForm.tsx
-│   │   ├── charting/             # 차팅 폼 (핵심)
-│   │   │   ├── ChartingForm.tsx        # C/C ~ Etc 구조화된 입력 폼
-│   │   │   ├── ResizableTextArea.tsx   # 높이 조절 가능한 텍스트 영역
-│   │   │   ├── ProblemListEditor.tsx   # Problem List (리스트/텍스트 모드)
-│   │   │   ├── TemplatePopup.tsx       # `/` 명령 템플릿 팝업
-│   │   │   └── CopyToOCS.tsx           # 통합 복사 버튼 + 포맷터
-│   │   ├── lab/                  # Lab 관련 컴포넌트
-│   │   │   ├── LabTable.tsx
-│   │   │   ├── LabChart.tsx
-│   │   │   ├── LabParseInput.tsx
-│   │   │   └── LabManualInput.tsx
-│   │   ├── medication/           # 투약 관련
-│   │   │   ├── MedicationList.tsx
-│   │   │   ├── MedicationForm.tsx
-│   │   │   ├── MedicationPasteInput.tsx  # OCS 처방 붙여넣기 파싱 UI
-│   │   │   └── DrugInfoLink.tsx          # 네이버 의약품사전 링크 컴포넌트
-│   │   ├── note/                 # 메모 관련
-│   │   │   ├── NoteList.tsx
-│   │   │   └── NoteEditor.tsx
-│   │   ├── schedule/             # 일정 관련
-│   │   │   ├── ScheduleView.tsx
-│   │   │   └── ScheduleForm.tsx
-│   │   ├── briefing/             # Morning Briefing
-│   │   │   └── MorningBriefing.tsx
-│   │   └── layout/               # 레이아웃
-│   │       ├── Sidebar.tsx            # 데스크톱 좌측 사이드바 네비게이션
-│   │       ├── BottomNav.tsx          # 모바일 하단 네비게이션
-│   │       ├── Header.tsx
-│   │       ├── MasterDetail.tsx       # 마스터-디테일 분할 뷰
-│   │       └── AppShell.tsx           # 반응형 앱 셸
-│   ├── db/
-│   │   ├── database.ts           # Dexie DB 인스턴스 및 스키마 정의
-│   │   ├── seed.ts               # 개발용 시드 데이터
-│   │   └── migrations.ts         # DB 마이그레이션
-│   ├── stores/
-│   │   ├── usePatientStore.ts    # Zustand 환자 스토어
-│   │   ├── useLabStore.ts
-│   │   ├── useMedicationStore.ts
-│   │   ├── useNoteStore.ts
-│   │   ├── useScheduleStore.ts
-│   │   ├── useAlertStore.ts
-│   │   └── useBriefingStore.ts   # Morning Briefing 집계 캐시
-│   ├── hooks/                    # 커스텀 훅
-│   │   ├── usePatient.ts
-│   │   ├── useLabs.ts
-│   │   ├── usePrefetch.ts        # PIN 입력 중 데이터 프리페치
-│   │   ├── useOfflineStatus.ts
-│   │   └── usePinLock.ts
+│   │   ├── layout/               # AppShell, TopBar, PatientRail, PatientRow
+│   │   ├── today/                # TodayDashboard + Metrics/TaskList/DomainSections/todayTasks
+│   │   ├── workspace/            # 환자 워크스페이스 (핵심)
+│   │   │   ├── PatientWorkspace.tsx   # 탭 셸
+│   │   │   ├── WorkspaceHeader.tsx  WorkspaceTabs.tsx  ContextPanel.tsx
+│   │   │   ├── tabs/             # Overview / Charting / Lab / Medication / Notes / Schedule
+│   │   │   ├── forms/            # 항생제·투약·표준 Lab 항목 입력 폼
+│   │   │   ├── sections/         # Culture, 최근 Lab 섹션
+│   │   │   ├── controls.tsx      # Input/SaveButton/RemoveButton/ChartField 등 공용 컨트롤
+│   │   │   ├── types.ts          # 워크스페이스 props/draft 타입
+│   │   │   ├── workspaceData.ts  # 복사문구·Lab 표·SOAP 컨텍스트 빌더 (순수 함수)
+│   │   │   └── workspaceInput.ts # 날짜/시간 검증, IME 처리 (순수 함수)
+│   │   ├── clinical/             # ClinicalRow, DataSection, MetricTile, CopyBar, dateLabels
+│   │   ├── patient/              # AddPatientPanel, PatientStatusDialog
+│   │   ├── lab/                  # LabChart, LabParseInput, BulkLabImport, Import inbox
+│   │   ├── charting/TemplatePopup.tsx
+│   │   ├── ai/AiActionPanel.tsx  # AI 호출 공용 패널 (버튼→로딩→결과→복사/저장)
+│   │   ├── settings/             # 설정 섹션별 컴포넌트
+│   │   └── ui/                   # shadcn/ui 기반 공통 컴포넌트
+│   ├── features/app/             # AppPage 전용 순수 로직
+│   │   ├── patientIndexes.ts     # 환자 목록 인덱스/검색/사이드바 인디케이터
+│   │   ├── patientDraft.ts       # 환자 입력 draft 검증
+│   │   └── optimisticBriefing.ts # Today 브리핑 낙관적 업데이트
+│   ├── hooks/
+│   │   ├── useBriefingData.ts    # Today 로딩/갱신 정책 (중복 요청 합치기, stale 갱신)
+│   │   ├── useClinicalWriters.ts # 임상 데이터 쓰기 핸들러
+│   │   ├── usePatientWriters.ts  # 환자 추가/수정/삭제/퇴원 핸들러
+│   │   └── useSupabaseUserSettingsSync.ts
+│   ├── data/                     # Supabase 리포지토리 (모든 DB 접근은 여기서만)
+│   ├── domain/                   # 서버 스키마 기준 도메인 타입
+│   ├── mappers/                  # 도메인 ↔ 뷰모델 / Supabase row 변환
+│   ├── stores/                   # Zustand 스토어 (도메인당 1개)
 │   ├── services/
-│   │   ├── parser/
-│   │   │   ├── labParser.ts      # Lab 결과 스마트 파싱 (XLS BIFF + 텍스트)
-│   │   │   ├── labCodeMap.ts     # 검사코드 → 항목명/카테고리/단위 매핑
-│   │   │   ├── xlsReader.ts      # 구형 XLS(BIFF) 파일 읽기 (cp949)
-│   │   │   ├── medParser.ts      # 투약 처방 텍스트 파싱 (OCS 복붙)
-│   │   │   ├── csvParser.ts      # CSV 파싱
-│   │   │   └── patterns.ts       # 파싱 정규식 패턴
-│   │   ├── chartingFormatter.ts  # 차팅 → 클립보드 복사 포맷터
-│   │   ├── templateService.ts    # 템플릿 관리 CRUD
-│   │   ├── alertEngine.ts        # 알림 생성 로직
-│   │   └── briefingService.ts    # Morning Briefing 데이터 집계
-│   ├── utils/
-│   │   ├── labReference.ts       # Lab 참조 범위 데이터
-│   │   ├── dateUtils.ts
-│   │   ├── formatters.ts
-│   │   └── constants.ts
-│   ├── types/
-│   │   ├── patient.ts
-│   │   ├── charting.ts           # 차팅 폼 관련 타입
-│   │   ├── template.ts           # 템플릿 타입
-│   │   ├── lab.ts
-│   │   ├── medication.ts
-│   │   ├── note.ts
-│   │   ├── schedule.ts
-│   │   └── alert.ts
-│   └── pages/
-│       ├── HomePage.tsx           # Morning Briefing 대시보드
-│       ├── PatientListPage.tsx
-│       ├── PatientDetailPage.tsx
-│       ├── SchedulePage.tsx
-│       ├── SettingsPage.tsx
-│       └── PinLockPage.tsx
-├── CLAUDE.md                      # 이 파일
-├── PRD.md                         # 상세 요구사항
-├── package.json
-├── tsconfig.json
-├── tailwind.config.ts
-├── vite.config.ts
-└── index.html
+│   │   ├── parser/               # labParser, labCodeMap, medParser
+│   │   ├── briefingService.ts    # Today 집계 (활성 환자 ID로 스코프된 병렬 쿼리)
+│   │   ├── bulkLabImport.ts      # 병원 XLS 일괄 입력
+│   │   ├── aiService.ts          # 멀티 LLM 호출 (Claude/GPT/Gemini/Grok)
+│   │   ├── chartingFormatter.ts  # 차팅 → OCS 복사 포맷터
+│   │   ├── backupSnapshotService.ts
+│   │   └── labCategoryService.ts  templateService.ts  labImportInbox.ts  storageInbox.ts
+│   ├── lib/                      # supabase 클라이언트, 에러 메시지, 정책 헬퍼
+│   ├── types/                    # 화면용 뷰모델 타입 + 생성된 supabase.ts
+│   ├── utils/                    # dateUtils, labReference, cn
+│   └── config/backend.ts         # Supabase 환경 변수
+├── CLAUDE.md  PRD.md  TODO.md  DESIGN.md  README.md
+├── eslint.config.js              # ESLint 9 flat config (.eslintrc.cjs 없음)
+├── package.json  tsconfig.json  tailwind.config.ts  vite.config.ts  vitest.config.ts
+└── .env.example
 ```
 
 ## 코딩 컨벤션
@@ -252,24 +222,23 @@ wardflow/
 ### 상태 관리
 - 로컬 UI 상태: `useState` / `useReducer`
 - 앱 전역 상태: Zustand 스토어
-- 서버/DB 데이터: Dexie.js 직접 쿼리 (hooks로 래핑)
+- 서버 데이터: `data/*.repository.ts` → Zustand 스토어 → 컴포넌트 (아래 "Supabase 데이터 접근" 참고)
 - Zustand 스토어는 `stores/` 디렉토리, 하나의 도메인당 하나의 스토어
 
-### Dexie.js (IndexedDB)
-- DB 스키마는 `db/database.ts`에서 한 곳에서 관리
-- 버전 관리 필수 (db.version(N).stores(...))
-- **모든 주요 쿼리 경로에 복합 인덱스 필수** — PRD 7.3절의 인덱싱 전략 참고
-- `.where()` + 인덱스 사용 우선, `.filter()`는 인덱스 이후 보조 필터링에만
-- `.toArray()` 후 JS에서 정렬/필터링 금지 (성능 저하 원인)
-- 쿼리는 서비스 레이어 또는 커스텀 훅에서 수행
-- 대량 데이터 입력은 `db.transaction()` 사용
-- 읽기 전용 트랜잭션은 `db.transaction('r', ...)` 명시
+### Supabase 데이터 접근
+- **모든 DB 접근은 `src/data/*.repository.ts`에서만 한다.** 컴포넌트/페이지/훅에서 `supabase` 클라이언트를 직접 부르지 않는다
+- 스토어(Zustand)는 "현재 화면이 들고 있는 데이터"를 담당하고, 읽기/쓰기 자체는 리포지토리에 위임한다
+- 리포지토리는 **컬럼을 명시해서 select** 한다 (`select('*')` 금지) — 테이블이 커져도 전송량이 예측 가능해야 한다
+- 환자 목록 기반 조회는 **활성 환자 ID로 스코프**하고, `.in()` 청크(`data/chunk.ts`)로 나눠 병렬 실행한다
+- 접근 제어는 **Supabase RLS가 최종 방어선**이다. 프론트엔드 필터링만으로 권한을 판단하지 않는다
+- 쓰기 실패는 `lib/errorMessages.ts`의 `formatUserFacingError()`를 거쳐 사용자 문구로 변환한다 (RLS/제약조건 원문 노출 금지)
+- 파괴적 작업(삭제/복원)은 실행 전 영향받는 레코드 수를 보여준다
 
 ### 파일/폴더 네이밍
 - 컴포넌트: PascalCase (`PatientCard.tsx`)
 - 유틸/훅/서비스: camelCase (`dateUtils.ts`, `usePatient.ts`)
 - 타입 정의: camelCase (`patient.ts`)
-- 상수: UPPER_SNAKE_CASE (`MAX_PIN_ATTEMPTS`)
+- 상수: UPPER_SNAKE_CASE (`DEFAULT_LAB_CATEGORIES`)
 
 ## 주요 설계 원칙
 
@@ -277,22 +246,23 @@ wardflow/
 로그인 후 첫 화면이 1초 이내에 표시되어야 한다. 이것이 이 프로젝트의 가장 중요한 UX 요구사항이다.
 
 **필수 적용 사항**:
-- Dexie.js 복합 인덱스 적극 활용 — 모든 주요 쿼리에 인덱스 매칭 필수
-- PIN 입력 중 백그라운드 프리페치 — PIN 화면 마운트 시 주요 데이터 미리 로드
 - 앱 셸 즉시 렌더 — 정적 UI 먼저, 데이터는 비동기 로드
-- 점진적 로딩 — 1단계(목록) 즉시 → 2단계(상세) 백그라운드 → 3단계(차트) 온디맨드
-- 코드 스플리팅 — `React.lazy()` + `Suspense`로 페이지별 분리
-- Morning Briefing 데이터는 앱 시작 시 한번 집계 후 캐시
+- 초기 로드는 환자 목록 + Today 브리핑을 **병렬로** 가져온다 (`useBriefingData`)
+- 점진적 로딩 — 1단계(목록) 즉시 → 2단계(상세) 탭 진입 시 → 3단계(차트) 온디맨드
+- 코드 스플리팅 — `React.lazy()` + `Suspense`. Recharts(≈380kB)는 Lab 추이 차트를 실제로 열 때만 로드한다
+- 쓰기 후에는 Today 브리핑만 낙관적으로 갱신하고, 서버 확인 갱신은 합쳐서 한 번만 실행한다
 
 **금지 사항**:
-- 전체 테이블 스캔 금지 — `.toArray()` 후 JS 필터링 대신 `.where()` + 인덱스 사용
+- `select('*')` 금지 — 필요한 컬럼만 명시한다
+- 전체 테이블 스캔 금지 — 활성 환자 ID로 스코프된 쿼리를 쓴다
 - 첫 화면에서 불필요한 데이터 로드 금지 — 차트, 히스토리 등은 온디맨드
-- 동기적 대량 DB 쓰기 금지 — `db.transaction()` 사용
+- 작은 임상 데이터 쓰기마다 전체 환자 목록을 다시 불러오지 않는다
 
-### Offline-First
-- 모든 데이터는 IndexedDB에 우선 저장
-- 네트워크 상태와 무관하게 모든 기능 동작해야 함
-- 오프라인 상태 UI 표시 (헤더에 인디케이터)
+### 데이터 정책 (Supabase 단일 소스)
+- **Supabase PostgreSQL이 유일한 진실의 원천**이다. 로컬 캐시를 권위 있는 백업으로 취급하지 않는다
+- 브라우저 저장소는 UI 편의 상태(로그인 ID 기억, 설정 persist)에만 쓴다
+- 오프라인 편집은 v2 기준 범위 밖이다. 네트워크 오류는 쓰기 배너로 명확히 드러낸다
+- 백업은 `backup_snapshots` 기반 암호화 스냅샷 + 복원 미리보기 경로만 사용한다
 
 ### 의료 데이터 시각화
 - 비정상 수치는 반드시 시각적으로 구분 (빨간 배경 또는 뱃지)
@@ -302,14 +272,16 @@ wardflow/
 ### Desktop-First, Mobile-Friendly
 - 주 사용 환경은 병원 데스크톱 컴퓨터 (OCS/EMR과 병행)
 - 데스크톱: 사이드바 네비게이션 + 마스터-디테일 분할 뷰
-- 모바일: 하단 네비게이션, 열람 중심 + 간단 메모 입력
+- 모바일: 환자 목록 드로어 + 하단 액션, 열람 중심 + 간단 메모 입력
 - 반응형 브레이크포인트: Desktop ≥1024px / Tablet 768~1023px / Mobile <768px
 - 모바일에서도 터치 타겟 최소 44x44px
 
-### 보안 (MVP)
-- PIN 잠금 화면 (앱 진입 시)
-- 자동 잠금 (5분 기본, 설정 변경 가능)
-- 환자 데이터 외부 전송 없음 (로컬 전용)
+### 보안
+- 인증은 **Supabase Auth**. 신규 가입자는 승인 대기(`pending`) 상태이며 관리자 승인 후 로그인 가능
+- 첫 가입자는 DB 트리거로 `admin` + `approved` 자동 부여
+- 환자 접근 권한은 **RLS 정책**으로 강제한다
+- AI API 키는 사용자별 설정에 저장되며 환자 데이터는 사용자가 명시적으로 AI 기능을 실행할 때만 전송된다
+- PIN 잠금은 2026-09-19 리팩토링에서 제거되었다 (IndexedDB 자격증명 모델에 의존했기 때문)
 
 ## 커맨드
 
@@ -367,6 +339,48 @@ npm run test:ui      # Vitest UI
 - EMR: 전자의무기록 (Electronic Medical Record)
 - 외진: 타과 협진 (consultation)
 - 회진: 병동 환자 진찰 (rounding)
+
+## 기능 스펙: AI 음성 질의 (Phase 3.3.1, 진행 예정)
+
+> 회진 중 "장영임님 소듐 요즘 어땠지?" 같은 질문을 음성으로 하면, 텍스트/그래프로 즉시 답하는 기능.
+> 체크리스트는 `TODO.md` 3.3.1 참고. 여기는 설계 배경과 결정 사항만 기록한다.
+
+### 데이터 흐름
+```
+마이크 녹음 (MediaRecorder)
+  → Whisper API로 STT 변환
+  → aiService.parseVoiceQuery(transcript, 활성 환자명단) — LLM이 JSON으로 구조화
+     { patientName, queryType: 'lab'|'medication'|'unknown', item }
+  → patientName으로 usePatientStore에서 환자 ID 조회 (exact match)
+  → queryType === 'lab'        → useLabStore.getLabTrendData(patientId, itemCode, itemName) → <LabChart/>
+  → queryType === 'medication' → useMedicationStore 조회 → 텍스트 리스트
+  → 화면에 답변 표시 (텍스트 + 필요시 그래프)
+```
+
+### 설계 결정 사항
+- **새 DB 테이블 불필요.** 기존 `labResults`, `medications` 테이블을 그대로 조회하는 순수 read-only 계층이다.
+- **환자 매칭은 LLM에게 위임한다.** STT가 이름을 부정확하게 인식할 수 있으므로(예: "장영임"→"장영일"), `parseVoiceQuery` 호출 시 현재 활성 환자 명단 전체를 컨텍스트로 함께 넘겨 LLM이 가장 가까운 이름으로 매칭하게 한다. 매칭 실패 시 `patientName: null` → UI에서 "환자를 특정할 수 없습니다" 안내.
+- **원본 음성/STT 텍스트는 저장하지 않는다.** 답변 생성 직후 폐기하며 DB에 기록하지 않는다 (사용자 요구사항 — Firebase 버전에서 겪은 데이터 부담을 반복하지 않기 위함).
+- **STT는 Whisper API를 사용한다.** Web Speech API보다 의료 용어 인식 정확도가 높고, `prompt` 파라미터로 도메인 용어 힌트("소듐, 칼륨, 크레아티닌, 항생제, 헤모글로빈" 등)를 줄 수 있다. 개인 사용 기준 비용은 무시할 수준.
+- **UI는 앱 전역에서 접근 가능해야 한다.** 회진 중엔 특정 환자 상세 페이지에 있지 않을 수 있으므로, 특정 환자 페이지에 종속되지 않고 `AppShell`에 플로팅 마이크 버튼으로 배치한다.
+
+### 신규 파일
+- `src/services/sttService.ts` — Whisper API 호출 래퍼
+- `src/hooks/useVoiceQuery.ts` — 녹음→STT→파싱→조회 전체 플로우 관리
+- `src/components/voice/VoiceQueryButton.tsx` — 플로팅 마이크 버튼
+- `src/components/voice/VoiceQueryOverlay.tsx` — 결과 표시 오버레이
+- `aiService.ts`에 `parseVoiceQuery()` 추가 — 기존 `generateSOAP()` 패턴(시스템 프롬프트 + JSON 출력) 그대로 따를 것
+
+### 재사용 — 신규 구현 불필요
+- `useLabStore.getLabTrendData()` — Lab 추이 조회
+- `LabChart.tsx` — 그래프 렌더링
+- `useMedicationStore` — 투약 조회
+- `useAIStore` / `callAI()` — 기존 멀티 LLM 호출 인터페이스
+
+### Whisper API 키 관리
+기존 `useAIStore`는 텍스트 LLM(Claude/GPT/Gemini/Grok) 선택용이라 Whisper(OpenAI 전용)와 독립적이다. `useAIStore`에 provider와 무관한 `whisperApiKey` 필드를 추가하거나, 신규 `useSTTStore`를 만들어 SettingsPage에 입력 UI를 추가한다. (@Architect 결정 필요 — TODO.md에 `[?]`로 표시해둠)
+
+---
 
 ## 향후 확장 (참고만)
 - WardAide: AI 어시스턴트 사이드바 (Phase 3)

@@ -1,6 +1,9 @@
 # WardFlow Rebuild Handoff
 
-Last updated: 2026-05-27
+Last updated: 2026-09-19
+
+> ⚠️ 이 문서는 시간순 누적 로그입니다. **가장 최신 상태는 맨 아래 "Current 2026-09-19 Checkpoint"를 먼저 읽으세요.**
+> 중간 섹션에는 Dexie 이중 백엔드/`/v2` 프리뷰 등 이후 제거된 내용이 남아 있습니다.
 
 ## Current Git State
 
@@ -60,9 +63,10 @@ Set `.env.local`:
 ```env
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
-VITE_DATA_BACKEND=supabase
 VITE_ENABLE_PWA=false
 ```
+
+> `VITE_DATA_BACKEND`는 2026-09-19 리팩토링에서 제거되었습니다. Supabase 환경 변수가 없으면 앱이 동작하지 않습니다.
 
 Then verify:
 
@@ -75,7 +79,7 @@ npm run dev
 Open:
 
 - Main app: `http://localhost:3000`
-- v2 design preview: `http://localhost:3000/v2`
+- (`/v2` 디자인 프리뷰 라우트는 2026-09-19에 제거되었습니다)
 
 ## Supabase Setup
 
@@ -92,11 +96,10 @@ For Vercel or another static host, set these environment variables:
 ```env
 VITE_SUPABASE_URL=...
 VITE_SUPABASE_ANON_KEY=...
-VITE_DATA_BACKEND=supabase
 VITE_ENABLE_PWA=false
 ```
 
-If `VITE_DATA_BACKEND` is missing, the app stays in the old IndexedDB mode.
+Supabase 환경 변수가 없으면 앱이 동작하지 않습니다 (IndexedDB 폴백 없음).
 
 ## Known Risks / Remaining Work
 
@@ -315,3 +318,61 @@ Use `docs/supabase-validation.md` for the current Supabase validation checklist.
 - 2026-05-27 worklog: `docs/worklog-2026-05-27.md`
 - Design plan: `docs/design-plan.md`
 - Handoff: `docs/handoff.md`
+
+## Current 2026-09-19 Checkpoint — v2 전면 전환 리팩토링 완료
+
+`docs/rebuild-plan.md`의 Migration Strategy 9~10단계("Remove direct Dexie usage from app flows",
+"Keep Dexie only for cache/offline queue if needed")를 사용자 결정에 따라 **Dexie 완전 제거**로 마무리했다.
+
+### 사용자 결정 (2026-09-19)
+1. Dexie/IndexedDB 이중 백엔드 **완전 제거** — Supabase 전용
+2. v1 전용 기능 중 **Lab 추이 차트 + AI 3종(Lab 요약/인수인계/투약 체크)만 포팅**.
+   캘린더 월간 뷰, 범용 알림, 오프라인 인디케이터는 **제거**
+3. PIN 잠금 **완전 제거** (IndexedDB 자격증명 모델 의존)
+
+### 무엇이 바뀌었나
+- **라우트**: `/`, `/login`, `/register`, `/settings`, `/lab-import` 만 남음.
+  `/legacy`, `/patients/:id`, `/calendar`, `/v2`(디자인 프리뷰) 제거
+- **경로 승격**: `src/components/v2/*` → `src/components/{layout,today,workspace,clinical}/*`,
+  `src/pages/v2/V2AppPage.tsx` → `src/pages/AppPage.tsx`, `AppShellV2` → `AppShell`
+- **데이터 계층**: 모든 스토어/서비스에서 `useSupabaseBackend` 분기 제거.
+  `src/db/` 삭제, 앱 레벨(뷰모델) 타입을 `src/types/`로 이관,
+  `mappers/legacy*.mapper.ts` → `mappers/*View.mapper.ts`로 재명명,
+  `config/backend.ts`는 Supabase 환경 변수만 남김 (`VITE_DATA_BACKEND` 제거)
+- **의존성 제거**: `dexie`, `dexie-react-hooks`, `fake-indexeddb`,
+  `@radix-ui/react-select`, `@radix-ui/react-tabs`
+- **백업**: 레거시 IndexedDB 파일/텍스트/단일행 서버 백업 경로 삭제.
+  `backup_snapshots` 스냅샷 + 복원 미리보기만 남음
+- **포팅**: `LabTrendDialog`(항목명 클릭 → 추이 차트), 공용 `AiActionPanel`을 통한
+  SOAP / Lab 요약 / 투약 체크 / 인수인계 요약
+- **버그 수정**: v2 차팅 OCS 복사가 자체 포맷터를 쓰고 있어 **설정 > 차팅 설정이 무시되던 문제**를
+  `services/chartingFormatter.ts` 경유로 수정
+- **버그 수정**: 환자 등록 중복 검사와 Lab import 환자 매칭의 등록번호 기준이 달라
+  앞자리 0만 다른 같은 차트번호가 중복 통과되던 문제를 `lib/registrationNumber.ts`로 통일
+- **파일 분해**: `PatientWorkspace` 2,380 → 287줄(최대), `AppPage` 1,825 → 371줄,
+  `TodayDashboard` 624 → 138줄. 소스 전체 39,732 → 23,060줄
+- **린트**: ESLint 9 flat config만 남기고 `.eslintrc.cjs` 삭제, `any` 8곳 제거 → **에러 0**
+  (경고 15건은 shadcn/ui fast-refresh 권고 등 기존 항목)
+
+### 검증 (2026-09-19)
+- `npm run type-check` 통과
+- `npx vitest run` — 27 files / **159 tests** 통과
+  (Dexie 성능 테스트 10건 제거, 신규 38건 추가: `workspaceInput`, `workspaceData`,
+  `todayTasks`, `patientDraft`, `optimisticBriefing`, `registrationNumber`)
+- `npm run build` 통과. recharts(≈380kB)는 `chart-vendor` 청크로 분리되어
+  Lab 추이 차트를 실제로 열 때만 로드된다
+- `npm run lint` 에러 0
+
+### 다음 세션이 먼저 볼 것
+1. **배포된 앱에서 수동 스모크 테스트** — 로그인, 환자 추가/수정/삭제, 퇴원·재입원,
+   차팅 저장 + OCS 복사(차팅 설정 반영 확인), 메모/Lab/항생제/일정 저장·삭제,
+   Lab 추이 차트, AI 4종, Lab XLS 일괄 입력, 설정 저장, 재로그인
+2. `.env.local` / Vercel 환경 변수에서 `VITE_DATA_BACKEND`를 제거해도 되는지 확인
+   (이제 읽지 않지만 남아 있어도 무해)
+3. **등록번호 중복 판정은 통일 완료** — `src/lib/registrationNumber.ts`의
+   `normalizeRegistrationNumber()`(trim + 앞자리 0 제거)를 환자 인덱스·중복 검증·Lab import 매칭이
+   모두 사용한다. 즉 "4532"와 "0000004532"는 같은 차트번호로 취급되어 환자 등록 시 중복으로 걸린다.
+   기존 데이터에 앞자리 0만 다른 중복 환자가 이미 등록돼 있는지는 배포 후 한 번 확인할 것
+4. Lab 셀 편집 시 참조범위 커스텀 설정(`useLabReferenceStore`)이 서버 재계산 경로
+   (`labs.repository.updateLabItemValue`)에 반영되는지 — **배포 후 실사용하며 판단하기로 결정**
+5. `PRD.md` 7.3절(Dexie 인덱싱 전략) 등 Supabase 기준으로 다시 쓰기
