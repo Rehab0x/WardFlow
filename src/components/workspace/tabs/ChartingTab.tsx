@@ -64,6 +64,9 @@ export function ChartingTab({
 
   useEffect(() => setDraft(initialDraft), [initialDraft]);
   useEffect(() => onDirtyChange?.(isDirty), [isDirty, onDirtyChange]);
+  // 미저장 플래그는 "현재 마운트된 탭"의 것이다. 탭을 벗어나면 반드시 내려놓아야
+  // 다른 탭(예: 요약)이 이전 탭의 입력 상태를 물려받지 않는다.
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
   const update = (field: keyof ChartingDraft, value: string) => {
     setDraft((current) => ({ ...current, [field]: value }));

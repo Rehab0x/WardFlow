@@ -356,7 +356,7 @@ Use `docs/supabase-validation.md` for the current Supabase validation checklist.
 
 ### 검증 (2026-09-19)
 - `npm run type-check` 통과
-- `npx vitest run` — 30 files / **171 tests** 통과
+- `npx vitest run` — 31 files / **177 tests** 통과
   (Dexie 성능 테스트 10건 제거, 신규 38건 추가: `workspaceInput`, `workspaceData`,
   `todayTasks`, `patientDraft`, `optimisticBriefing`, `registrationNumber`)
 - `npm run build` 통과. recharts(≈380kB)는 `chart-vendor` 청크로 분리되어
@@ -383,6 +383,16 @@ Use `docs/supabase-validation.md` for the current Supabase validation checklist.
 - **테스트 공백이 원인**: 순수 함수는 테스트했지만 컴포넌트가 실제로 렌더되는지는 보지 않았다.
   `PatientWorkspace.test.tsx`(탭 6개 렌더 + 전환)와 `TodayDashboard.test.tsx`를 추가했고,
   수정을 되돌리면 실패하는 것까지 확인했다.
+
+### 배포 후 수정 2 (2026-09-19)
+- **요약 탭에서 이동할 때마다 "저장하지 않은 변경이 있습니다" 오탐** — `dirty`는
+  `PatientWorkspace`의 단일 boolean인데, ① 탭이 언마운트돼도 내려가지 않았고
+  ② 딥링크(`useEffect(() => setTab(initialTab))`)와 환자 전환은 `handleTabChange`를
+  거치지 않아 초기화를 건너뛰었다. 그래서 이전 탭/환자의 입력 상태를
+  (스스로는 플래그를 세우지 않는) 요약 탭이 물려받았다.
+- 수정: 플래그의 소유자를 "현재 마운트된 탭"으로 못박았다. 각 탭에 언마운트 cleanup을 추가하고,
+  환자 전환·외부 탭 변경 시에도 `PatientWorkspace`가 초기화한다.
+- `unsavedState.test.tsx` 6건으로 고정 — 오탐 4가지 경로 + "진짜 편집이 있으면 경고는 떠야 한다" 2건.
 
 ### 다음 세션이 먼저 볼 것
 1. **배포된 앱에서 수동 스모크 테스트** — 로그인, 환자 추가/수정/삭제, 퇴원·재입원,

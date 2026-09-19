@@ -392,7 +392,7 @@
 
 ### 5.6 검증 `@Reviewer`
 - [x] `npm run type-check` 통과
-- [x] `npx vitest run` 전체 통과 — **171 tests / 30 files** (기존 131 → Dexie 성능 테스트 10건 제거, 신규 38건 추가)
+- [x] `npx vitest run` 전체 통과 — **177 tests / 31 files** (기존 131 → Dexie 성능 테스트 10건 제거, 신규 38건 추가)
 - [x] `npm run build` 통과
 - [x] `npm run lint` **에러 0** (경고 15건은 shadcn/ui fast-refresh 권고 등 기존 항목)
 - [x] 삭제된 기능에 대한 죽은 테스트 정리
@@ -415,6 +415,13 @@
 - [x] 회귀 테스트: `PatientWorkspace.test.tsx` 6개 탭 렌더 스모크 + 탭 전환 (수정 되돌리면 실패하는 것 확인)
 - [x] `TodayDashboard.test.tsx` 렌더/필터/검색 스모크 추가
 - [x] 접근성 개선: 지표 타일 그룹 `aria-label="오늘 지표"`, 할 일 필터 그룹 `aria-label="할 일 필터"`
+
+### 5.10 미저장 변경 플래그 오탐 수정 `@Coder-UI` `@Reviewer`
+> 사용자 제보: 환자 선택 → 요약 탭에서 다른 메뉴로 이동할 때마다 "저장하지 않은 변경이 있습니다" 경고가 뜨고, 요약 탭에 미저장 마크가 남아 있음. 실제로 고친 것은 없음.
+- [x] 원인 규명 — `dirty`는 PatientWorkspace의 단일 boolean인데 ① 탭이 언마운트돼도 내려가지 않고 ② `useEffect(() => setTab(initialTab))`(딥링크)와 환자 전환은 `handleTabChange`를 거치지 않아 초기화를 건너뜀. 결과적으로 이전 탭/환자의 입력 상태를 요약 탭이 물려받음
+- [x] 각 탭에 언마운트 cleanup 추가 — 플래그는 "현재 마운트된 탭"의 것
+- [x] `PatientWorkspace`에서 환자 전환·외부 탭 변경 시 플래그 초기화
+- [x] 회귀 테스트 `unsavedState.test.tsx` 6건 (오탐 4건 + 정상 경고 동작 2건)
 
 ## 이슈 / 메모
 > 작업 중 발견된 이슈, 결정 사항, 보류 항목을 기록

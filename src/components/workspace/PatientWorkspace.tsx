@@ -74,7 +74,14 @@ export function PatientWorkspace({
   );
   const tabBadges = useMemo(() => buildTabBadges(patient.id, data), [patient.id, data]);
 
-  useEffect(() => setTab(initialTab), [initialTab]);
+  // 딥링크 등 외부에서 탭이 바뀌는 경로는 handleTabChange를 거치지 않으므로
+  // 여기서도 이전 탭의 미저장 상태를 함께 정리한다.
+  useEffect(() => {
+    setTab(initialTab);
+    setDirty(false);
+  }, [initialTab]);
+  // 환자가 바뀌면 이전 환자의 미저장 상태를 이어받지 않는다.
+  useEffect(() => setDirty(false), [patient.id]);
   useEffect(() => onUnsavedChange?.(dirty), [dirty, onUnsavedChange]);
   useEffect(() => () => onUnsavedChange?.(false), [onUnsavedChange]);
 
