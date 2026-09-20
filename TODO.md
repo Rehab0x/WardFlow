@@ -15,15 +15,16 @@
 |------|------|------|
 | Phase 1 Foundation | ✅ 완료 | 잔여는 수동 테스트 2건 (성능 측정, 반응형) |
 | Phase 2 Smart Input | ✅ 완료 | 캘린더 뷰는 취소, 알림은 3.2로 통합 |
-| Phase 3 WardAide AI | 🔶 3.1 · 3.4 완료 | 3.2 알림, 3.3 음성 질의가 실제 남은 일 |
+| Phase 3 WardAide AI | 🔶 3.1 · 3.3.1 · 3.4 완료 | 3.2 알림, 3.3.2 기타 AI가 남음 |
 | Phase 4 WardLink 통합 | ⬜ 미착수 | Phase 3 이후 |
 | Phase 5 v2 리팩토링 | ✅ 완료 | 문서 동기화까지 완료 |
 
 **다음에 할 일** (합의된 순서)
 1. ~~`PRD.md` Supabase 기준 갱신~~ ✅ 완료 (5.7)
 2. ~~3.4 rate limit + 로그 마스킹~~ ✅ 완료 (인증 fail-closed 전환 포함)
-3. **3.3.1 AI 음성 질의** ← 진행 예정. `[?]` Whisper 키 저장 위치 결정 필요
-4. 3.2 알림 고도화 — 규칙 저장 스키마 설계부터
+3. ~~3.3.1 AI 음성 질의~~ ✅ 완료 — **실기기 검증 필요** (마이크 권한, 한국어 인식 정확도, 환자명 매칭)
+4. **3.2 알림 고도화** ← 다음. 규칙 저장 스키마 설계부터
+5. 3.3.2 기타 AI (근거연결, 간호사 대화 SOAP 분리)
 
 ---
 
@@ -308,9 +309,9 @@
 - [ ] 알림 히스토리 (과거 알림 열람/삭제)
 - [ ] AI 기반 알림/Morning Briefing 분석 (WardAide 연동)
 
-### 3.3 AI 추가 기능 (예정)
+### 3.3 AI 추가 기능
 
-#### 3.3.1 AI 음성 질의 — 회진 중 자연어 조회 `@Architect` `@Coder-Logic` `@Coder-UI`
+#### 3.3.1 AI 음성 질의 — 회진 중 자연어 조회 ✅ **완료 (2026-09-20)**
 
 > "장영임님 소듐 요즘 어땠지?" 같은 음성 질문에 기존 Lab/투약 데이터를 조회해 텍스트+그래프로 답한다.
 > 설계 배경/결정 사항은 `CLAUDE.md`의 "기능 스펙: AI 음성 질의" 섹션 참고. 새 DB 테이블 불필요 — read-only 조회 기능.
@@ -318,26 +319,29 @@
 > **재사용 전제 충족 확인 (2026-09-19)**: `useLabStore.getLabTrendData()` ✅ / `LabChart.tsx` ✅ (Phase 5.4에서 v2로 포팅) /
 > 플로팅 버튼 자리 `AppShell` ✅ / `aiService.callAI()`·`generateSOAP()` 패턴 ✅ → 아래 `[?]`만 정하면 바로 착수 가능.
 
-- [?] Whisper API 키 저장 위치 결정 (`useAIStore`에 필드 추가 vs 신규 `useSTTStore`) — @Architect 확인 필요
-- [ ] STT 연동 → `src/services/sttService.ts`
-  - [ ] MediaRecorder로 오디오 녹음 (webm/opus)
-  - [ ] Whisper API 호출 (`prompt`에 의료 용어 힌트: "소듐, 칼륨, 크레아티닌, 항생제, 헤모글로빈")
-  - [ ] SettingsPage에 Whisper API 키 입력 UI 추가
-- [ ] 자연어 → 구조화 질의 파싱 → `aiService.ts`에 `parseVoiceQuery(transcript, patientNames)` 추가
-  - [ ] 시스템 프롬프트: 활성 환자 명단을 컨텍스트로 전달해 발음 오차 보정 매칭
-  - [ ] 출력 스키마: `{ patientName: string|null, queryType: 'lab'|'medication'|'unknown', item: string|null }`
-  - [ ] JSON 파싱 실패 대비 처리 (마크다운 코드펜스 제거 등)
-- [ ] 조회 로직 → `src/hooks/useVoiceQuery.ts` (신규 훅)
-  - [ ] patientName → patientId 매핑 (`usePatientStore.patients` exact match)
-  - [ ] `queryType === 'lab'` → 기존 `useLabStore.getLabTrendData()` 재사용
-  - [ ] `queryType === 'medication'` → 기존 `useMedicationStore` 조회
-  - [ ] 매칭 실패/`unknown` 시 안내 메시지 분기
-- [ ] UI 구현
-  - [ ] `src/components/voice/VoiceQueryButton.tsx` — 플로팅 마이크 버튼 (AppShell에 전역 배치, 특정 환자 페이지 비종속)
-  - [ ] `src/components/voice/VoiceQueryOverlay.tsx` — 녹음 중→STT 텍스트→답변(텍스트 + 기존 `LabChart` 재사용) 단계별 표시
-  - [ ] 녹음 실패/STT 실패/매칭 실패 각각 다른 에러 안내
-- [ ] 원본 음성/STT 텍스트 미저장 확인 (응답 생성 직후 폐기, DB 기록 없음)
-- [ ] 테스트: `parseVoiceQuery` 출력 파싱 단위 테스트 (Vitest)
+- [x] Whisper API 키 저장 위치 결정 — **사용자 결정 (2026-09-20): `useAIStore`에 `whisperApiKey` 필드 추가**
+  - 근거: 지금 필요한 건 필드 1개뿐이고, 설정 > AI 설정 한 곳에서 키를 모두 입력하는 편이 자연스럽다
+  - AI 설정은 localStorage에만 저장되고 Supabase로 동기화하지 않는다(현행 유지) — API 키를 서버에 올리지 않는 기존 방침을 따른다
+  - 구현 범위: **TODO 명세 전체** (녹음 → STT → 파싱 → 조회 → 텍스트/차트 응답)
+- [x] STT 연동 → `src/services/sttService.ts`
+  - [x] MediaRecorder로 오디오 녹음 (webm/opus)
+  - [x] Whisper API 호출 (`prompt`에 의료 용어 힌트: "소듐, 칼륨, 크레아티닌, 항생제, 헤모글로빈")
+  - [x] SettingsPage에 Whisper API 키 입력 UI 추가
+- [x] 자연어 → 구조화 질의 파싱 → `aiService.ts`에 `parseVoiceQuery(transcript, patientNames)` 추가
+  - [x] 시스템 프롬프트: 활성 환자 명단을 컨텍스트로 전달해 발음 오차 보정 매칭
+  - [x] 출력 스키마: `{ patientName: string|null, queryType: 'lab'|'medication'|'unknown', item: string|null }`
+  - [x] JSON 파싱 실패 대비 처리 (마크다운 코드펜스 제거 등)
+- [x] 조회 로직 → `src/hooks/useVoiceQuery.ts` (신규 훅)
+  - [x] patientName → patientId 매핑 (`usePatientStore.patients` exact match)
+  - [x] `queryType === 'lab'` → 기존 `useLabStore.getLabTrendData()` 재사용
+  - [x] `queryType === 'medication'` → 기존 `useMedicationStore` 조회
+  - [x] 매칭 실패/`unknown` 시 안내 메시지 분기
+- [x] UI 구현
+  - [x] `src/components/voice/VoiceQueryButton.tsx` — 플로팅 마이크 버튼 (AppShell에 전역 배치, 특정 환자 페이지 비종속)
+  - [x] `src/components/voice/VoiceQueryOverlay.tsx` — 녹음 중→STT 텍스트→답변(텍스트 + 기존 `LabChart` 재사용) 단계별 표시
+  - [x] 녹음 실패/STT 실패/매칭 실패 각각 다른 에러 안내
+- [x] 원본 음성/STT 텍스트 미저장 확인 (응답 생성 직후 폐기, DB 기록 없음)
+- [x] 테스트 26건 — `aiService.voiceQuery.test.ts`(10: 코드펜스/프로즈 섞인 JSON 복구, 명단에 없는 이름 거부, 잘못된 필드 방어), `useVoiceQuery.test.ts`(9: Lab/투약 응답, 활성 환자만 명단 전달, 단계별 에러, reset 시 transcript 폐기, 마이크 해제), `sttService.test.ts`(7: 키 미설정, 한국어·의료 용어 프롬프트 전달, 401/429/5xx/네트워크/빈 결과 분기)
 
 #### 3.3.2 기타 AI 추가 기능 (예정)
 
@@ -524,3 +528,4 @@
 | 2026-09-19 | Lab 셀 편집 시 참조범위 기반 H/L 재계산이 서버(`labs.repository.updateLabItemValue`)에 있다. v1에서 스토어가 하던 계산 로직은 Dexie 제거와 함께 사라졌으므로, 참조범위 커스텀 설정(`useLabReferenceStore`)이 이 경로에 반영되는지 확인 필요. **사용자 결정: 배포 후 실사용하며 판단.** | 🔶 배포 후 확인 | @Reviewer |
 | 2026-09-19 | **TODO 정리 (Phase 5.11)**: v2 전환으로 무의미해진 항목 5건 취소(PIN 렌더 측정·오프라인 테스트·캘린더 뷰·Dexie 성능 테스트·암호화 백업 경유 Lab import 흐름), 네 군데 중복이던 알림 항목을 3.2로 통합, **3.4 Lab 서버 API가 실제로는 이미 배포·동작 중임을 코드로 확인**해 상태 정정(잔여: rate limit·로그 마스킹), 3.3.1 음성 질의 재사용 전제 충족 확인, 문서 상단 현재 상태 요약 추가. | ✅ 완료 | @Manager |
 | 2026-09-19 | **Lab 서버 API 보안 강화 (Phase 3.4 완료)**: ① **인증 fail-closed 전환** — `LAB_IMPORT_API_KEY` 미설정 시 인증을 건너뛰어 서비스 롤 권한의 쓰기 엔드포인트가 공개되던 구조를 503 거부로 변경 ② rate limit 추가(60초/10회, 429 + `Retry-After`, 인스턴스 메모리 한계 주석 명시) ③ 로그 마스킹(`logMasking.ts` — 이름/등록번호/ID/파일명/에러 숫자열). 응답은 그대로 두고 로그에만 적용 ④ 상수 시간 키 비교, 인증 실패가 정상 호출자 할당량을 깎지 않도록 순서 조정 ⑤ 내부 오류 원문 응답 노출 차단 ⑥ 서버 모듈에 남아 있던 등록번호 매칭 3번째 중복 정의를 `lib/registrationNumber`로 통일. 테스트 19건 추가 (총 196). | ✅ 완료 | @Coder-Logic + @Reviewer |
+| 2026-09-20 | **AI 음성 질의 구현 (Phase 3.3.1)**: ① `useAIStore`에 `whisperApiKey` 추가(사용자 결정) + 설정 > AI 설정에 입력 UI, 키 없으면 마이크 버튼 자체를 숨김 ② `sttService.ts` — MediaRecorder 녹음 + Whisper API(한국어 + 의료 용어 프롬프트 힌트), 실패 지점을 `SttError.stage`로 구분해 UI가 다른 안내를 띄우도록 함 ③ `aiService.parseVoiceQuery()` — 활성 환자 명단을 컨텍스트로 넘겨 STT 이름 오인식 보정, **명단에 없는 이름은 코드에서 거부**(LLM 환각 차단), 코드펜스/프로즈 섞인 JSON 복구 ④ `useVoiceQuery.ts` — 녹음→STT→파싱→조회 전체 플로우, Lab은 `getLabTrendData()` + `LabChart` 재사용, 투약은 `useMedicationStore` 재사용 ⑤ `VoiceQueryButton`(플로팅) + `VoiceQueryOverlay`(단계별 표시, 차트는 lazy) ⑥ **원본 음성·STT 텍스트 미저장** — Blob은 변환 직후 폐기, transcript는 훅 state로만 유지하고 DB 기록 없음(테스트로 고정). 테스트 26건 추가 (총 222). | ✅ 완료 | @Architect + @Coder-Logic + @Coder-UI |

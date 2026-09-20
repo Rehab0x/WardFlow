@@ -340,7 +340,7 @@ npm run test:ui      # Vitest UI
 - 외진: 타과 협진 (consultation)
 - 회진: 병동 환자 진찰 (rounding)
 
-## 기능 스펙: AI 음성 질의 (Phase 3.3.1, 진행 예정)
+## 기능 스펙: AI 음성 질의 (Phase 3.3.1) — ✅ 구현 완료 (2026-09-20)
 
 > 회진 중 "장영임님 소듐 요즘 어땠지?" 같은 질문을 음성으로 하면, 텍스트/그래프로 즉시 답하는 기능.
 > 체크리스트는 `TODO.md` 3.3.1 참고. 여기는 설계 배경과 결정 사항만 기록한다.
@@ -377,8 +377,16 @@ npm run test:ui      # Vitest UI
 - `useMedicationStore` — 투약 조회
 - `useAIStore` / `callAI()` — 기존 멀티 LLM 호출 인터페이스
 
-### Whisper API 키 관리
-기존 `useAIStore`는 텍스트 LLM(Claude/GPT/Gemini/Grok) 선택용이라 Whisper(OpenAI 전용)와 독립적이다. `useAIStore`에 provider와 무관한 `whisperApiKey` 필드를 추가하거나, 신규 `useSTTStore`를 만들어 SettingsPage에 입력 UI를 추가한다. (@Architect 결정 필요 — TODO.md에 `[?]`로 표시해둠)
+### Whisper API 키 관리 — 결정됨
+`useAIStore`에 provider와 무관한 **`whisperApiKey` 필드**를 두고, 설정 > AI 설정에서 함께 입력받는다.
+텍스트 LLM 키와 마찬가지로 **localStorage에만 저장하고 Supabase로 동기화하지 않는다.**
+키가 없으면 플로팅 마이크 버튼 자체를 렌더하지 않는다 (`useVoiceQueryReady`).
+
+### 구현 시 추가된 안전장치
+- **환자명 환각 차단**: LLM이 돌려준 이름이라도 `normalizeVoiceQuery()`에서 **실제 활성 환자 명단에 있는 값만** 통과시킨다. 없으면 `patientName: null` → "환자를 특정할 수 없습니다"
+- **JSON 파싱 방어**: 코드펜스(```json), 앞뒤 설명 문장이 섞여 와도 복구한다. 실패 시 사용자 문구로 변환
+- **실패 지점 구분**: `SttError.stage`(`permission` / `recording` / `transcription` / `config`)로 나눠 UI가 다른 안내를 띄운다
+- **미저장 보장**: 오디오 Blob은 변환 직후 참조를 놓고, transcript는 훅 state로만 유지하다 `reset()`에서 사라진다. DB에 쓰지 않는다 (테스트로 고정)
 
 ---
 

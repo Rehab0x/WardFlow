@@ -347,3 +347,106 @@ export async function checkMedications(context: {
   const response = await callAI(MED_CHECK_SYSTEM_PROMPT, userMessage);
   return response.content;
 }
+
+// ─── Voice Query (음성 질의 → 구조화) ───
+
+const VOICE_QUERY_SYSTEM_PROMPT = `당신은 병동 회진 중 의사의 음성 질문을 구조화된 조회 요청으로 바꾸는 파서입니다.
+
+입력으로 (1) 음성 인식된 질문 텍스트와 (2) 현재 담당 중인 환자 명단이 주어집니다.
+
+할 일:
+1. 질문에서 어떤 환자를 가리키는지 찾습니다.
+   - 음성 인식은 이름을 부정확하게 옮길 수 있습니다 (예: "장영임"을 "장영일"로).
+   - 반드시 **주어진 환자 명단 안에서** 가장 가까운 이름을 고르고, 명단에 있는 철자 그대로 출력하세요.
+   - 어느 환자인지 합리적으로 특정할 수 없으면 patientName을 null로 두세요. 명단에 없는 이름을 지어내지 마세요.
+2. 무엇을 묻는지 분류합니다.
+   - 'lab': 검사 수치나 그 추이 (소듐, 칼륨, 크레아티닌, 헤모글로빈, CRP 등)
+   - 'medication': 투약, 약제, 항생제
+   - 'unknown': 위 둘로 분류할 수 없음
+3. 검사 항목이나 약제 이름을 item에 넣습니다. 검사명은 **영문 약어**로 정규화하세요.
+   (소듐→Na, 칼륨→K, 클로라이드→Cl, 칼슘→Ca, 크레아티닌→Cr, 헤모글로빈→Hb,
+    백혈구→WBC, 혈소판→PLT, 혈당→Glucose, 당화혈색소→HbA1c)
+   특정할 수 없으면 null.
+
+출력 형식 — 아래 JSON 객체 **하나만** 출력하세요. 설명, 마크다운 코드펜스, 그 밖의 텍스트를 붙이지 마세요.
+{"patientName": string|null, "queryType": "lab"|"medication"|"unknown", "item": string|null}`;
+
+export type VoiceQueryType = 'lab' | 'medication' | 'unknown';
+
+export interface ParsedVoiceQuery {
+  patientName: string | null;
+  queryType: VoiceQueryType;
+  item: string | null;
+}
+
+/**
+ * 음성 인식 텍스트를 구조화된 조회 요청으로 바꾼다.
+ *
+ * 환자 매칭은 LLM에 맡긴다 — STT가 이름을 틀리게 옮기는 경우가 많아,
+ * 활성 환자 명단을 컨텍스트로 함께 넘겨 가장 가까운 이름을 고르게 하는 편이 정확하다.
+ */
+export async function parseVoiceQuery(
+  transcript: string,
+  patientNames: string[]
+): Promise<ParsedVoiceQuery> {
+  const roster = patientNames.length > 0 ? patientNames.join(', ') : '(없음)';
+  const userMessage = [`환자 명단: ${roster}`, `질문: ${transcript}`].join('\n');
+
+  const response = await callAI(VOICE_QUERY_SYSTEM_PROMPT, userMessage);
+  return normalizeVoiceQuery(parseVoiceQueryJson(response.content), patientNames);
+}
+
+/**
+ * LLM 응답에서 JSON을 꺼낸다.
+ * 코드펜스로 감싸거나 앞뒤에 설명을 붙이는 경우가 있어 방어적으로 처리한다.
+ */
+export function parseVoiceQueryJson(raw: string): unknown {
+  const withoutFence = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim();
+
+  try {
+    return JSON.parse(withoutFence);
+  } catch {
+    // 설명이 앞뒤에 붙은 경우 가장 바깥 중괄호 구간만 잘라 재시도한다.
+    const start = withoutFence.indexOf('{');
+    const end = withoutFence.lastIndexOf('}');
+    if (start === -1 || end <= start) {
+      throw new Error('음성 질문을 이해하지 못했습니다. 다시 말씀해주세요.');
+    }
+    try {
+      return JSON.parse(withoutFence.slice(start, end + 1));
+    } catch {
+      throw new Error('음성 질문을 이해하지 못했습니다. 다시 말씀해주세요.');
+    }
+  }
+}
+
+/**
+ * LLM 출력을 신뢰하지 않고 정규화한다.
+ * 특히 환자 이름은 **실제 명단에 있는 값만** 통과시킨다 (없는 환자를 지어내지 못하도록).
+ */
+export function normalizeVoiceQuery(value: unknown, patientNames: string[]): ParsedVoiceQuery {
+  const source = (typeof value === 'object' && value !== null ? value : {}) as Record<
+    string,
+    unknown
+  >;
+
+  const rawName = typeof source.patientName === 'string' ? source.patientName.trim() : '';
+  const matched = patientNames.find((name) => name === rawName)
+    ?? patientNames.find((name) => name.replace(/\s/g, '') === rawName.replace(/\s/g, ''));
+
+  const rawType = typeof source.queryType === 'string' ? source.queryType.toLowerCase() : '';
+  const queryType: VoiceQueryType =
+    rawType === 'lab' || rawType === 'medication' ? rawType : 'unknown';
+
+  const rawItem = typeof source.item === 'string' ? source.item.trim() : '';
+
+  return {
+    patientName: matched ?? null,
+    queryType,
+    item: rawItem || null,
+  };
+}

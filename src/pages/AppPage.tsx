@@ -8,6 +8,7 @@ import { formatClockTime } from '@/components/clinical/dateLabels';
 import { AddPatientPanel } from '@/components/patient/AddPatientPanel';
 import { PatientStatusDialog } from '@/components/patient/PatientStatusDialog';
 import { LabImportDialog } from '@/components/lab/LabImportDialog';
+import { VoiceQueryButton } from '@/components/voice/VoiceQueryButton';
 import { formatUserFacingError } from '@/lib/errorMessages';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useLabStore } from '@/stores/useLabStore';
@@ -361,6 +362,9 @@ export default function AppPage() {
           onComplete={handleLabImportComplete}
         />
       )}
+
+      {/* 회진 중 어디서든 쓸 수 있도록 Today/워크스페이스 양쪽에서 떠 있는 버튼 (position: fixed) */}
+      <VoiceQueryButton onOpenPatient={openPatient} />
     </AppShell>
   );
 }

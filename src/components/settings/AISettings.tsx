@@ -1,5 +1,5 @@
 ﻿import { useState } from 'react';
-import { Bot, Eye, EyeOff } from 'lucide-react';
+import { Bot, Eye, EyeOff, Mic } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -9,9 +9,21 @@ import { useAIStore, LLM_PROVIDERS, type LLMProvider } from '@/stores/useAIStore
 import { cn } from '@/utils/cn';
 
 export function AISettings() {
-  const { provider, apiKey, model, setProvider, setApiKey, setModel, isConfigured } = useAIStore();
+  const {
+    provider,
+    apiKey,
+    model,
+    whisperApiKey,
+    setProvider,
+    setApiKey,
+    setModel,
+    setWhisperApiKey,
+    isConfigured,
+    isSttConfigured,
+  } = useAIStore();
   const { toast } = useToast();
   const [showKey, setShowKey] = useState(false);
+  const [showWhisperKey, setShowWhisperKey] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const providerInfo = LLM_PROVIDERS[provider];
@@ -109,6 +121,43 @@ export function AISettings() {
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
           {apiKey ? `저장된 키 길이: ${apiKey.length}자` : 'API Key가 비어 있습니다.'}
+        </p>
+      </div>
+      <div className="space-y-2 rounded-lg border border-zinc-200 bg-zinc-50/60 p-3">
+        <div className="flex items-center gap-2">
+          <Mic className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-medium">음성 질의 (Whisper)</h3>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          회진 중 마이크로 질문하려면 OpenAI 키가 필요합니다. 위에서 고른 LLM과 무관한
+          <strong> OpenAI 전용 키</strong>입니다. 음성과 변환된 텍스트는 저장하지 않습니다.
+        </p>
+        <div className="relative">
+          <Input
+            type={showWhisperKey ? 'text' : 'password'}
+            value={whisperApiKey}
+            onChange={(event) => setWhisperApiKey(event.target.value)}
+            placeholder="OpenAI API Key (sk-...)"
+            className="pr-10"
+            autoComplete="off"
+            spellCheck={false}
+            aria-label="Whisper API Key"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="absolute top-1/2 right-1 h-7 w-7 -translate-y-1/2"
+            onClick={() => setShowWhisperKey(!showWhisperKey)}
+            aria-label={showWhisperKey ? 'Whisper API Key 숨기기' : 'Whisper API Key 표시'}
+          >
+            {showWhisperKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {isSttConfigured()
+            ? '음성 질의 버튼이 활성화됩니다.'
+            : '키를 입력하면 화면 우측 하단에 마이크 버튼이 나타납니다.'}
         </p>
       </div>
       <div className="flex items-center gap-3">

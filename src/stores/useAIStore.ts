@@ -47,14 +47,22 @@ export const LLM_PROVIDERS: Record<LLMProvider, {
   },
 };
 
+/** Whisper(음성 인식)는 OpenAI 전용이므로, 위에서 고른 텍스트 LLM과 무관한 별도 키가 필요하다. */
+export const WHISPER_API_URL = 'https://api.openai.com/v1/audio/transcriptions';
+export const WHISPER_MODEL = 'whisper-1';
+
 interface AIStore {
   provider: LLMProvider;
   apiKey: string;
   model: string;
+  /** OpenAI Whisper 전용 키. provider 선택과 무관하다. */
+  whisperApiKey: string;
   setProvider: (provider: LLMProvider) => void;
   setApiKey: (key: string) => void;
   setModel: (model: string) => void;
+  setWhisperApiKey: (key: string) => void;
   isConfigured: () => boolean;
+  isSttConfigured: () => boolean;
 }
 
 function getDefaultModel(provider: LLMProvider): string {
@@ -71,6 +79,7 @@ export const useAIStore = create<AIStore>()(
       provider: 'claude',
       apiKey: '',
       model: 'claude-sonnet-4-20250514',
+      whisperApiKey: '',
 
       setProvider: (provider) => {
         const currentModel = get().model;
@@ -78,6 +87,8 @@ export const useAIStore = create<AIStore>()(
       },
 
       setApiKey: (apiKey) => set({ apiKey: apiKey.trim() }),
+
+      setWhisperApiKey: (whisperApiKey) => set({ whisperApiKey: whisperApiKey.trim() }),
 
       setModel: (model) => {
         const { provider } = get();
@@ -87,6 +98,11 @@ export const useAIStore = create<AIStore>()(
       isConfigured: () => {
         const { apiKey } = get();
         return apiKey.trim().length > 10;
+      },
+
+      isSttConfigured: () => {
+        const { whisperApiKey } = get();
+        return whisperApiKey.trim().length > 10;
       },
     }),
     {
