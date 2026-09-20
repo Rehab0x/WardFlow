@@ -4,6 +4,7 @@ import { CopyBar } from '@/components/clinical/CopyBar';
 import { DataSection } from '@/components/clinical/DataSection';
 import { formatDateInput, formatOnsetElapsedText } from '@/components/clinical/dateLabels';
 import { AiActionPanel } from '@/components/ai/AiActionPanel';
+import { EvidencePanel } from '@/components/ai/EvidencePanel';
 import { generateHandoff } from '@/services/aiService';
 import type { Patient } from '@/types/patient';
 import type { BriefingData } from '@/services/briefingService';
@@ -94,6 +95,15 @@ export function OverviewTab({
           )}
         </DataSection>
       </div>
+      <EvidencePanel
+        resetKey={patient.id}
+        context={{
+          patientSummary: `${patient.name} ${patient.sex}/${calculateAge(patient.birthDate)} · ${patient.chiefComplaint || '주호소 미기재'}`,
+          problemList: patient.problemList.join('\n'),
+          medications: buildMedicationLines(patient.id, data).join('\n'),
+          recentLab: buildLabLines(patient.id, data).join('\n'),
+        }}
+      />
       <AiActionPanel
         title="AI 인수인계 요약"
         actionLabel="인수인계 생성"

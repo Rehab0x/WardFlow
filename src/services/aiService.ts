@@ -592,3 +592,108 @@ export function formatSegmentAsNote(segment: ConversationSegment): string {
     .filter(Boolean)
     .join('\n');
 }
+
+// ─── 근거연결 (검색어 제안) ───
+
+const EVIDENCE_SYSTEM_PROMPT = `당신은 입원환자 담당 의사가 근거를 찾을 때 **검색 방향을 잡아주는** 의료 AI입니다.
+
+⚠️ 가장 중요한 규칙: **논문 제목, 저자, 저널명, 발행연도, DOI, PMID를 절대 만들어내지 마세요.**
+당신은 문헌을 검색할 수 없습니다. 기억에 의존해 인용을 쓰면 존재하지 않는 논문을 지어내게 됩니다.
+당신이 할 일은 "무엇을 어떤 말로 찾아봐야 하는지"를 알려주는 것뿐입니다.
+
+주어진 환자 정보(진단/Problem List/투약/Lab)를 보고, 근거를 확인할 만한 주제를 고릅니다.
+
+각 주제마다:
+- title: 확인할 임상 질문 (한국어, 한 줄)
+- rationale: 이 환자에게 왜 확인할 가치가 있는지 (한국어, 한 줄)
+- keywords: 검색에 쓸 핵심 용어 3~5개 (영어 의학 용어)
+- query: 실제 검색창에 넣을 영어 검색식 한 줄 (PubMed에 그대로 붙여넣을 수 있는 형태)
+- guideline: 참고할 만한 **가이드라인 제정 기관/학회 이름** (예: "IDSA", "KDIGO", "대한신장학회"). 확실하지 않으면 빈 문자열.
+  개별 가이드라인 문서의 제목이나 발행연도는 쓰지 마세요.
+
+cautions에는 이 환자에서 근거를 적용할 때 주의할 점을 적습니다 (최대 3줄, 없으면 빈 배열).
+
+출력 형식 — 아래 JSON 객체 **하나만** 출력하세요. 설명이나 코드펜스를 붙이지 마세요.
+{"topics": [{"title": string, "rationale": string, "keywords": string[], "query": string, "guideline": string}], "cautions": string[]}
+
+주제는 최대 4개로 제한하세요.`;
+
+export interface EvidenceTopic {
+  title: string;
+  rationale: string;
+  keywords: string[];
+  query: string;
+  guideline: string;
+}
+
+export interface EvidenceSuggestion {
+  topics: EvidenceTopic[];
+  cautions: string[];
+}
+
+/**
+ * 환자 정보를 보고 **검색 방향**을 제안한다.
+ *
+ * 의도적으로 논문 인용을 만들지 않는다 — LLM은 문헌을 검색할 수 없고,
+ * 기억으로 인용을 쓰면 존재하지 않는 논문을 지어낸다(임상 도구에서 특히 위험).
+ * 대신 검색어와 검색식을 주고, 실제 결과는 사용자가 PubMed 등에서 직접 확인한다.
+ */
+export async function suggestEvidence(context: {
+  patientSummary: string;
+  problemList: string;
+  medications: string;
+  recentLab: string;
+}): Promise<EvidenceSuggestion> {
+  const userMessage = [
+    `환자: ${context.patientSummary}`,
+    context.problemList ? `\nProblem List:\n${context.problemList}` : '',
+    context.medications ? `\n투약:\n${context.medications}` : '',
+    context.recentLab ? `\n최근 Lab:\n${context.recentLab}` : '',
+    '\n위 환자에서 근거를 확인할 만한 주제와 검색어를 제안해주세요.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const response = await callAI(EVIDENCE_SYSTEM_PROMPT, userMessage);
+  return normalizeEvidenceSuggestion(parseVoiceQueryJson(response.content));
+}
+
+/** LLM 출력을 신뢰하지 않고 정규화한다. */
+export function normalizeEvidenceSuggestion(value: unknown): EvidenceSuggestion {
+  const source = (typeof value === 'object' && value !== null ? value : {}) as Record<
+    string,
+    unknown
+  >;
+
+  const topics = (Array.isArray(source.topics) ? source.topics : [])
+    .map((entry): EvidenceTopic | null => {
+      if (typeof entry !== 'object' || entry === null) return null;
+      const item = entry as Record<string, unknown>;
+
+      const title = readText(item.title);
+      const query = readText(item.query);
+      const keywords = (Array.isArray(item.keywords) ? item.keywords : [])
+        .map(readText)
+        .filter(Boolean);
+
+      // 제목도 검색식도 없으면 쓸모가 없다.
+      if (!title && !query && keywords.length === 0) return null;
+
+      return {
+        title: title || keywords.join(', '),
+        rationale: readText(item.rationale),
+        keywords,
+        query: query || keywords.join(' AND '),
+        guideline: readText(item.guideline),
+      };
+    })
+    .filter((topic): topic is EvidenceTopic => topic !== null)
+    .slice(0, 4);
+
+  const cautions = (Array.isArray(source.cautions) ? source.cautions : [])
+    .map(readText)
+    .filter(Boolean)
+    .slice(0, 3);
+
+  return { topics, cautions };
+}
