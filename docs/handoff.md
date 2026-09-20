@@ -440,3 +440,40 @@ Use `docs/supabase-validation.md` for the current Supabase validation checklist.
 ### 검증 (2026-09-20)
 - `npm run type-check`, `npm run lint`(에러 0), `npm run build` 통과
 - `npx vitest run` — 39 files / **241 tests** 통과
+
+## Session End — 2026-09-20
+
+### 다음 세션이 이 문서에서 먼저 볼 것
+`TODO.md` 최상단 "📍 현재 상태" 블록이 기준이다. 🔴 사용자 액션 / 🟡 검증 대기 / 🟢 할 일로 나뉘어 있다.
+
+### 이 세션에서 한 일 (커밋 13개, `72e1c43` → `HEAD`)
+1. **Phase 5 v2 전면 전환** — v1 UI·라우트 제거, `components/v2`·`pages/v2`를 정식 경로로 승격,
+   Dexie 이중 백엔드 완전 제거(Supabase 전용), PIN 잠금 제거,
+   Lab 추이 차트·AI 3종 포팅, 거대 파일 분해(2,380 → 287줄 등)
+2. **문서 동기화** — CLAUDE.md / README.md / PRD.md / TODO.md를 현재 코드 기준으로 재작성
+3. **Lab 서버 API 보안** — 인증 fail-closed 전환(중요), rate limit, 로그 마스킹
+4. **Phase 3 AI 전부** — 음성 질의 / 알림 고도화 / 간호사 대화 SOAP 분리 / 근거연결 AI
+
+### 세션 중 발견해 고친 버그 (모두 회귀 테스트로 고정)
+- 차팅 탭 백지 — zustand selector가 매번 새 객체를 반환해 무한 렌더 루프
+- 미저장 변경 오탐 — `dirty` 플래그가 탭 언마운트·환자 전환에서 안 내려감
+- 차팅 OCS 복사가 **설정 > 차팅 설정을 무시**하던 문제 (v2가 자체 포맷터 사용)
+- 등록번호 중복 판정과 Lab import 매칭 기준 불일치
+- `LAB_IMPORT_API_KEY` 미설정 시 인증을 건너뛰어 서비스 롤 엔드포인트가 공개되던 구조
+- recharts가 `manualChunks` 때문에 `modulepreload`로 첫 화면에 실려오던 문제
+
+### 설계 판단 메모 (다음 세션이 뒤집기 전에 읽을 것)
+- **알림 dedupe**: Lab은 `검사결과+항목`, 항생제는 **약제 코스** 단위.
+  항생제를 일수로 키잡으면 매일 새 알림이 쌓인다.
+- **근거연결 AI는 인용을 만들지 않는다**: LLM은 문헌 검색을 못 하므로 기억으로 쓴 인용은 허구다.
+  검색어·검색식만 주고 실제 확인은 PubMed 등 링크로 넘긴다. 화면 문구도 테스트로 잠겨 있다.
+- **환자명 환각 차단**: 음성 질의·대화 분리 모두 LLM이 돌려준 이름을
+  **활성 환자 명단과 코드에서 대조**해 없으면 null 처리한다.
+- **음성·대화 원문 미저장**: 변환 직후 폐기하며 DB에 남기지 않는다(테스트로 고정).
+- **마이그레이션 미적용 대비**: 알림 리포지토리가 `42P01`을 감지해 읽기는 빈 결과로 degrade한다.
+  앱을 먼저 배포하고 마이그레이션을 나중에 적용하는 이 프로젝트의 흐름에 맞춘 것이다.
+
+### 검증 (2026-09-20 최종)
+- `npm run type-check` / `npm run lint`(에러 0, 경고 15) / `npm run build` 통과
+- `npx vitest run` — 44 files / **277 tests** 통과
+- 프로덕션 배포 확인: https://ward-flow.vercel.app (HTTP 200, 신규 기능 번들 포함)
