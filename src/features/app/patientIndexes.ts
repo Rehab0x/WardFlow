@@ -72,6 +72,11 @@ export function buildPatientIndicators(
 ): Record<string, PatientRailIndicators> {
   const indicators: Record<string, PatientRailIndicators> = {};
 
+  // 오늘 작성된 경과기록 — 대화 정리로 들어온 SOAP도 여기로 저장된다(type: 'progress').
+  for (const item of data.progressNotes) {
+    if (!patientsById.has(item.patientId)) continue;
+    (indicators[item.patientId] ??= {}).note = true;
+  }
   for (const item of data.reminders) {
     if (!patientsById.has(item.patientId)) continue;
     (indicators[item.patientId] ??= {}).reminder = true;

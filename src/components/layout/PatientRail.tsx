@@ -5,9 +5,11 @@ import { cn } from '@/lib/utils';
 import { formatAgeYears, formatDetailedAge } from '../clinical/dateLabels';
 import { PatientRow } from './PatientRow';
 
-type RailFilter = 'all' | 'attention' | 'tasks';
+type RailFilter = 'all' | 'attention' | 'tasks' | 'notes';
 
 export interface PatientRailIndicators {
+  /** 오늘 작성된 경과기록(메모)이 있다 — SOAP을 이미 남겼는지 보는 용도 */
+  note?: boolean;
   reminder?: boolean;
   schedule?: boolean;
   antibiotic?: boolean;
@@ -42,6 +44,7 @@ export function PatientRail({
   const showAll = useCallback(() => setFilter('all'), []);
   const showAttention = useCallback(() => setFilter('attention'), []);
   const showTasks = useCallback(() => setFilter('tasks'), []);
+  const showNotes = useCallback(() => setFilter('notes'), []);
   const resetFilters = useCallback(() => {
     setQuery('');
     setFilter('all');
@@ -56,6 +59,7 @@ export function PatientRail({
     totalCount,
     attentionCount,
     taskCount,
+    noteCount,
     selectedDischarged,
   } = useMemo(() => {
       const normalized = deferredQuery.trim().toLowerCase();
@@ -75,6 +79,7 @@ export function PatientRail({
       let totalCount = 0;
       let attentionCount = 0;
       let taskCount = 0;
+      let noteCount = 0;
       let selectedDischarged = false;
 
       for (const patient of patients) {
@@ -85,11 +90,14 @@ export function PatientRail({
 
         totalCount++;
         const patientHasTask = hasTask(patient);
+        const patientHasNote = Boolean(patientIndicators[patient.id]?.note);
         if (patient.attention) attentionCount++;
         if (patientHasTask) taskCount++;
+        if (patientHasNote) noteCount++;
 
         if (filter === 'attention' && !patient.attention) continue;
         if (filter === 'tasks' && !patientHasTask) continue;
+        if (filter === 'notes' && !patientHasNote) continue;
 
         visibleCount++;
         if (patient.status === 'discharged') {
@@ -111,6 +119,7 @@ export function PatientRail({
         totalCount,
         attentionCount,
         taskCount,
+        noteCount,
         selectedDischarged,
       };
     }, [patients, patientIndicators, patientSearchTextById, deferredQuery, filter, selectedPatientId]);
@@ -121,8 +130,19 @@ export function PatientRail({
       { value: 'all' as const, label: '전체', count: totalCount, onClick: showAll },
       { value: 'attention' as const, label: '주의', count: attentionCount, onClick: showAttention },
       { value: 'tasks' as const, label: '할 일', count: taskCount, onClick: showTasks },
+      // 오늘 메모(경과기록)를 남긴 환자 — 회진 중 SOAP을 어디까지 적었는지 짚어 볼 때 쓴다
+      { value: 'notes' as const, label: '메모', count: noteCount, onClick: showNotes },
     ],
-    [attentionCount, showAll, showAttention, showTasks, taskCount, totalCount]
+    [
+      attentionCount,
+      noteCount,
+      showAll,
+      showAttention,
+      showNotes,
+      showTasks,
+      taskCount,
+      totalCount,
+    ]
   );
 
   return (
@@ -162,7 +182,7 @@ export function PatientRail({
             <Plus className="h-4 w-4" />
           </button>
         </div>
-        <div className="grid grid-cols-3 rounded-md border border-zinc-200 bg-zinc-50 p-0.5">
+        <div className="grid grid-cols-4 rounded-md border border-zinc-200 bg-zinc-50 p-0.5">
           {filterOptions.map(({ value, label, count, onClick }) => (
             <button
               key={value}
@@ -323,6 +343,7 @@ const PatientRowItem = memo(function PatientRowItem({
       chiefComplaint={patient.chiefComplaint}
       selected={selected}
       attention={patient.status === 'discharged' ? false : patient.attention}
+      note={patient.status === 'discharged' ? false : indicators?.note}
       reminder={patient.status === 'discharged' ? false : indicators?.reminder}
       schedule={patient.status === 'discharged' ? false : indicators?.schedule}
       antibiotic={patient.status === 'discharged' ? false : indicators?.antibiotic}

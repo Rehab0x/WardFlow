@@ -1,4 +1,12 @@
-import { AlertTriangle, Bell, CalendarDays, FlaskConical, PencilLine, Pill } from 'lucide-react';
+import {
+  AlertTriangle,
+  Bell,
+  CalendarDays,
+  FlaskConical,
+  NotebookPen,
+  PencilLine,
+  Pill,
+} from 'lucide-react';
 import { memo } from 'react';
 import { cn } from '@/lib/utils';
 
@@ -10,6 +18,8 @@ interface PatientRowProps {
   chiefComplaint?: string;
   selected?: boolean;
   attention?: boolean;
+  /** 오늘 메모(경과기록)를 남겼다 */
+  note?: boolean;
   reminder?: boolean;
   schedule?: boolean;
   antibiotic?: boolean;
@@ -28,6 +38,7 @@ export const PatientRow = memo(function PatientRow({
   chiefComplaint,
   selected,
   attention,
+  note,
   reminder,
   schedule,
   antibiotic,
@@ -39,6 +50,7 @@ export const PatientRow = memo(function PatientRow({
 }: PatientRowProps) {
   const signals = [
     attention && '주의',
+    note && '오늘 메모',
     reminder && '알림',
     schedule && '일정',
     antibiotic && '항생제',
@@ -108,6 +120,12 @@ export const PatientRow = memo(function PatientRow({
               <AlertTriangle
                 aria-label="주의"
                 className={cn('h-3.5 w-3.5', selected ? 'text-red-200' : 'text-red-600')}
+              />
+            )}
+            {note && (
+              <NotebookPen
+                aria-label="오늘 메모"
+                className={cn('h-3.5 w-3.5', selected ? 'text-emerald-200' : 'text-emerald-600')}
               />
             )}
             {reminder && (
