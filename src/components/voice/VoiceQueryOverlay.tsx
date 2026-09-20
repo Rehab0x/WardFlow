@@ -109,6 +109,13 @@ export function VoiceQueryOverlay({ voice, onClose, onOpenPatient }: VoiceQueryO
 
           {stage === 'done' && answer && (
             <div className="space-y-3">
+              {/* 발음으로 이어 붙인 경우 — 다른 환자 기록을 보고 있을 수 있으니 분명히 알린다. */}
+              {parsed?.nameMatch === 'similar' && parsed.heardName && (
+                <p className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[12px] text-amber-800">
+                  "{parsed.heardName}"으로 들려 <strong>{answer.patientName}</strong> 환자로 보고
+                  있습니다. 다른 환자라면 이름을 다시 말씀해주세요.
+                </p>
+              )}
               <p className="text-[14px] font-medium text-zinc-900">{answer.headline}</p>
 
               {answer.trend && answer.trend.dataPoints.length > 1 && (

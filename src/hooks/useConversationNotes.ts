@@ -20,7 +20,11 @@ export type ConversationStage =
 export interface ConversationDraft extends ConversationSegment {
   /** 매칭된 환자 id. 특정 못 했으면 undefined */
   patientId?: string;
-  /** 저장 대상으로 선택됐는지 — 환자를 특정 못 한 조각은 기본 해제 */
+  /**
+   * 저장 대상으로 선택됐는지.
+   * 철자가 정확히 맞은 조각만 기본 선택이다 — 발음으로 이어 붙인 조각(`nameMatch: 'similar'`)과
+   * 특정 못 한 조각은 사람이 확인하고 체크해야 한다 (환자 오배정은 되돌리기 어렵다).
+   */
   selected: boolean;
   saved: boolean;
   saveError?: string;
@@ -117,8 +121,8 @@ export function useConversationNotes() {
             return {
               ...segment,
               patientId: patient?.id,
-              // 환자를 특정하지 못한 조각은 사용자가 직접 고르게 둔다.
-              selected: Boolean(patient),
+              // 특정하지 못했거나 발음으로만 이어 붙인 조각은 사용자가 확인하고 체크하게 둔다.
+              selected: Boolean(patient) && segment.nameMatch !== 'similar',
               saved: false,
             };
           }),

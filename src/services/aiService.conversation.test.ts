@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatSegmentAsNote, normalizeConversationSegments } from './aiService';
 
-const roster = ['김철수', '이영희', '장영임'];
+const roster = ['김철수', '이영희', '장영임', '김부경'];
 
 describe('normalizeConversationSegments', () => {
   it('keeps segments whose patient is on the roster', () => {
@@ -20,17 +20,41 @@ describe('normalizeConversationSegments', () => {
     );
 
     expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ patientName: '김철수', objective: 'BT 38.2 → 37.1' });
+    expect(result[0]).toMatchObject({
+      patientName: '김철수',
+      nameMatch: 'exact',
+      objective: 'BT 38.2 → 37.1',
+    });
   });
 
-  it('nulls a patient name that is not on the roster', () => {
+  it('nulls a patient name that is nowhere near the roster', () => {
     const result = normalizeConversationSegments(
-      [{ patientName: '박환자', subjective: '통증 호소' }],
+      [{ patientName: '최동훈', subjective: '통증 호소' }],
       roster
     );
-    expect(result[0]?.patientName).toBeNull();
+    expect(result[0]).toMatchObject({ patientName: null, nameMatch: 'none', heardName: '최동훈' });
     // 내용은 남겨서 사용자가 직접 환자를 고를 수 있게 한다
     expect(result[0]?.subjective).toBe('통증 호소');
+  });
+
+  it('links a misheard name to the roster and flags it for confirmation', () => {
+    const result = normalizeConversationSegments(
+      [{ patientName: '김부겸', subjective: '어지럼 호소' }],
+      roster
+    );
+    expect(result[0]).toMatchObject({
+      patientName: '김부경',
+      heardName: '김부겸',
+      nameMatch: 'similar',
+    });
+  });
+
+  it('falls back to heardName when the model gave up on the roster spelling', () => {
+    const result = normalizeConversationSegments(
+      [{ patientName: null, heardName: '장영일', plan: '소변량 확인' }],
+      roster
+    );
+    expect(result[0]).toMatchObject({ patientName: '장영임', nameMatch: 'similar' });
   });
 
   it('tolerates whitespace differences in the name', () => {
@@ -38,7 +62,7 @@ describe('normalizeConversationSegments', () => {
       [{ patientName: '이 영희', plan: '소변량 확인' }],
       roster
     );
-    expect(result[0]?.patientName).toBe('이영희');
+    expect(result[0]).toMatchObject({ patientName: '이영희', nameMatch: 'exact' });
   });
 
   it('drops entries with no content at all', () => {
@@ -77,6 +101,8 @@ describe('formatSegmentAsNote', () => {
   it('renders only the filled SOAP lines', () => {
     const note = formatSegmentAsNote({
       patientName: '김철수',
+      heardName: '김철수',
+      nameMatch: 'exact',
       excerpt: '',
       subjective: '열감',
       objective: 'BT 38.2',
@@ -91,6 +117,8 @@ describe('formatSegmentAsNote', () => {
     expect(
       formatSegmentAsNote({
         patientName: null,
+        heardName: '',
+        nameMatch: 'none',
         excerpt: '뭔가 말함',
         subjective: '',
         objective: '',

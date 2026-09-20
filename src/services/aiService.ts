@@ -5,6 +5,7 @@
  * 통합 인터페이스로 호출
  */
 
+import { matchRosterName } from '@/lib/koreanName';
 import { useAIStore, LLM_PROVIDERS, type LLMProvider } from '@/stores/useAIStore';
 
 interface AIResponse {
@@ -359,6 +360,8 @@ const VOICE_QUERY_SYSTEM_PROMPT = `당신은 병동 회진 중 의사의 음성 
    - 음성 인식은 이름을 부정확하게 옮길 수 있습니다 (예: "장영임"을 "장영일"로).
    - 반드시 **주어진 환자 명단 안에서** 가장 가까운 이름을 고르고, 명단에 있는 철자 그대로 출력하세요.
    - 어느 환자인지 합리적으로 특정할 수 없으면 patientName을 null로 두세요. 명단에 없는 이름을 지어내지 마세요.
+   - heardName에는 **질문에서 들린 이름을 그대로** 넣으세요 (명단에 없는 철자여도 괜찮습니다).
+     patientName을 null로 두더라도 heardName은 채워야 합니다 — 코드가 발음으로 한 번 더 대조합니다.
 2. 무엇을 묻는지 분류합니다.
    - 'lab': 검사 수치나 그 추이 (소듐, 칼륨, 크레아티닌, 헤모글로빈, CRP 등)
    - 'medication': 투약, 약제, 항생제
@@ -369,15 +372,23 @@ const VOICE_QUERY_SYSTEM_PROMPT = `당신은 병동 회진 중 의사의 음성 
    특정할 수 없으면 null.
 
 출력 형식 — 아래 JSON 객체 **하나만** 출력하세요. 설명, 마크다운 코드펜스, 그 밖의 텍스트를 붙이지 마세요.
-{"patientName": string|null, "queryType": "lab"|"medication"|"unknown", "item": string|null}`;
+{"patientName": string|null, "heardName": string|null, "queryType": "lab"|"medication"|"unknown", "item": string|null}`;
 
 export type VoiceQueryType = 'lab' | 'medication' | 'unknown';
 
 export interface ParsedVoiceQuery {
+  /** 명단에서 확정된 이름. 특정 못 하면 null */
   patientName: string | null;
+  /** 질문에서 들린 이름 그대로 — 매칭 실패·유사 매칭일 때 사용자에게 보여준다 */
+  heardName: string | null;
+  /** 'exact' 철자 일치 · 'similar' 발음이 비슷해 연결 · 'none' 특정 실패 */
+  nameMatch: NameMatchKind;
   queryType: VoiceQueryType;
   item: string | null;
 }
+
+/** 환자 이름을 어떻게 이었는지 — UI가 확인을 요구할지 판단하는 데 쓴다. */
+export type NameMatchKind = 'exact' | 'similar' | 'none';
 
 /**
  * 음성 인식 텍스트를 구조화된 조회 요청으로 바꾼다.
@@ -435,8 +446,10 @@ export function normalizeVoiceQuery(value: unknown, patientNames: string[]): Par
   >;
 
   const rawName = typeof source.patientName === 'string' ? source.patientName.trim() : '';
-  const matched = patientNames.find((name) => name === rawName)
-    ?? patientNames.find((name) => name.replace(/\s/g, '') === rawName.replace(/\s/g, ''));
+  const heardName = typeof source.heardName === 'string' ? source.heardName.trim() : '';
+  // LLM이 명단 철자를 못 맞혔을 때를 대비해 들린 이름으로도 한 번 더 대조한다.
+  const matched =
+    matchRosterName(rawName, patientNames) ?? matchRosterName(heardName, patientNames);
 
   const rawType = typeof source.queryType === 'string' ? source.queryType.toLowerCase() : '';
   const queryType: VoiceQueryType =
@@ -445,7 +458,9 @@ export function normalizeVoiceQuery(value: unknown, patientNames: string[]): Par
   const rawItem = typeof source.item === 'string' ? source.item.trim() : '';
 
   return {
-    patientName: matched ?? null,
+    patientName: matched?.name ?? null,
+    heardName: heardName || rawName || null,
+    nameMatch: matched ? (matched.exact ? 'exact' : 'similar') : 'none',
     queryType,
     item: rawItem || null,
   };
@@ -505,6 +520,8 @@ const CONVERSATION_SEGMENT_SYSTEM_PROMPT = `당신은 병동에서 오간 대화
    - 음성 인식이나 받아쓰기로 이름이 부정확할 수 있습니다.
    - 반드시 **주어진 환자 명단 안에서** 가장 가까운 이름을 고르고, 명단에 있는 철자 그대로 출력하세요.
    - 환자를 특정할 수 없는 조각은 patientName을 null로 두세요. 명단에 없는 이름을 지어내지 마세요.
+   - heardName에는 **대화에서 들린 이름을 그대로** 넣으세요 (명단에 없는 철자여도 괜찮습니다).
+     patientName을 null로 두더라도 heardName은 채워야 합니다 — 코드가 발음으로 한 번 더 대조합니다.
 3. 각 환자에 대해 S/O/A/P 네 줄로 정리합니다.
    - S(Subjective): 환자·보호자가 호소한 것
    - O(Objective): 관찰된 것, 측정치 (활력징후, 수치 등)
@@ -513,12 +530,17 @@ const CONVERSATION_SEGMENT_SYSTEM_PROMPT = `당신은 병동에서 오간 대화
    - 대화에 없는 항목은 빈 문자열로 두세요. **추측해서 채우지 마세요.**
 
 출력 형식 — 아래 JSON 배열 **하나만** 출력하세요. 설명, 마크다운 코드펜스를 붙이지 마세요.
-[{"patientName": string|null, "excerpt": string, "subjective": string, "objective": string, "assessment": string, "plan": string}]
+[{"patientName": string|null, "heardName": string|null, "excerpt": string, "subjective": string, "objective": string, "assessment": string, "plan": string}]
 
 excerpt는 그 환자에 해당하는 대화 원문을 짧게 옮긴 것입니다(최대 두 문장).`;
 
 export interface ConversationSegment {
+  /** 명단에서 확정된 이름. 특정 못 하면 null */
   patientName: string | null;
+  /** 대화에서 들린 이름 그대로 — 매칭 실패·유사 매칭일 때 사용자에게 보여준다 */
+  heardName: string;
+  /** 'exact' 철자 일치 · 'similar' 발음이 비슷해 연결(확인 필요) · 'none' 특정 실패 */
+  nameMatch: NameMatchKind;
   excerpt: string;
   subjective: string;
   objective: string;
@@ -555,13 +577,16 @@ export function normalizeConversationSegments(
       if (typeof entry !== 'object' || entry === null) return null;
       const source = entry as Record<string, unknown>;
 
-      const rawName = typeof source.patientName === 'string' ? source.patientName.trim() : '';
+      const rawName = readText(source.patientName);
+      const heardName = readText(source.heardName) || rawName;
+      // LLM이 명단 철자를 못 맞혔을 때를 대비해 들린 이름으로도 한 번 더 대조한다.
       const matched =
-        patientNames.find((name) => name === rawName) ??
-        patientNames.find((name) => name.replace(/\s/g, '') === rawName.replace(/\s/g, ''));
+        matchRosterName(rawName, patientNames) ?? matchRosterName(heardName, patientNames);
 
       const segment: ConversationSegment = {
-        patientName: matched ?? null,
+        patientName: matched?.name ?? null,
+        heardName,
+        nameMatch: matched ? (matched.exact ? 'exact' : 'similar') : 'none',
         excerpt: readText(source.excerpt),
         subjective: readText(source.subjective),
         objective: readText(source.objective),

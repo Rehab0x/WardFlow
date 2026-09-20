@@ -73,6 +73,32 @@ describe('useConversationNotes', () => {
     expect(unmatched).toMatchObject({ patientId: undefined, selected: false });
   });
 
+  it('does not preselect a draft that was matched by pronunciation only', async () => {
+    ai.segmentConversation.mockResolvedValue([
+      {
+        patientName: '김철수',
+        heardName: '김철소',
+        nameMatch: 'similar',
+        excerpt: '',
+        subjective: '어지럼',
+        objective: '',
+        assessment: '',
+        plan: '',
+      },
+    ]);
+    const hook = renderHook(() => useConversationNotes());
+
+    await act(async () => {
+      await hook.result.current.analyze('대화');
+    });
+
+    // 환자는 이어 붙이되, 맞는지 사람이 확인하고 체크해야 저장된다
+    expect(hook.result.current.state.drafts[0]).toMatchObject({
+      patientId: 'p1',
+      selected: false,
+    });
+  });
+
   it('rejects empty input', async () => {
     const hook = renderHook(() => useConversationNotes());
     await act(async () => {

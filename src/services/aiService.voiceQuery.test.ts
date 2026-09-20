@@ -34,7 +34,13 @@ describe('normalizeVoiceQuery', () => {
       { patientName: '장영임', queryType: 'lab', item: 'Na' },
       roster
     );
-    expect(result).toEqual({ patientName: '장영임', queryType: 'lab', item: 'Na' });
+    expect(result).toEqual({
+      patientName: '장영임',
+      heardName: '장영임',
+      nameMatch: 'exact',
+      queryType: 'lab',
+      item: 'Na',
+    });
   });
 
   it('tolerates whitespace differences in the name', () => {
@@ -43,11 +49,26 @@ describe('normalizeVoiceQuery', () => {
     ).toMatchObject({ patientName: '김철수' });
   });
 
-  it('rejects a name the model invented', () => {
-    // STT 오인식을 LLM이 그대로 통과시키는 경우를 막는다.
+  it('links a misheard name to the roster and flags it for confirmation', () => {
+    // STT가 받침을 틀려도(장영임→장영일) 발음으로 이어 붙이되, 확인이 필요함을 표시한다.
     expect(
       normalizeVoiceQuery({ patientName: '장영일', queryType: 'lab', item: 'Na' }, roster)
-    ).toMatchObject({ patientName: null });
+    ).toMatchObject({ patientName: '장영임', heardName: '장영일', nameMatch: 'similar' });
+  });
+
+  it('rejects a name the model invented', () => {
+    expect(
+      normalizeVoiceQuery({ patientName: '최동훈', queryType: 'lab', item: 'Na' }, roster)
+    ).toMatchObject({ patientName: null, nameMatch: 'none', heardName: '최동훈' });
+  });
+
+  it('uses heardName when the model could not map it to the roster', () => {
+    expect(
+      normalizeVoiceQuery(
+        { patientName: null, heardName: '김 철수 님', queryType: 'medication', item: null },
+        roster
+      )
+    ).toMatchObject({ patientName: '김철수', nameMatch: 'exact' });
   });
 
   it('falls back to unknown for an unrecognised query type', () => {
@@ -59,12 +80,16 @@ describe('normalizeVoiceQuery', () => {
   it('survives malformed or missing fields', () => {
     expect(normalizeVoiceQuery({}, roster)).toEqual({
       patientName: null,
+      heardName: null,
+      nameMatch: 'none',
       queryType: 'unknown',
       item: null,
     });
     expect(normalizeVoiceQuery(null, roster)).toMatchObject({ queryType: 'unknown' });
     expect(normalizeVoiceQuery({ patientName: 42, item: 7 }, roster)).toEqual({
       patientName: null,
+      heardName: null,
+      nameMatch: 'none',
       queryType: 'unknown',
       item: null,
     });

@@ -103,12 +103,16 @@ export function useVoiceQuery() {
 
       setState((current) => ({ ...current, stage: 'loading', parsed }));
 
-      if (!parsed.patientName) {
-        throw new Error('환자를 특정할 수 없습니다. 환자 이름을 함께 말씀해주세요.');
-      }
-      const patient = activePatients.find((item) => item.name === parsed.patientName);
+      const patient = parsed.patientName
+        ? activePatients.find((item) => item.name === parsed.patientName)
+        : undefined;
       if (!patient) {
-        throw new Error('환자를 특정할 수 없습니다. 환자 이름을 함께 말씀해주세요.');
+        // 들린 이름을 그대로 돌려줘야 사용자가 왜 못 찾았는지 알 수 있다.
+        throw new Error(
+          parsed.heardName
+            ? `"${parsed.heardName}"으로 들렸지만 담당 환자 명단에서 찾지 못했습니다.`
+            : '환자를 특정할 수 없습니다. 환자 이름을 함께 말씀해주세요.'
+        );
       }
 
       if (parsed.queryType === 'unknown') {

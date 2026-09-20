@@ -13,7 +13,7 @@ const SOAP_FIELDS = [
 /**
  * 환자별로 나뉜 SOAP 초안 검토 단계.
  * 저장 전에 반드시 사람이 확인하도록, 기본은 "선택된 것만 저장"이고
- * 환자를 특정하지 못한 조각은 선택이 해제된 채로 시작한다.
+ * 환자를 특정하지 못한 조각과 **발음으로만 이어 붙인 조각**은 선택이 해제된 채로 시작한다.
  */
 export function ConversationReview({
   drafts,
@@ -32,6 +32,8 @@ export function ConversationReview({
 
       {drafts.map((draft, index) => {
         const unmatched = !draft.patientId;
+        // 발음이 비슷해서 이어 붙인 것 — 맞는 환자인지 사람이 확인해야 한다.
+        const needsConfirm = !unmatched && draft.nameMatch === 'similar';
         return (
           <div
             key={index}
@@ -39,7 +41,7 @@ export function ConversationReview({
               'rounded-lg border p-3',
               draft.saved
                 ? 'border-emerald-200 bg-emerald-50/50'
-                : unmatched
+                : unmatched || needsConfirm
                   ? 'border-amber-200 bg-amber-50/40'
                   : 'border-zinc-200'
             )}
@@ -63,6 +65,8 @@ export function ConversationReview({
                   onChange(index, {
                     patientId,
                     patientName: patient?.name ?? null,
+                    // 사람이 직접 고른 것이므로 더 이상 확인을 요구하지 않는다.
+                    nameMatch: patientId ? 'exact' : 'none',
                     selected: Boolean(patientId),
                   });
                 }}
@@ -85,7 +89,17 @@ export function ConversationReview({
               {unmatched && !draft.saved && (
                 <span className="inline-flex items-center gap-1 text-[11px] text-amber-700">
                   <TriangleAlert className="h-3.5 w-3.5" />
-                  환자를 특정하지 못했습니다
+                  {draft.heardName
+                    ? `"${draft.heardName}"으로 들렸지만 명단에서 찾지 못했습니다`
+                    : '환자를 특정하지 못했습니다'}
+                </span>
+              )}
+              {needsConfirm && !draft.saved && (
+                <span className="inline-flex items-center gap-1 text-[11px] text-amber-700">
+                  <TriangleAlert className="h-3.5 w-3.5" />
+                  {draft.heardName && draft.heardName !== draft.patientName
+                    ? `"${draft.heardName}"으로 들렸습니다 · 맞는지 확인해주세요`
+                    : '비슷한 이름으로 연결했습니다 · 확인해주세요'}
                 </span>
               )}
             </div>
