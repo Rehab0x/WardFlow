@@ -4,6 +4,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { PatientWorkspace } from '@/components/workspace/PatientWorkspace';
 import { type WorkspaceTabId } from '@/components/workspace/WorkspaceTabs';
 import { TodayDashboard } from '@/components/today/TodayDashboard';
+import { RoundingBoard } from '@/components/rounding/RoundingBoard';
 import { formatClockTime } from '@/components/clinical/dateLabels';
 import { AddPatientPanel } from '@/components/patient/AddPatientPanel';
 import { PatientStatusDialog } from '@/components/patient/PatientStatusDialog';
@@ -42,6 +43,10 @@ export default function AppPage() {
   const { labs, fetchLabsByPatient } = useLabStore();
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<WorkspaceTabId>('overview');
+  // 환자를 열지 않았을 때 가운데에 무엇을 띄울지. 회진 모드는 Today와 나란한 화면이다.
+  const [mainView, setMainView] = useState<'today' | 'rounding'>('today');
+  // 회진 중 보던 병동 — 환자를 열었다 돌아와도 같은 병동으로 돌아오게 한다.
+  const [roundingWard, setRoundingWard] = useState<string | undefined>(undefined);
   const [searchQuery, setSearchQuery] = useState('');
   const [addOpen, setAddOpen] = useState(false);
   const [editPatientId, setEditPatientId] = useState<string | null>(null);
@@ -216,6 +221,25 @@ export default function AppPage() {
     if (!confirmWorkspaceNavigation()) return false;
     setSelectedPatientId(null);
     setSelectedTab('overview');
+    setMainView('today');
+    setWorkspaceUnsaved(false);
+    return true;
+  }, [confirmWorkspaceNavigation]);
+
+  const handleOpenRounding = useCallback(() => {
+    if (!confirmWorkspaceNavigation()) return false;
+    setSelectedPatientId(null);
+    setSelectedTab('overview');
+    setMainView('rounding');
+    setWorkspaceUnsaved(false);
+    return true;
+  }, [confirmWorkspaceNavigation]);
+
+  /** 워크스페이스에서 뒤로 — 열기 전에 보던 화면(Today 또는 회진)으로 돌아간다. */
+  const handleBackFromPatient = useCallback(() => {
+    if (!confirmWorkspaceNavigation()) return false;
+    setSelectedPatientId(null);
+    setSelectedTab('overview');
     setWorkspaceUnsaved(false);
     return true;
   }, [confirmWorkspaceNavigation]);
@@ -277,10 +301,13 @@ export default function AppPage() {
       selectedPatientId={selectedPatientId ?? undefined}
       patientIndicators={patientIndicators}
       searchValue={searchQuery}
-      activeMobileAction={selectedPatientId ? 'patients' : 'today'}
+      activeMobileAction={
+        selectedPatientId ? 'patients' : mainView === 'rounding' ? 'rounding' : 'today'
+      }
       onSearchChange={setSearchQuery}
       onPatientSelect={openPatient}
       onToday={handleOpenToday}
+      onOpenRounding={handleOpenRounding}
       onAddPatient={handleOpenAddPatient}
       onOpenLabImport={handleOpenLabImport}
       onOpenConversationNotes={aiConfigured ? handleOpenConversationNotes : undefined}
@@ -306,7 +333,7 @@ export default function AppPage() {
           labResults={labs}
           medications={medications}
           initialTab={selectedTab}
-          onBack={handleOpenToday}
+          onBack={handleBackFromPatient}
           onTabChange={setSelectedTab}
           onToggleAttention={handleToggleAttention}
           onEditPatient={handleEditPatient}
@@ -331,6 +358,16 @@ export default function AppPage() {
           onUnsavedChange={setWorkspaceUnsaved}
           attentionPending={attentionPending}
           archivePending={archivePending}
+        />
+      ) : mainView === 'rounding' ? (
+        <RoundingBoard
+          patients={patients}
+          patientIndicators={patientIndicators}
+          activeWard={roundingWard}
+          isLoading={patientsLoading || briefingLoading}
+          subtitle={statusText || undefined}
+          onWardChange={setRoundingWard}
+          onOpenPatient={openPatient}
         />
       ) : (
         <TodayDashboard

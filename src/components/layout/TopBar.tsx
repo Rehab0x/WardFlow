@@ -1,6 +1,7 @@
 import {
   ClipboardList,
   FlaskConical,
+  Footprints,
   Home,
   LogOut,
   Menu,
@@ -23,6 +24,7 @@ interface TopBarProps {
   onOpenLabImport?: () => void;
   onOpenConversationNotes?: () => void;
   onToday?: () => void;
+  onOpenRounding?: () => void;
   onSettings?: () => void;
   onLogout?: () => void;
   onTogglePatients?: () => void;
@@ -37,6 +39,7 @@ export function TopBar({
   onOpenLabImport,
   onOpenConversationNotes,
   onToday,
+  onOpenRounding,
   onSettings,
   onLogout,
   onTogglePatients,
@@ -166,6 +169,14 @@ export function TopBar({
               <ClipboardList className="h-4 w-4" />
             </IconButton>
           )}
+          <IconButton
+            aria-label="회진 목록"
+            tooltip="회진 목록"
+            className="hidden md:inline-flex"
+            onClick={onOpenRounding}
+          >
+            <Footprints className="h-4 w-4" />
+          </IconButton>
           <IconButton
             aria-label="Today"
             tooltip="Today"

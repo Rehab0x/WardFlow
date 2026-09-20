@@ -1,4 +1,4 @@
-import { Home, Settings, Users, X } from 'lucide-react';
+import { Footprints, Home, Settings, Users, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Patient } from '@/types/patient';
 import { cn } from '@/lib/utils';
@@ -12,7 +12,7 @@ interface AppShellProps {
   selectedPatientId?: string;
   patientIndicators?: Record<string, PatientRailIndicators>;
   searchValue?: string;
-  activeMobileAction?: 'today' | 'patients' | 'settings';
+  activeMobileAction?: 'today' | 'rounding' | 'patients' | 'settings';
   children: ReactNode;
   onSearchChange?: (value: string) => void;
   onAddPatient?: () => boolean | void;
@@ -22,6 +22,7 @@ interface AppShellProps {
   onLogout?: () => void;
   onPatientSelect?: (patientId: string) => boolean | void;
   onToday?: () => boolean | void;
+  onOpenRounding?: () => boolean | void;
 }
 
 export function AppShell({
@@ -40,6 +41,7 @@ export function AppShell({
   onLogout,
   onPatientSelect,
   onToday,
+  onOpenRounding,
 }: AppShellProps) {
   const [patientsOpen, setPatientsOpen] = useState(false);
   const selectedPatient = useMemo(
@@ -81,6 +83,12 @@ export function AppShell({
     setPatientsOpen(false);
   }, [onToday]);
 
+  const handleRounding = useCallback(() => {
+    const shouldClose = onOpenRounding?.();
+    if (shouldClose === false) return;
+    setPatientsOpen(false);
+  }, [onOpenRounding]);
+
   const handleSettings = useCallback(() => {
     setPatientsOpen(false);
     onSettings?.();
@@ -102,6 +110,7 @@ export function AppShell({
         onOpenLabImport={onOpenLabImport}
         onOpenConversationNotes={onOpenConversationNotes}
         onToday={handleToday}
+        onOpenRounding={handleRounding}
         onSettings={handleSettings}
         onLogout={onLogout}
         onTogglePatients={openPatients}
@@ -186,9 +195,16 @@ export function AppShell({
         </main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid h-12 grid-cols-3 border-t border-zinc-200 bg-white/95 backdrop-blur-md md:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid h-12 grid-cols-4 border-t border-zinc-200 bg-white/95 backdrop-blur-md md:hidden">
         <BottomAction label="오늘" active={activeMobileAction === 'today'} onClick={handleToday}>
           <Home className="h-4 w-4" />
+        </BottomAction>
+        <BottomAction
+          label="회진"
+          active={activeMobileAction === 'rounding'}
+          onClick={handleRounding}
+        >
+          <Footprints className="h-4 w-4" />
         </BottomAction>
         <BottomAction
           label="환자"
