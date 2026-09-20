@@ -9,6 +9,8 @@ import { AddPatientPanel } from '@/components/patient/AddPatientPanel';
 import { PatientStatusDialog } from '@/components/patient/PatientStatusDialog';
 import { LabImportDialog } from '@/components/lab/LabImportDialog';
 import { VoiceQueryButton } from '@/components/voice/VoiceQueryButton';
+import { ConversationNoteDialog } from '@/components/conversation/ConversationNoteDialog';
+import { useAIStore } from '@/stores/useAIStore';
 import { formatUserFacingError } from '@/lib/errorMessages';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useLabStore } from '@/stores/useLabStore';
@@ -36,6 +38,7 @@ export default function AppPage() {
     fetchPatients,
   } = usePatientStore();
   const { medications, fetchMedicationsByPatient } = useMedicationStore();
+  const aiConfigured = useAIStore((store) => store.isConfigured());
   const { labs, fetchLabsByPatient } = useLabStore();
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<WorkspaceTabId>('overview');
@@ -44,6 +47,7 @@ export default function AppPage() {
   const [editPatientId, setEditPatientId] = useState<string | null>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [labImportOpen, setLabImportOpen] = useState(false);
+  const [conversationOpen, setConversationOpen] = useState(false);
   const [workspaceUnsaved, setWorkspaceUnsaved] = useState(false);
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
@@ -166,6 +170,7 @@ export default function AppPage() {
   const {
     handleChartingSave,
     handleAddNote,
+    handleAddNoteForPatient,
     handleRemoveNote,
     handleAddAntibiotic,
     handleAddMedication,
@@ -225,6 +230,18 @@ export default function AppPage() {
     setLabImportOpen(true);
   }, []);
 
+  const handleOpenConversationNotes = useCallback(() => {
+    setConversationOpen(true);
+  }, []);
+
+  // 대화 정리에서 저장하는 경로는 기존 메모 저장 핸들러를 그대로 쓴다.
+  const addConversationNote = useCallback(
+    async (patientId: string, content: string) => {
+      await handleAddNoteForPatient(patientId, content);
+    },
+    [handleAddNoteForPatient]
+  );
+
   const handleLabImportComplete = useCallback(
     (_result: BulkImportResult) => {
       markLocalBriefingUpdated();
@@ -266,6 +283,7 @@ export default function AppPage() {
       onToday={handleOpenToday}
       onAddPatient={handleOpenAddPatient}
       onOpenLabImport={handleOpenLabImport}
+      onOpenConversationNotes={aiConfigured ? handleOpenConversationNotes : undefined}
       onSettings={handleOpenSettings}
       onLogout={handleLogout}
     >
@@ -364,6 +382,13 @@ export default function AppPage() {
         <LabImportDialog
           onClose={() => setLabImportOpen(false)}
           onComplete={handleLabImportComplete}
+        />
+      )}
+
+      {conversationOpen && (
+        <ConversationNoteDialog
+          onClose={() => setConversationOpen(false)}
+          onAddNote={addConversationNote}
         />
       )}
 

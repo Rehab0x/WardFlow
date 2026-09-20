@@ -17,6 +17,7 @@ interface AppShellProps {
   onSearchChange?: (value: string) => void;
   onAddPatient?: () => boolean | void;
   onOpenLabImport?: () => void;
+  onOpenConversationNotes?: () => void;
   onSettings?: () => void;
   onLogout?: () => void;
   onPatientSelect?: (patientId: string) => boolean | void;
@@ -34,6 +35,7 @@ export function AppShell({
   onSearchChange,
   onAddPatient,
   onOpenLabImport,
+  onOpenConversationNotes,
   onSettings,
   onLogout,
   onPatientSelect,
@@ -98,6 +100,7 @@ export function AppShell({
         onSearchChange={onSearchChange}
         onAddPatient={handleAddPatient}
         onOpenLabImport={onOpenLabImport}
+        onOpenConversationNotes={onOpenConversationNotes}
         onToday={handleToday}
         onSettings={handleSettings}
         onLogout={onLogout}

@@ -492,3 +492,103 @@ export async function analyzeBriefing(context: {
   const response = await callAI(BRIEFING_ANALYSIS_SYSTEM_PROMPT, userMessage);
   return response.content;
 }
+
+// ─── 간호사 대화 → 환자별 SOAP 분리 ───
+
+const CONVERSATION_SEGMENT_SYSTEM_PROMPT = `당신은 병동에서 오간 대화(간호사 보고, 전화 인계 등)를 환자별로 나누어 경과기록 초안을 만드는 의료 AI입니다.
+
+입력으로 (1) 대화 내용과 (2) 현재 담당 중인 환자 명단이 주어집니다.
+
+할 일:
+1. 대화를 환자 단위로 나눕니다. 한 대화에 여러 환자가 섞여 있을 수 있습니다.
+2. 각 조각이 어떤 환자인지 찾습니다.
+   - 음성 인식이나 받아쓰기로 이름이 부정확할 수 있습니다.
+   - 반드시 **주어진 환자 명단 안에서** 가장 가까운 이름을 고르고, 명단에 있는 철자 그대로 출력하세요.
+   - 환자를 특정할 수 없는 조각은 patientName을 null로 두세요. 명단에 없는 이름을 지어내지 마세요.
+3. 각 환자에 대해 S/O/A/P 네 줄로 정리합니다.
+   - S(Subjective): 환자·보호자가 호소한 것
+   - O(Objective): 관찰된 것, 측정치 (활력징후, 수치 등)
+   - A(Assessment): 대화에서 드러난 평가
+   - P(Plan): 언급된 처치·계획
+   - 대화에 없는 항목은 빈 문자열로 두세요. **추측해서 채우지 마세요.**
+
+출력 형식 — 아래 JSON 배열 **하나만** 출력하세요. 설명, 마크다운 코드펜스를 붙이지 마세요.
+[{"patientName": string|null, "excerpt": string, "subjective": string, "objective": string, "assessment": string, "plan": string}]
+
+excerpt는 그 환자에 해당하는 대화 원문을 짧게 옮긴 것입니다(최대 두 문장).`;
+
+export interface ConversationSegment {
+  patientName: string | null;
+  excerpt: string;
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
+}
+
+/**
+ * 대화 내용을 환자별 SOAP 초안으로 나눈다.
+ *
+ * 음성 질의(`parseVoiceQuery`)와 같은 전략을 쓴다 — 활성 환자 명단을 컨텍스트로 넘겨
+ * 이름 오인식을 보정하게 하되, 결과는 코드에서 명단과 대조해 검증한다.
+ */
+export async function segmentConversation(
+  transcript: string,
+  patientNames: string[]
+): Promise<ConversationSegment[]> {
+  const roster = patientNames.length > 0 ? patientNames.join(', ') : '(없음)';
+  const userMessage = [`환자 명단: ${roster}`, `대화 내용:\n${transcript}`].join('\n\n');
+
+  const response = await callAI(CONVERSATION_SEGMENT_SYSTEM_PROMPT, userMessage);
+  return normalizeConversationSegments(parseVoiceQueryJson(response.content), patientNames);
+}
+
+/** LLM 출력을 신뢰하지 않고 정규화한다. 환자 이름은 실제 명단에 있는 값만 통과시킨다. */
+export function normalizeConversationSegments(
+  value: unknown,
+  patientNames: string[]
+): ConversationSegment[] {
+  const list = Array.isArray(value) ? value : [value];
+
+  return list
+    .map((entry): ConversationSegment | null => {
+      if (typeof entry !== 'object' || entry === null) return null;
+      const source = entry as Record<string, unknown>;
+
+      const rawName = typeof source.patientName === 'string' ? source.patientName.trim() : '';
+      const matched =
+        patientNames.find((name) => name === rawName) ??
+        patientNames.find((name) => name.replace(/\s/g, '') === rawName.replace(/\s/g, ''));
+
+      const segment: ConversationSegment = {
+        patientName: matched ?? null,
+        excerpt: readText(source.excerpt),
+        subjective: readText(source.subjective),
+        objective: readText(source.objective),
+        assessment: readText(source.assessment),
+        plan: readText(source.plan),
+      };
+
+      // 아무 내용도 없는 조각은 버린다.
+      const hasContent =
+        segment.excerpt || segment.subjective || segment.objective || segment.assessment || segment.plan;
+      return hasContent ? segment : null;
+    })
+    .filter((segment): segment is ConversationSegment => segment !== null);
+}
+
+function readText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+/** SOAP 네 줄을 메모로 저장할 한 덩어리 텍스트로 만든다. */
+export function formatSegmentAsNote(segment: ConversationSegment): string {
+  return [
+    segment.subjective && `S) ${segment.subjective}`,
+    segment.objective && `O) ${segment.objective}`,
+    segment.assessment && `A) ${segment.assessment}`,
+    segment.plan && `P) ${segment.plan}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}

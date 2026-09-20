@@ -1,4 +1,5 @@
 import {
+  ClipboardList,
   FlaskConical,
   Home,
   LogOut,
@@ -20,6 +21,7 @@ interface TopBarProps {
   onSearchChange?: (value: string) => void;
   onAddPatient?: () => boolean | void;
   onOpenLabImport?: () => void;
+  onOpenConversationNotes?: () => void;
   onToday?: () => void;
   onSettings?: () => void;
   onLogout?: () => void;
@@ -33,6 +35,7 @@ export function TopBar({
   onSearchChange,
   onAddPatient,
   onOpenLabImport,
+  onOpenConversationNotes,
   onToday,
   onSettings,
   onLogout,
@@ -154,6 +157,15 @@ export function TopBar({
           >
             <FlaskConical className="h-4 w-4" />
           </IconButton>
+          {onOpenConversationNotes && (
+            <IconButton
+              aria-label="간호사 대화 정리"
+              tooltip="간호사 대화 정리"
+              onClick={onOpenConversationNotes}
+            >
+              <ClipboardList className="h-4 w-4" />
+            </IconButton>
+          )}
           <IconButton
             aria-label="Today"
             tooltip="Today"

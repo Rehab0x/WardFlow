@@ -18,7 +18,7 @@
 |------|------|------|
 | Phase 1 Foundation | ✅ 완료 | 잔여는 수동 테스트 2건 (성능 측정, 반응형) |
 | Phase 2 Smart Input | ✅ 완료 | 캘린더 뷰는 취소, 알림은 3.2로 통합 |
-| Phase 3 WardAide AI | 🔶 3.1 · 3.2 · 3.3.1 · 3.4 완료 | 3.3.2 기타 AI만 남음 |
+| Phase 3 WardAide AI | 🔶 근거연결 AI 1건만 남음 | 3.1 · 3.2 · 3.3.1 · 3.3.2(대화 SOAP) · 3.4 완료 |
 | Phase 4 WardLink 통합 | ⬜ 미착수 | Phase 3 이후 |
 | Phase 5 v2 리팩토링 | ✅ 완료 | 문서 동기화까지 완료 |
 
@@ -27,7 +27,8 @@
 2. ~~3.4 rate limit + 로그 마스킹~~ ✅ 완료 (인증 fail-closed 전환 포함)
 3. ~~3.3.1 AI 음성 질의~~ ✅ 완료 — **실기기 검증 필요** (마이크 권한, 한국어 인식 정확도, 환자명 매칭)
 4. ~~3.2 알림 고도화~~ ✅ 완료 — **⚠️ Supabase에 마이그레이션 적용 필요** (아래 참고)
-5. 3.3.2 기타 AI (근거연결, 간호사 대화 SOAP 분리)
+5. ~~간호사 대화 SOAP 분리~~ ✅ 완료
+6. **근거연결 AI** (가이드라인 키워드 추천, 논문/근거 연결) ← Phase 3의 마지막 항목
 
 ---
 
@@ -321,7 +322,7 @@
 - [x] AI 기반 Morning Briefing 분석 → `analyzeBriefing()` + Today의 "AI 오늘 브리핑" 패널 (알림·할 일·항생제·Lab을 묶어 먼저 볼 환자 정리)
 - [x] **마이그레이션 미적용 대비** — `42P01`(relation does not exist)을 감지해 읽기는 빈 결과로 degrade, 쓰기는 안내 메시지. 테스트 5건으로 고정
 
-### 3.3 AI 추가 기능
+### 3.3 AI 추가 기능 — 🔶 근거연결 AI만 남음
 
 #### 3.3.1 AI 음성 질의 — 회진 중 자연어 조회 ✅ **완료 (2026-09-20)**
 
@@ -358,7 +359,14 @@
 #### 3.3.2 기타 AI 추가 기능 (예정)
 
 - [ ] 근거연결 AI (가이드라인 키워드 추천, 논문/근거 연결)
-- [ ] 간호사 대화 녹음 → 환자별 SOAP 자동 분리 (3.3.1 파이프라인 검증 후 재사용 예정 — STT/aiService 패턴 동일, 세그멘테이션 프롬프트만 신규)
+- [x] **간호사 대화 → 환자별 SOAP 자동 분리** ✅ (2026-09-20)
+  - [x] **입력 2가지를 동등 지원** — 녹음(Whisper) / **직접 입력**(전화 인계처럼 녹음이 어려울 때). 직접 입력은 Whisper 키 없이도 동작하며 기본 모드다 (사용자 요청)
+  - [x] 세그멘테이션 프롬프트 → `aiService.segmentConversation()` — 한 대화에 섞인 여러 환자를 나누고 각각 S/O/A/P 생성. 대화에 없는 항목은 비워 두게 강제(추측 금지)
+  - [x] 환자명 환각 차단 — 음성 질의와 동일하게 실제 활성 환자 명단에 있는 이름만 통과, 나머지는 `null`로 두고 사용자가 직접 선택
+  - [x] 검토 UI — 환자별 SOAP 초안 편집, 환자 재지정, 선택한 것만 저장. 환자 미지정 조각은 선택 해제 상태로 시작
+  - [x] 저장은 기존 메모 경로 재사용 (`handleAddNoteForPatient` 신설 — 선택 환자와 무관하게 저장)
+  - [x] 대화 원문·음성 미저장 (사용자가 고른 SOAP 초안만 메모로 남음)
+  - [x] 테스트 23건 — `aiService.conversation.test.ts`(9), `useConversationNotes.test.ts`(9), `ConversationInput.test.tsx`(5) (3.3.1 파이프라인 검증 후 재사용 예정 — STT/aiService 패턴 동일, 세그멘테이션 프롬프트만 신규)
 
 ### 3.4 Lab 서버 API 엔드포인트 — ✅ **완료** (2026-09-19)
 > TODO에는 미착수로 남아 있었지만 `api/lab-import.ts`가 이미 프로덕션에 배포되어 동작 중이다.
@@ -542,3 +550,4 @@
 | 2026-09-19 | **Lab 서버 API 보안 강화 (Phase 3.4 완료)**: ① **인증 fail-closed 전환** — `LAB_IMPORT_API_KEY` 미설정 시 인증을 건너뛰어 서비스 롤 권한의 쓰기 엔드포인트가 공개되던 구조를 503 거부로 변경 ② rate limit 추가(60초/10회, 429 + `Retry-After`, 인스턴스 메모리 한계 주석 명시) ③ 로그 마스킹(`logMasking.ts` — 이름/등록번호/ID/파일명/에러 숫자열). 응답은 그대로 두고 로그에만 적용 ④ 상수 시간 키 비교, 인증 실패가 정상 호출자 할당량을 깎지 않도록 순서 조정 ⑤ 내부 오류 원문 응답 노출 차단 ⑥ 서버 모듈에 남아 있던 등록번호 매칭 3번째 중복 정의를 `lib/registrationNumber`로 통일. 테스트 19건 추가 (총 196). | ✅ 완료 | @Coder-Logic + @Reviewer |
 | 2026-09-20 | **AI 음성 질의 구현 (Phase 3.3.1)**: ① `useAIStore`에 `whisperApiKey` 추가(사용자 결정) + 설정 > AI 설정에 입력 UI, 키 없으면 마이크 버튼 자체를 숨김 ② `sttService.ts` — MediaRecorder 녹음 + Whisper API(한국어 + 의료 용어 프롬프트 힌트), 실패 지점을 `SttError.stage`로 구분해 UI가 다른 안내를 띄우도록 함 ③ `aiService.parseVoiceQuery()` — 활성 환자 명단을 컨텍스트로 넘겨 STT 이름 오인식 보정, **명단에 없는 이름은 코드에서 거부**(LLM 환각 차단), 코드펜스/프로즈 섞인 JSON 복구 ④ `useVoiceQuery.ts` — 녹음→STT→파싱→조회 전체 플로우, Lab은 `getLabTrendData()` + `LabChart` 재사용, 투약은 `useMedicationStore` 재사용 ⑤ `VoiceQueryButton`(플로팅) + `VoiceQueryOverlay`(단계별 표시, 차트는 lazy) ⑥ **원본 음성·STT 텍스트 미저장** — Blob은 변환 직후 폐기, transcript는 훅 state로만 유지하고 DB 기록 없음(테스트로 고정). 테스트 26건 추가 (총 222). | ✅ 완료 | @Architect + @Coder-Logic + @Coder-UI |
 | 2026-09-20 | **알림 고도화 구현 (Phase 3.2)**: ① 마이그레이션 `202609200001_alert_rules_and_events.sql` — `alert_rules` + `alert_events`, `owner_id` 스코프 위에 `can_read_patient` RLS 이중 적용, `(owner_id, dedupe_key)` 유니크로 중복 알림 차단, 규칙 종류별 필수 필드 CHECK, 규칙 삭제해도 히스토리 보존 ② 평가 엔진 `alertEngine.ts`(순수 함수) — Lab 임계값 4종 + 참조범위 이탈, 항생제 사용 일수. Lab은 결과+항목 단위, 항생제는 약제 코스 단위로 dedupe해 매일 반복되지 않음 ③ 설정 > 알림 규칙 UI + 자주 쓰는 규칙 4개 일괄 추가 ④ Today 규칙 알림 섹션(확인/삭제/기록 정리) ⑤ AI 오늘 브리핑 패널(`analyzeBriefing`) ⑥ **마이그레이션 미적용 대비** — `42P01` 감지해 읽기는 빈 결과로 degrade, 쓰기는 안내. 평가용 Lab 조회는 최근 14일 + 컬럼 명시 + 활성 환자 스코프 + 청크 병렬. 테스트 19건 추가 (총 241). **⚠️ 사용자가 Supabase에 마이그레이션을 적용해야 기능이 켜짐.** | ✅ 완료 (마이그레이션 적용 대기) | @Architect + @Coder-Logic + @Coder-UI |
+| 2026-09-20 | **간호사 대화 → 환자별 SOAP 분리 (Phase 3.3.2)**: ① **입력 2가지 동등 지원** — 녹음(Whisper)과 **직접 입력**. 전화 인계처럼 녹음이 어려운 경우를 위해 직접 입력을 기본 모드로 두고, Whisper 키가 없어도 동작하게 함(사용자 요청) ② `segmentConversation()` — 한 대화에 섞인 여러 환자를 나눠 각각 S/O/A/P 생성, 대화에 없는 항목은 비워 두게 프롬프트로 강제 ③ 환자명 환각 차단 — 활성 환자 명단에 있는 이름만 통과, 나머지는 검토 UI에서 직접 선택 ④ 검토 단계 — 초안 편집/환자 재지정/선택 저장, 미지정 조각은 선택 해제로 시작해 실수 저장 방지 ⑤ 저장 실패는 조각별로 표시하고 나머지는 계속 저장 ⑥ 대화 원문·음성 미저장. 테스트 23건 추가 (총 264). | ✅ 완료 | @Coder-Logic + @Coder-UI |

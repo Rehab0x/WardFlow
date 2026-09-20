@@ -95,6 +95,18 @@ export function useClinicalWriters({
     }, '메모를 저장하지 못했습니다.');
   };
 
+  /**
+   * 선택된 환자와 무관하게 특정 환자에게 경과기록을 저장한다.
+   * (간호사 대화 정리처럼 한 번에 여러 환자에게 쓰는 경우)
+   */
+  const handleAddNoteForPatient = async (patientId: string, content: string) => {
+    await runWrite(async () => {
+      await addNote({ patientId, content, type: 'progress' });
+      markLocalBriefingUpdated();
+      queueBriefingRefresh();
+    }, '메모를 저장하지 못했습니다.');
+  };
+
   const handleRemoveNote = async (noteId: string) => {
     await runWrite(async () => {
       await deleteNote(noteId);
@@ -353,6 +365,7 @@ export function useClinicalWriters({
     () => ({
       handleChartingSave,
       handleAddNote,
+      handleAddNoteForPatient,
       handleRemoveNote,
       handleAddAntibiotic,
       handleAddMedication,
