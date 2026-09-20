@@ -1,13 +1,18 @@
 import { useMemo } from 'react';
 import type { Patient } from '@/types/patient';
-import type { PatientRailIndicators } from '@/components/layout/PatientRail';
+import type { BriefingData } from '@/services/briefingService';
+import type { OpenLabBreach } from '@/services/alertEngine';
+import { buildRoundingBadges } from '@/features/app/roundingBadges';
 import { buildRoundingWards, resolveActiveWard } from '@/features/app/roundingList';
 import { cn } from '@/lib/utils';
 import { RoundingRoomCard } from './RoundingRoomCard';
 
 interface RoundingBoardProps {
   patients: Patient[];
-  patientIndicators?: Record<string, PatientRailIndicators>;
+  /** 오늘 Lab·알림·일정·항생제 집계 */
+  briefing: BriefingData;
+  /** 마지막 검사에서도 임계값에 걸려 있는 항목 — 값이 돌아오면 저절로 사라진다 */
+  breaches?: OpenLabBreach[];
   /** 보고 있던 병동 — 환자를 열었다 돌아와도 유지되도록 바깥에서 들고 있는다 */
   activeWard?: string;
   selectedPatientId?: string;
@@ -25,7 +30,8 @@ interface RoundingBoardProps {
  */
 export function RoundingBoard({
   patients,
-  patientIndicators,
+  briefing,
+  breaches,
   activeWard,
   selectedPatientId,
   subtitle,
@@ -33,10 +39,11 @@ export function RoundingBoard({
   onWardChange,
   onOpenPatient,
 }: RoundingBoardProps) {
-  const wards = useMemo(
-    () => buildRoundingWards(patients, patientIndicators),
-    [patients, patientIndicators]
+  const badges = useMemo(
+    () => buildRoundingBadges({ patients, briefing, breaches }),
+    [patients, briefing, breaches]
   );
+  const wards = useMemo(() => buildRoundingWards(patients, badges), [patients, badges]);
   const currentKey = resolveActiveWard(wards, activeWard);
   const current = wards.find((ward) => ward.key === currentKey);
 

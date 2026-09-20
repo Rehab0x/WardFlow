@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { daysSince, describeRule, evaluateAlertRules } from './alertEngine';
+import { daysSince, describeRule, evaluateAlertRules, findOpenLabBreaches } from './alertEngine';
 import type { AlertRule } from '@/domain/alert';
 import type { LabResult } from '@/types/lab';
 import type { Medication } from '@/types/medication';
@@ -186,5 +186,77 @@ describe('describeRule', () => {
     expect(describeRule(rule({ kind: 'antibiotic_duration', dayThreshold: 14 }))).toBe(
       '항생제 14일 이상'
     );
+  });
+});
+
+describe('findOpenLabBreaches', () => {
+  const na = (value: number, date: Date, id: string) =>
+    lab(value, { id, testDate: date, items: [{ name: 'Na', value, unit: 'mmol/L', isAbnormal: true, hlFlag: 'L' }] });
+
+  it('reports a breach that the latest lab still shows', () => {
+    const breaches = findOpenLabBreaches({
+      rules: [rule({})],
+      labResults: [na(118, new Date(2026, 8, 19), 'l2'), na(122, new Date(2026, 8, 17), 'l1')],
+    });
+
+    expect(breaches).toHaveLength(1);
+    expect(breaches[0]).toMatchObject({
+      patientId: 'p1',
+      itemName: 'Na',
+      value: 118,
+      direction: 'low',
+      streak: 2,
+    });
+    // 연속으로 걸리기 시작한 날을 함께 돌려준다
+    expect(breaches[0]!.since).toEqual(new Date(2026, 8, 17));
+    expect(breaches[0]!.testDate).toEqual(new Date(2026, 8, 19));
+  });
+
+  it('drops the breach once a later lab comes back in range', () => {
+    const breaches = findOpenLabBreaches({
+      rules: [rule({})],
+      labResults: [na(134, new Date(2026, 8, 20), 'l3'), na(118, new Date(2026, 8, 19), 'l2')],
+    });
+    expect(breaches).toEqual([]);
+  });
+
+  it('ignores labs that did not measure the item at all', () => {
+    // 최근 검사에 Na가 없으면 "마지막 Na 값"은 그 이전 것이다 — 그 값이 문제면 계속 뜬다
+    const withoutNa = lab(0, {
+      id: 'l9',
+      testDate: new Date(2026, 8, 20),
+      items: [{ name: 'CRP', value: 8, unit: 'mg/dL', isAbnormal: true, hlFlag: 'H' }],
+    });
+    const breaches = findOpenLabBreaches({
+      rules: [rule({})],
+      labResults: [withoutNa, na(118, new Date(2026, 8, 19), 'l2')],
+    });
+    expect(breaches).toHaveLength(1);
+    expect(breaches[0]).toMatchObject({ value: 118, streak: 1 });
+  });
+
+  it('says nothing when the item was never measured', () => {
+    expect(findOpenLabBreaches({ rules: [rule({})], labResults: [] })).toEqual([]);
+  });
+
+  it('skips disabled rules and antibiotic rules', () => {
+    const labs = [na(118, new Date(2026, 8, 19), 'l2')];
+    expect(findOpenLabBreaches({ rules: [rule({ isEnabled: false })], labResults: labs })).toEqual(
+      []
+    );
+    expect(
+      findOpenLabBreaches({
+        rules: [rule({ kind: 'antibiotic_duration', dayThreshold: 14 })],
+        labResults: labs,
+      })
+    ).toEqual([]);
+  });
+
+  it('marks the direction from the comparator', () => {
+    const high = findOpenLabBreaches({
+      rules: [rule({ labItem: 'Na', comparator: 'gt', threshold: 100 })],
+      labResults: [na(118, new Date(2026, 8, 19), 'l2')],
+    });
+    expect(high[0]?.direction).toBe('high');
   });
 });

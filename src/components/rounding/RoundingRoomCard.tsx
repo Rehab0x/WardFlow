@@ -1,24 +1,17 @@
 import { memo } from 'react';
-import type { RoundingFlags, RoundingRoom } from '@/features/app/roundingList';
+import type { BadgeTone } from '@/features/app/roundingBadges';
+import type { RoundingRoom } from '@/features/app/roundingList';
 import { cn } from '@/lib/utils';
 import { formatAgeYears } from '../clinical/dateLabels';
 
-/** 회진 중에는 아이콘보다 글자가 빠르다 — 색과 짧은 단어로 구분한다. */
-const FLAG_STYLES: Record<keyof RoundingFlags, { label: string; className: string }> = {
-  attention: { label: '주의', className: 'border-red-200 bg-red-50 text-red-700' },
-  reminder: { label: '알림', className: 'border-amber-200 bg-amber-50 text-amber-700' },
-  schedule: { label: '일정', className: 'border-sky-200 bg-sky-50 text-sky-700' },
-  antibiotic: { label: '항생제', className: 'border-zinc-300 bg-zinc-100 text-zinc-700' },
-  lab: { label: 'Lab', className: 'border-red-200 bg-red-50 text-red-700' },
+/** 회진 중에는 아이콘보다 글자가 빠르다 — 색과 짧은 글자로 구분한다. */
+const TONE_STYLES: Record<BadgeTone, string> = {
+  critical: 'border-red-300 bg-red-50 text-red-700',
+  warning: 'border-amber-300 bg-amber-50 text-amber-800',
+  info: 'border-sky-200 bg-sky-50 text-sky-700',
+  neutral: 'border-zinc-300 bg-zinc-100 text-zinc-600',
+  done: 'border-emerald-300 bg-emerald-50 text-emerald-700',
 };
-
-const FLAG_ORDER: (keyof RoundingFlags)[] = [
-  'attention',
-  'reminder',
-  'schedule',
-  'antibiotic',
-  'lab',
-];
 
 /**
  * 병실 하나. 이름과 플래그만 크게 보여주는 것이 목적이므로
@@ -43,7 +36,7 @@ export const RoundingRoomCard = memo(function RoundingRoomCard({
       </header>
 
       <ul className="divide-y divide-zinc-100">
-        {room.patients.map(({ patient, bed, flags }) => {
+        {room.patients.map(({ patient, bed, badges }) => {
           const selected = patient.id === selectedPatientId;
           return (
             <li key={patient.id}>
@@ -70,16 +63,17 @@ export const RoundingRoomCard = memo(function RoundingRoomCard({
                   </span>
                 )}
 
-                <span className="flex flex-wrap items-center gap-1">
-                  {FLAG_ORDER.filter((key) => flags[key]).map((key) => (
+                <span className="flex w-full flex-wrap items-center gap-1">
+                  {badges.map((badge) => (
                     <span
-                      key={key}
+                      key={badge.key}
+                      title={badge.title}
                       className={cn(
-                        'rounded border px-1.5 py-0.5 text-[12px] font-semibold',
-                        FLAG_STYLES[key].className
+                        'rounded border px-1.5 py-0.5 text-[13px] font-semibold tabular-nums',
+                        TONE_STYLES[badge.tone]
                       )}
                     >
-                      {FLAG_STYLES[key].label}
+                      {badge.label}
                     </span>
                   ))}
                 </span>

@@ -37,6 +37,26 @@ export interface AlertLabResult {
   items: AlertLabItem[];
 }
 
+/** 지금도 유효한(= 마지막 검사에서도 걸린) Lab 임계값 위반 */
+export interface OpenLabBreach {
+  patientId: string;
+  ruleId: string;
+  ruleName: string;
+  severity: AlertSeverity;
+  itemName: string;
+  value: number | string;
+  unit: string;
+  hlFlag?: 'H' | 'L';
+  /** 임계값을 어느 쪽으로 넘었는지 — 화면에 ↑/↓로 쓴다 */
+  direction: 'high' | 'low' | 'abnormal';
+  /** 마지막 측정일 */
+  testDate: Date;
+  /** 연속으로 걸리기 시작한 검사일 */
+  since: Date;
+  /** 연속으로 걸린 검사 횟수 */
+  streak: number;
+}
+
 export interface AlertEvaluationInput {
   ownerId: string;
   rules: AlertRule[];
@@ -131,6 +151,89 @@ function matchesLabCondition(rule: AlertRule, item: AlertLabItem): boolean {
     default:
       return false;
   }
+}
+
+/**
+ * 지금도 열려 있는 Lab 임계값 위반 — **항목별 가장 최근 검사**만 본다.
+ *
+ * 알림 이벤트(`alert_events`)는 "언제 터졌나"의 기록이라 시간이 지나도 남지만,
+ * 회진 목록에 띄울 신호는 "지금도 문제인가"여야 한다. 그래서 마지막 검사가
+ * 여전히 조건을 만족할 때만 돌려주고, 다음 검사에서 값이 돌아오면 사라진다.
+ *
+ * 검사 자체가 없으면(항목을 최근에 안 냈으면) 판단할 근거가 없으므로 내보내지 않는다.
+ */
+export function findOpenLabBreaches(input: {
+  rules: AlertRule[];
+  labResults: AlertLabResult[];
+}): OpenLabBreach[] {
+  const rules = input.rules.filter(
+    (rule) => rule.isEnabled && rule.kind === 'lab_threshold' && rule.labItem && rule.comparator
+  );
+  if (rules.length === 0) return [];
+
+  const byPatient = new Map<string, AlertLabResult[]>();
+  for (const lab of input.labResults) {
+    const list = byPatient.get(lab.patientId) ?? [];
+    list.push(lab);
+    byPatient.set(lab.patientId, list);
+  }
+
+  const breaches: OpenLabBreach[] = [];
+
+  for (const [patientId, results] of byPatient) {
+    // 최신 검사부터 본다.
+    const ordered = [...results].sort((a, b) => b.testDate.getTime() - a.testDate.getTime());
+
+    for (const rule of rules) {
+      const target = rule.labItem!.trim().toLowerCase();
+      // 그 항목을 담고 있는 검사만 추려야 "마지막 측정값"을 알 수 있다.
+      const measured = ordered
+        .map((lab) => ({
+          lab,
+          item: lab.items.find((entry) => entry.name.trim().toLowerCase() === target),
+        }))
+        .filter((entry): entry is { lab: AlertLabResult; item: AlertLabItem } => Boolean(entry.item));
+
+      const latest = measured[0];
+      if (!latest || !matchesLabCondition(rule, latest.item)) continue; // 측정 없음 또는 해결됨
+
+      // 연속으로 걸린 구간을 세어 "언제부터"를 보여준다.
+      let streak = 0;
+      let since = latest.lab.testDate;
+      for (const entry of measured) {
+        if (!matchesLabCondition(rule, entry.item)) break;
+        streak++;
+        since = entry.lab.testDate;
+      }
+
+      breaches.push({
+        patientId,
+        ruleId: rule.id,
+        ruleName: rule.name,
+        severity: rule.severity,
+        itemName: latest.item.name,
+        value: latest.item.value,
+        unit: latest.item.unit,
+        hlFlag: latest.item.hlFlag,
+        direction: breachDirection(rule, latest.item),
+        testDate: latest.lab.testDate,
+        since,
+        streak,
+      });
+    }
+  }
+
+  return breaches.sort(
+    (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] || a.itemName.localeCompare(b.itemName)
+  );
+}
+
+function breachDirection(rule: AlertRule, item: AlertLabItem): 'high' | 'low' | 'abnormal' {
+  if (rule.comparator === 'lt' || rule.comparator === 'lte') return 'low';
+  if (rule.comparator === 'gt' || rule.comparator === 'gte') return 'high';
+  if (item.hlFlag === 'H') return 'high';
+  if (item.hlFlag === 'L') return 'low';
+  return 'abnormal';
 }
 
 function evaluateAntibioticRule(

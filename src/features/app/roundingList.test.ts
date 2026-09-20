@@ -59,23 +59,28 @@ describe('buildRoundingWards', () => {
     expect(second?.rooms[0]?.patients[0]?.patient.name).toBe('최동훈');
   });
 
-  it('counts patients and flagged patients per ward', () => {
+  it('counts patients and badged patients per ward', () => {
     const wards = buildRoundingWards(patients, {
-      a: { reminder: true, lab: true },
-      c: { antibiotic: true },
+      a: [
+        { key: 'reminder', tone: 'warning', label: '알림' },
+        { key: 'lab', tone: 'info', label: 'Lab 2' },
+      ],
+      c: [{ key: 'abx', tone: 'neutral', label: '세프트리 D+3' }],
     });
 
     const first = wards.find((ward) => ward.key === '1')!;
     expect(first.patientCount).toBe(2);
     expect(first.flaggedCount).toBe(1);
-    expect(first.rooms[0]!.patients[1]!.flags).toMatchObject({ reminder: true, lab: true });
-    expect(first.rooms[0]!.patients[1]!.flagCount).toBe(2);
+    expect(first.rooms[0]!.patients[1]!.badges.map((badge) => badge.label)).toEqual([
+      '알림',
+      'Lab 2',
+    ]);
   });
 
-  it('treats the manual attention mark as a flag', () => {
-    const wards = buildRoundingWards([patient({ id: 'x', roomBed: '401', attention: true })]);
-    expect(wards[0]!.rooms[0]!.patients[0]!.flags.attention).toBe(true);
-    expect(wards[0]!.flaggedCount).toBe(1);
+  it('gives patients without badges an empty list', () => {
+    const wards = buildRoundingWards([patient({ id: 'x', roomBed: '401' })]);
+    expect(wards[0]!.rooms[0]!.patients[0]!.badges).toEqual([]);
+    expect(wards[0]!.flaggedCount).toBe(0);
   });
 
   it('collects patients without a room number into 기타, listed last', () => {

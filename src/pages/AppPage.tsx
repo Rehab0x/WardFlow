@@ -18,6 +18,7 @@ import { useLabStore } from '@/stores/useLabStore';
 import { useMedicationStore } from '@/stores/useMedicationStore';
 import { usePatientStore } from '@/stores/usePatientStore';
 import { useAlertEvaluation } from '@/hooks/useAlertEvaluation';
+import { useAlertStore } from '@/stores/useAlertStore';
 import { useBriefingData } from '@/hooks/useBriefingData';
 import { useClinicalWriters } from '@/hooks/useClinicalWriters';
 import { usePatientWriters } from '@/hooks/usePatientWriters';
@@ -72,7 +73,14 @@ export default function AppPage() {
   });
 
   // 알림 규칙을 불러오고 활성 환자 데이터에 대해 평가한다 (규칙이 없으면 아무 쿼리도 하지 않는다).
-  useAlertEvaluation({ ownerId: currentUser?.id, patients, enabled: Boolean(currentUser) });
+  // 브리핑이 갱신될 때마다 다시 평가해, Lab을 새로 넣으면 회진 뱃지도 따라 바뀌게 한다.
+  useAlertEvaluation({
+    ownerId: currentUser?.id,
+    patients,
+    enabled: Boolean(currentUser),
+    refreshKey: lastBriefingUpdatedAt?.getTime(),
+  });
+  const openLabBreaches = useAlertStore((store) => store.openLabBreaches);
 
   const patientListIndexes = useMemo(() => buildPatientListIndexes(patients), [patients]);
   useEffect(() => {
@@ -362,7 +370,8 @@ export default function AppPage() {
       ) : mainView === 'rounding' ? (
         <RoundingBoard
           patients={patients}
-          patientIndicators={patientIndicators}
+          briefing={displayedBriefingData}
+          breaches={openLabBreaches}
           activeWard={roundingWard}
           isLoading={patientsLoading || briefingLoading}
           subtitle={statusText || undefined}

@@ -20,11 +20,17 @@ export function useAlertEvaluation({
   ownerId,
   patients,
   enabled,
+  refreshKey,
 }: {
   ownerId: string | undefined;
   patients: Patient[];
   /** 인증 등 준비가 끝났을 때만 실행 */
   enabled: boolean;
+  /**
+   * 값이 바뀌면 다시 평가한다. Today 브리핑 갱신 시각을 넘겨,
+   * Lab을 새로 입력한 뒤에도 "지금도 열린 위반"이 최신으로 유지되게 한다.
+   */
+  refreshKey?: string | number;
 }) {
   const fetchRules = useAlertStore((store) => store.fetchRules);
   const fetchEvents = useAlertStore((store) => store.fetchEvents);
@@ -50,6 +56,7 @@ export function useAlertEvaluation({
       ownerId,
       activePatients.map((patient) => patient.id).sort().join(','),
       rules.map((rule) => `${rule.id}:${rule.updatedAt.getTime()}`).join(','),
+      refreshKey ?? '',
     ].join('|');
     if (lastRunKeyRef.current === runKey) return;
     lastRunKeyRef.current = runKey;
@@ -77,5 +84,5 @@ export function useAlertEvaluation({
         lastRunKeyRef.current = null;
       }
     })();
-  }, [enabled, ownerId, patients, rules, evaluate]);
+  }, [enabled, ownerId, patients, rules, evaluate, refreshKey]);
 }

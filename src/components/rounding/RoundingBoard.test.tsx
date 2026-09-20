@@ -2,7 +2,20 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Patient } from '@/types/patient';
+import type { BriefingData } from '@/services/briefingService';
 import { RoundingBoard } from './RoundingBoard';
+
+function briefing(overrides: Partial<BriefingData> = {}): BriefingData {
+  return {
+    reminders: [],
+    progressNotes: [],
+    antibiotics: [],
+    recentLabs: [],
+    todaySchedules: [],
+    patientSummary: { total: 0, admitted: 0, consult: 0 },
+    ...overrides,
+  };
+}
 
 function patient(overrides: Partial<Patient> & { id: string; roomBed: string }): Patient {
   return {
@@ -24,7 +37,7 @@ const patients = [
 function renderBoard(overrides: Partial<Parameters<typeof RoundingBoard>[0]> = {}) {
   const props = {
     patients,
-    patientIndicators: { a: { reminder: true } },
+    briefing: briefing(),
     onWardChange: vi.fn(),
     onOpenPatient: vi.fn(),
     ...overrides,
@@ -51,10 +64,60 @@ describe('RoundingBoard', () => {
     expect(screen.getByRole('heading', { name: '102호' })).toBeInTheDocument();
   });
 
-  it('shows flags as readable labels', () => {
-    renderBoard({ patientIndicators: { a: { reminder: true, antibiotic: true } } });
-    expect(screen.getByText('알림')).toBeInTheDocument();
-    expect(screen.getByText('항생제')).toBeInTheDocument();
+  it('shows badges with their numbers', () => {
+    renderBoard({
+      briefing: briefing({
+        recentLabs: [
+          {
+            patientId: 'a',
+            patientName: '김부경',
+            roomBed: '101-1',
+            dateKey: '2026-09-20',
+            abnormalCount: 3,
+            abnormalItems: ['Na L', 'K H', 'CRP H'],
+            totalItems: 20,
+          },
+        ],
+        antibiotics: [
+          {
+            patientId: 'a',
+            patientName: '김부경',
+            roomBed: '101-1',
+            medicationId: 'm1',
+            drugName: '세프트리악손주 2g',
+            dDay: 7,
+            isLongTerm: false,
+            startDate: new Date('2026-09-14'),
+          },
+        ],
+      }),
+    });
+
+    expect(screen.getByText('Lab 3')).toBeInTheDocument();
+    expect(screen.getByText('세프트리악손주 D+7')).toBeInTheDocument();
+  });
+
+  it('shows an unresolved threshold breach with its value', () => {
+    renderBoard({
+      breaches: [
+        {
+          patientId: 'a',
+          ruleId: 'r1',
+          ruleName: '저나트륨혈증 (Na < 130)',
+          severity: 'critical' as const,
+          itemName: 'Na',
+          value: 118,
+          unit: 'mmol/L',
+          hlFlag: 'L' as const,
+          direction: 'low' as const,
+          testDate: new Date('2026-09-19'),
+          since: new Date('2026-09-17'),
+          streak: 3,
+        },
+      ],
+    });
+
+    expect(screen.getByText('Na 118↓')).toBeInTheDocument();
   });
 
   it('switches ward through the callback', async () => {

@@ -16,9 +16,9 @@ import {
   listAlertRules,
   updateAlertRule,
 } from '@/data/alerts.repository';
-import { evaluateAlertRules } from '@/services/alertEngine';
+import { evaluateAlertRules, findOpenLabBreaches } from '@/services/alertEngine';
 import { formatUserFacingError } from '@/lib/errorMessages';
-import type { AlertLabResult } from '@/services/alertEngine';
+import type { AlertLabResult, OpenLabBreach } from '@/services/alertEngine';
 import type { Medication } from '@/types/medication';
 import type { Patient } from '@/types/patient';
 import { removeById, replaceById, upsertById } from './storeUtils';
@@ -26,6 +26,11 @@ import { removeById, replaceById, upsertById } from './storeUtils';
 interface AlertStore {
   rules: AlertRule[];
   events: AlertEvent[];
+  /**
+   * 마지막 평가 시점 기준으로 **지금도 열려 있는** Lab 임계값 위반.
+   * 이벤트 기록(events)과 달리 다음 검사에서 값이 돌아오면 사라진다.
+   */
+  openLabBreaches: OpenLabBreach[];
   isLoading: boolean;
   error: string | null;
 
@@ -51,6 +56,7 @@ interface AlertStore {
 export const useAlertStore = create<AlertStore>((set, get) => ({
   rules: [],
   events: [],
+  openLabBreaches: [],
   isLoading: false,
   error: null,
 
@@ -144,6 +150,9 @@ export const useAlertStore = create<AlertStore>((set, get) => ({
   evaluate: async ({ ownerId, patients, labResults, medications }) => {
     const { rules } = get();
     if (rules.length === 0) return;
+
+    // "지금도 문제인가"는 알림 저장과 무관하게 매 평가마다 새로 계산한다.
+    set({ openLabBreaches: findOpenLabBreaches({ rules, labResults }) });
 
     const candidates = evaluateAlertRules({ ownerId, rules, patients, labResults, medications });
     if (candidates.length === 0) return;

@@ -7,23 +7,14 @@
  */
 
 import type { Patient } from '@/types/patient';
-import type { PatientRailIndicators } from '@/components/layout/PatientRail';
-
-/** 회진 중 크게 보여줄 신호들 — 사이드바 인디케이터와 같은 기준을 쓴다. */
-export interface RoundingFlags {
-  attention?: boolean;
-  reminder?: boolean;
-  schedule?: boolean;
-  antibiotic?: boolean;
-  lab?: boolean;
-}
+import type { RoundingBadge } from './roundingBadges';
 
 export interface RoundingPatient {
   patient: Patient;
   /** 병상 번호 ("301-1"의 "1"). 없으면 빈 문자열 */
   bed: string;
-  flags: RoundingFlags;
-  flagCount: number;
+  /** 이름 옆에 띄울 신호들 — `buildRoundingBadges`가 만든다 */
+  badges: RoundingBadge[];
 }
 
 export interface RoundingRoom {
@@ -40,7 +31,7 @@ export interface RoundingWard {
   label: string;
   rooms: RoundingRoom[];
   patientCount: number;
-  /** 플래그가 하나라도 있는 환자 수 — 탭에 표시한다 */
+  /** 뱃지가 하나라도 있는 환자 수 — 탭에 표시한다 */
   flaggedCount: number;
 }
 
@@ -77,16 +68,6 @@ function roomLabel(room: string, roomBed: string): string {
   return roomBed.trim() || '병실 미지정';
 }
 
-function toFlags(indicators: PatientRailIndicators | undefined, patient: Patient): RoundingFlags {
-  return {
-    attention: patient.attention || undefined,
-    reminder: indicators?.reminder,
-    schedule: indicators?.schedule,
-    antibiotic: indicators?.antibiotic,
-    lab: indicators?.lab,
-  };
-}
-
 /** 숫자 병실은 숫자 순으로, 그 외에는 사전순으로. 빈 키("기타")는 항상 마지막. */
 function byKey(a: string, b: string): number {
   if (a === b) return 0;
@@ -101,7 +82,7 @@ function byKey(a: string, b: string): number {
  */
 export function buildRoundingWards(
   patients: Patient[],
-  indicators: Record<string, PatientRailIndicators> = {}
+  badgesByPatientId: Record<string, RoundingBadge[]> = {}
 ): RoundingWard[] {
   const wards = new Map<string, Map<string, RoundingRoom>>();
 
@@ -109,8 +90,7 @@ export function buildRoundingWards(
     if (patient.status !== 'active') continue;
 
     const { ward, room, bed } = parseRoomBed(patient.roomBed);
-    const flags = toFlags(indicators[patient.id], patient);
-    const flagCount = Object.values(flags).filter(Boolean).length;
+    const badges = badgesByPatientId[patient.id] ?? [];
 
     const rooms = wards.get(ward) ?? new Map<string, RoundingRoom>();
     wards.set(ward, rooms);
@@ -120,7 +100,7 @@ export function buildRoundingWards(
       label: roomLabel(room, patient.roomBed),
       patients: [],
     };
-    entry.patients.push({ patient, bed, flags, flagCount });
+    entry.patients.push({ patient, bed, badges });
     rooms.set(room, entry);
   }
 
@@ -142,7 +122,7 @@ export function buildRoundingWards(
         label: wardLabel(key),
         rooms: sortedRooms,
         patientCount: allPatients.length,
-        flaggedCount: allPatients.filter((item) => item.flagCount > 0).length,
+        flaggedCount: allPatients.filter((item) => item.badges.length > 0).length,
       };
     })
     .sort((a, b) => byKey(a.key, b.key));
