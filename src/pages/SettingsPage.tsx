@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { AdminSettings } from '@/components/settings/AdminSettings';
+import { AlertRuleSettings } from '@/components/settings/AlertRuleSettings';
 import { SupabaseBackupSettings } from '@/components/settings/SupabaseBackupSettings';
 import { SettingsMobileNav, SettingsSidebar } from '@/components/settings/SettingsNavigation';
 import {
@@ -46,6 +47,7 @@ const SettingsPage = () => {
         ),
         charting: <ChartingSettings />,
         'schedule-cat': <ScheduleCategorySettings />,
+        'alert-rules': <AlertRuleSettings />,
         'lab-cat': <LabCategorySettings />,
         'lab-ref': <LabReferenceSettings />,
         'lab-import': <LabImportSettings />,

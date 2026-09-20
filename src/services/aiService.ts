@@ -450,3 +450,45 @@ export function normalizeVoiceQuery(value: unknown, patientNames: string[]): Par
     item: rawItem || null,
   };
 }
+
+// ─── Today 브리핑 / 알림 분석 ───
+
+const BRIEFING_ANALYSIS_SYSTEM_PROMPT = `당신은 입원환자 담당 의사의 아침 회진을 돕는 의료 AI 어시스턴트입니다.
+오늘의 알림·할 일·항생제·Lab 현황을 받아, 무엇부터 봐야 할지 정리합니다.
+
+출력 형식:
+1) 먼저 볼 환자 — 병실/이름과 이유를 한 줄씩 (최대 5명, 위험도 높은 순)
+2) 함께 확인할 것 — 놓치기 쉬운 항목 (최대 3줄)
+3) 오늘 특이사항 없음이면 그렇게 적으세요
+
+규칙:
+1. 주어진 정보에 없는 내용을 추측하거나 지어내지 마세요.
+2. 처방을 지시하지 말고, 확인이 필요한 지점만 짚으세요.
+3. 한국어로 간결하게. 약물명과 Lab 항목은 영어로.
+4. 마크다운 사용하지 말고 일반 텍스트로 출력하세요.`;
+
+/**
+ * 오늘 현황을 요약해 "무엇부터 볼지" 제안한다.
+ * 규칙 알림과 Today 큐를 함께 넘겨 우선순위 판단에 쓴다.
+ */
+export async function analyzeBriefing(context: {
+  patientSummary: string;
+  alerts: string;
+  tasks: string;
+  antibiotics: string;
+  abnormalLabs: string;
+}): Promise<string> {
+  const userMessage = [
+    `환자 현황: ${context.patientSummary}`,
+    context.alerts ? `\n규칙 알림:\n${context.alerts}` : '',
+    context.tasks ? `\n오늘 할 일:\n${context.tasks}` : '',
+    context.antibiotics ? `\n항생제:\n${context.antibiotics}` : '',
+    context.abnormalLabs ? `\n비정상 Lab:\n${context.abnormalLabs}` : '',
+    '\n위 내용을 바탕으로 오늘 먼저 확인할 것을 정리해주세요.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const response = await callAI(BRIEFING_ANALYSIS_SYSTEM_PROMPT, userMessage);
+  return response.content;
+}

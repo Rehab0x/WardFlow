@@ -1,4 +1,4 @@
-import { Bot, Calendar, FileText, FlaskConical, HardDrive, Shield } from 'lucide-react';
+import { Bell, Bot, Calendar, FileText, FlaskConical, HardDrive, Shield } from 'lucide-react';
 import {
   SETTINGS_GROUPS,
   type SettingsSectionDescriptor,
@@ -8,6 +8,7 @@ import {
 import { cn } from '@/utils/cn';
 
 const SECTION_ICONS: Record<SettingsSectionIconKey, React.ComponentType<{ className?: string }>> = {
+  bell: Bell,
   bot: Bot,
   calendar: Calendar,
   fileText: FileText,

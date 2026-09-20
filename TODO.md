@@ -7,15 +7,18 @@
 
 ---
 
-## 📍 현재 상태 (2026-09-19)
+## 📍 현재 상태 (2026-09-20)
 
-**배포 중**: https://ward-flow.vercel.app · Supabase 단일 백엔드 · `main` = `5.10` 반영분
+**배포 중**: https://ward-flow.vercel.app · Supabase 단일 백엔드
+
+> ⚠️ **적용 대기 중인 마이그레이션**: `supabase/migrations/202609200001_alert_rules_and_events.sql`
+> Supabase SQL 에디터에서 실행해야 알림 기능(3.2)이 켜집니다. 적용 전까지는 조용히 비활성 상태로 동작합니다.
 
 | Phase | 상태 | 비고 |
 |------|------|------|
 | Phase 1 Foundation | ✅ 완료 | 잔여는 수동 테스트 2건 (성능 측정, 반응형) |
 | Phase 2 Smart Input | ✅ 완료 | 캘린더 뷰는 취소, 알림은 3.2로 통합 |
-| Phase 3 WardAide AI | 🔶 3.1 · 3.3.1 · 3.4 완료 | 3.2 알림, 3.3.2 기타 AI가 남음 |
+| Phase 3 WardAide AI | 🔶 3.1 · 3.2 · 3.3.1 · 3.4 완료 | 3.3.2 기타 AI만 남음 |
 | Phase 4 WardLink 통합 | ⬜ 미착수 | Phase 3 이후 |
 | Phase 5 v2 리팩토링 | ✅ 완료 | 문서 동기화까지 완료 |
 
@@ -23,7 +26,7 @@
 1. ~~`PRD.md` Supabase 기준 갱신~~ ✅ 완료 (5.7)
 2. ~~3.4 rate limit + 로그 마스킹~~ ✅ 완료 (인증 fail-closed 전환 포함)
 3. ~~3.3.1 AI 음성 질의~~ ✅ 완료 — **실기기 검증 필요** (마이크 권한, 한국어 인식 정확도, 환자명 매칭)
-4. **3.2 알림 고도화** ← 다음. 규칙 저장 스키마 설계부터
+4. ~~3.2 알림 고도화~~ ✅ 완료 — **⚠️ Supabase에 마이그레이션 적용 필요** (아래 참고)
 5. 3.3.2 기타 AI (근거연결, 간호사 대화 SOAP 분리)
 
 ---
@@ -302,12 +305,21 @@
 - [x] AI 날짜 선택 (date picker + 퀵 버튼, 선택 날짜 기준 데이터)
 - [x] 설정 페이지 AI 설정 UI
 
-### 3.2 알림 고도화 `@Coder-Logic` (1.12 · 2.5 · 3.3.2의 알림 항목을 여기로 통합)
-> **현재**: 알림 = `type: 'reminder'` 메모(당일 `alertDate`)뿐이다. 규칙 엔진도, 히스토리도 없다.
-> v2에서 범용 알림 배너(localStorage 기반)는 제거됐으므로, 다시 만든다면 Supabase 저장이 전제다.
-- [ ] 커스텀 알림 규칙 설정 (Lab 수치 기반 등) — 규칙 저장 테이블 설계부터 필요
-- [ ] 알림 히스토리 (과거 알림 열람/삭제)
-- [ ] AI 기반 알림/Morning Briefing 분석 (WardAide 연동)
+### 3.2 알림 고도화 `@Coder-Logic` (1.12 · 2.5 · 3.3.2의 알림 항목을 여기로 통합) — ✅ **구현 완료 (2026-09-20)**
+> ⚠️ **마이그레이션 적용 필요**: `supabase/migrations/202609200001_alert_rules_and_events.sql`
+> 적용 전까지 알림 기능은 조용히 비활성 상태로 동작한다(읽기는 빈 결과, 쓰기는 안내 메시지).
+- [x] 스키마 설계 — `alert_rules`(규칙) + `alert_events`(히스토리), 둘 다 `owner_id` 스코프 + `can_read_patient` RLS 이중 방어
+  - [x] `(owner_id, dedupe_key)` 유니크 제약으로 같은 근거의 중복 알림 차단
+  - [x] 규칙 종류별 필수 필드를 DB CHECK 제약으로 보장
+  - [x] 규칙을 지워도 히스토리는 남도록 `rule_id`는 `on delete set null` + `rule_name` 보존
+- [x] 커스텀 알림 규칙 설정 — Lab 임계값(`< ≤ > ≥`, 참조범위 이탈) + 항생제 사용 일수
+  - [x] 설정 > 알림 규칙 UI (추가/삭제/사용 토글, 자주 쓰는 규칙 4개 일괄 추가)
+- [x] 규칙 평가 엔진 → `src/services/alertEngine.ts` (순수 함수, 테스트 14건)
+  - [x] Lab: 검사 결과+항목 단위로 dedupe / 항생제: 약제 코스 단위로 dedupe(매일 반복 안 뜸)
+  - [x] 평가 시점은 Today 로딩 시 — 서버 크론 없이 "열면 다시 판정" 모델
+- [x] 알림 히스토리 — Today에 규칙 알림 섹션, 확인 처리/개별 삭제/확인분 일괄 정리
+- [x] AI 기반 Morning Briefing 분석 → `analyzeBriefing()` + Today의 "AI 오늘 브리핑" 패널 (알림·할 일·항생제·Lab을 묶어 먼저 볼 환자 정리)
+- [x] **마이그레이션 미적용 대비** — `42P01`(relation does not exist)을 감지해 읽기는 빈 결과로 degrade, 쓰기는 안내 메시지. 테스트 5건으로 고정
 
 ### 3.3 AI 추가 기능
 
@@ -529,3 +541,4 @@
 | 2026-09-19 | **TODO 정리 (Phase 5.11)**: v2 전환으로 무의미해진 항목 5건 취소(PIN 렌더 측정·오프라인 테스트·캘린더 뷰·Dexie 성능 테스트·암호화 백업 경유 Lab import 흐름), 네 군데 중복이던 알림 항목을 3.2로 통합, **3.4 Lab 서버 API가 실제로는 이미 배포·동작 중임을 코드로 확인**해 상태 정정(잔여: rate limit·로그 마스킹), 3.3.1 음성 질의 재사용 전제 충족 확인, 문서 상단 현재 상태 요약 추가. | ✅ 완료 | @Manager |
 | 2026-09-19 | **Lab 서버 API 보안 강화 (Phase 3.4 완료)**: ① **인증 fail-closed 전환** — `LAB_IMPORT_API_KEY` 미설정 시 인증을 건너뛰어 서비스 롤 권한의 쓰기 엔드포인트가 공개되던 구조를 503 거부로 변경 ② rate limit 추가(60초/10회, 429 + `Retry-After`, 인스턴스 메모리 한계 주석 명시) ③ 로그 마스킹(`logMasking.ts` — 이름/등록번호/ID/파일명/에러 숫자열). 응답은 그대로 두고 로그에만 적용 ④ 상수 시간 키 비교, 인증 실패가 정상 호출자 할당량을 깎지 않도록 순서 조정 ⑤ 내부 오류 원문 응답 노출 차단 ⑥ 서버 모듈에 남아 있던 등록번호 매칭 3번째 중복 정의를 `lib/registrationNumber`로 통일. 테스트 19건 추가 (총 196). | ✅ 완료 | @Coder-Logic + @Reviewer |
 | 2026-09-20 | **AI 음성 질의 구현 (Phase 3.3.1)**: ① `useAIStore`에 `whisperApiKey` 추가(사용자 결정) + 설정 > AI 설정에 입력 UI, 키 없으면 마이크 버튼 자체를 숨김 ② `sttService.ts` — MediaRecorder 녹음 + Whisper API(한국어 + 의료 용어 프롬프트 힌트), 실패 지점을 `SttError.stage`로 구분해 UI가 다른 안내를 띄우도록 함 ③ `aiService.parseVoiceQuery()` — 활성 환자 명단을 컨텍스트로 넘겨 STT 이름 오인식 보정, **명단에 없는 이름은 코드에서 거부**(LLM 환각 차단), 코드펜스/프로즈 섞인 JSON 복구 ④ `useVoiceQuery.ts` — 녹음→STT→파싱→조회 전체 플로우, Lab은 `getLabTrendData()` + `LabChart` 재사용, 투약은 `useMedicationStore` 재사용 ⑤ `VoiceQueryButton`(플로팅) + `VoiceQueryOverlay`(단계별 표시, 차트는 lazy) ⑥ **원본 음성·STT 텍스트 미저장** — Blob은 변환 직후 폐기, transcript는 훅 state로만 유지하고 DB 기록 없음(테스트로 고정). 테스트 26건 추가 (총 222). | ✅ 완료 | @Architect + @Coder-Logic + @Coder-UI |
+| 2026-09-20 | **알림 고도화 구현 (Phase 3.2)**: ① 마이그레이션 `202609200001_alert_rules_and_events.sql` — `alert_rules` + `alert_events`, `owner_id` 스코프 위에 `can_read_patient` RLS 이중 적용, `(owner_id, dedupe_key)` 유니크로 중복 알림 차단, 규칙 종류별 필수 필드 CHECK, 규칙 삭제해도 히스토리 보존 ② 평가 엔진 `alertEngine.ts`(순수 함수) — Lab 임계값 4종 + 참조범위 이탈, 항생제 사용 일수. Lab은 결과+항목 단위, 항생제는 약제 코스 단위로 dedupe해 매일 반복되지 않음 ③ 설정 > 알림 규칙 UI + 자주 쓰는 규칙 4개 일괄 추가 ④ Today 규칙 알림 섹션(확인/삭제/기록 정리) ⑤ AI 오늘 브리핑 패널(`analyzeBriefing`) ⑥ **마이그레이션 미적용 대비** — `42P01` 감지해 읽기는 빈 결과로 degrade, 쓰기는 안내. 평가용 Lab 조회는 최근 14일 + 컬럼 명시 + 활성 환자 스코프 + 청크 병렬. 테스트 19건 추가 (총 241). **⚠️ 사용자가 Supabase에 마이그레이션을 적용해야 기능이 켜짐.** | ✅ 완료 (마이그레이션 적용 대기) | @Architect + @Coder-Logic + @Coder-UI |

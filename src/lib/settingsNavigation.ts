@@ -2,6 +2,7 @@ export type SettingsSectionId =
   | 'admin'
   | 'charting'
   | 'schedule-cat'
+  | 'alert-rules'
   | 'lab-cat'
   | 'lab-ref'
   | 'lab-import'
@@ -10,6 +11,7 @@ export type SettingsSectionId =
 
 export type SettingsSectionGroup = '계정' | '업무' | 'Lab' | '시스템';
 export type SettingsSectionIconKey =
+  | 'bell'
   | 'bot'
   | 'calendar'
   | 'fileText'
@@ -30,6 +32,7 @@ export const KNOWN_SETTINGS_SECTIONS: SettingsSectionId[] = [
   'admin',
   'charting',
   'schedule-cat',
+  'alert-rules',
   'lab-cat',
   'lab-ref',
   'lab-import',
@@ -61,6 +64,7 @@ export function buildSettingsSections(input: { isAdmin: boolean }): SettingsSect
       : []),
     { id: 'charting', label: '차팅 설정', icon: 'fileText', group: '업무' },
     { id: 'schedule-cat', label: '일정 카테고리', icon: 'calendar', group: '업무' },
+    { id: 'alert-rules', label: '알림 규칙', icon: 'bell', group: '업무' },
     { id: 'lab-cat', label: 'Lab 카테고리', icon: 'flask', group: 'Lab' },
     { id: 'lab-ref', label: 'Lab 참조범위', icon: 'flask', group: 'Lab' },
     { id: 'lab-import', label: 'Lab Import', icon: 'flask', group: 'Lab' },

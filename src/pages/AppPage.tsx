@@ -14,6 +14,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useLabStore } from '@/stores/useLabStore';
 import { useMedicationStore } from '@/stores/useMedicationStore';
 import { usePatientStore } from '@/stores/usePatientStore';
+import { useAlertEvaluation } from '@/hooks/useAlertEvaluation';
 import { useBriefingData } from '@/hooks/useBriefingData';
 import { useClinicalWriters } from '@/hooks/useClinicalWriters';
 import { usePatientWriters } from '@/hooks/usePatientWriters';
@@ -60,6 +61,9 @@ export default function AppPage() {
     fetchPatients,
     hasUnsavedWork: workspaceUnsaved,
   });
+
+  // 알림 규칙을 불러오고 활성 환자 데이터에 대해 평가한다 (규칙이 없으면 아무 쿼리도 하지 않는다).
+  useAlertEvaluation({ ownerId: currentUser?.id, patients, enabled: Boolean(currentUser) });
 
   const patientListIndexes = useMemo(() => buildPatientListIndexes(patients), [patients]);
   useEffect(() => {

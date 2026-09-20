@@ -407,3 +407,36 @@ Use `docs/supabase-validation.md` for the current Supabase validation checklist.
 4. Lab 셀 편집 시 참조범위 커스텀 설정(`useLabReferenceStore`)이 서버 재계산 경로
    (`labs.repository.updateLabItemValue`)에 반영되는지 — **배포 후 실사용하며 판단하기로 결정**
 5. `PRD.md` 7.3절(Dexie 인덱싱 전략) 등 Supabase 기준으로 다시 쓰기
+
+
+## Current 2026-09-20 Checkpoint — Phase 3 (AI 음성 질의 · 알림 고도화)
+
+### ⚠️ 먼저 할 일 — 마이그레이션 적용
+`supabase/migrations/202609200001_alert_rules_and_events.sql`를 Supabase SQL 에디터에서 실행해야
+알림 기능(TODO 3.2)이 켜진다. 적용 전까지 앱은 깨지지 않고 **조용히 비활성**으로 동작한다
+(읽기는 빈 결과, 쓰기 시도에만 "마이그레이션을 적용해주세요" 안내).
+`alerts.repository.test.ts`가 이 degrade 동작을 고정하고 있다.
+
+적용 후 확인할 것:
+1. 설정 > 알림 규칙에서 "자주 쓰는 규칙 4개 추가"
+2. Today를 새로고침하면 조건에 걸린 환자가 "규칙 알림" 섹션에 뜨는지
+3. 확인 처리 / 삭제 / 지난 알림 펼치기 / 기록 비우기
+
+### 이번 세션에 추가된 것
+- **AI 음성 질의 (3.3.1)** — 녹음 → Whisper STT → LLM 구조화 → Lab/투약 조회 → 텍스트+차트.
+  Whisper 키는 `useAIStore.whisperApiKey` (설정 > AI 설정, localStorage 전용).
+  LLM이 돌려준 환자명은 실제 활성 환자 명단에 있는 값만 통과시킨다(환각 차단).
+  음성·STT 텍스트는 저장하지 않는다.
+- **알림 고도화 (3.2)** — `alert_rules`(규칙) + `alert_events`(히스토리).
+  규칙은 개인 것(`owner_id`)이고, 그 위에 `can_read_patient` RLS를 한 번 더 건다.
+  `(owner_id, dedupe_key)` 유니크로 같은 근거의 알림이 중복 저장되지 않는다.
+  평가는 서버 크론 없이 **Today 로딩 시** 수행하고, 반복 판정돼도 중복이 생기지 않는다.
+- **Lab 서버 API 보안 (3.4)** — 인증 fail-closed, rate limit, 로그 마스킹. 앞선 체크포인트 참고.
+
+### 설계 메모 — 알림 dedupe 기준
+- Lab: `lab|{ruleId}|{labResultId}|{itemName}` — 같은 검사 결과의 같은 항목이면 한 번만
+- 항생제: `abx|{ruleId}|{medicationId}` — **약제 코스당 한 번**. 일수 기준으로 잡으면 매일 새 알림이 쌓인다
+
+### 검증 (2026-09-20)
+- `npm run type-check`, `npm run lint`(에러 0), `npm run build` 통과
+- `npx vitest run` — 39 files / **241 tests** 통과

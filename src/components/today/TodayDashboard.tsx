@@ -1,10 +1,15 @@
 import { Search } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { Patient } from '@/types/patient';
 import type { BriefingData } from '@/services/briefingService';
 import { ClinicalRow } from '../clinical/ClinicalRow';
 import { DataSection } from '../clinical/DataSection';
 import { formatAgeYears } from '../clinical/dateLabels';
+import { AiActionPanel } from '@/components/ai/AiActionPanel';
+import { analyzeBriefing } from '@/services/aiService';
+import { useAlertStore } from '@/stores/useAlertStore';
+import { SEVERITY_LABEL } from '@/services/alertEngine';
+import { AlertSection } from './AlertSection';
 import { TodayDomainSections } from './TodayDomainSections';
 import { TodayMetrics } from './TodayMetrics';
 import { TodayTaskList } from './TodayTaskList';
@@ -59,6 +64,30 @@ export function TodayDashboard({
     [data.todaySchedules]
   );
   const hasSearch = Boolean(searchQuery?.trim());
+  const alertEvents = useAlertStore((store) => store.events);
+
+  const openAlerts = useMemo(
+    () => alertEvents.filter((event) => !event.acknowledgedAt),
+    [alertEvents]
+  );
+  const runBriefingAnalysis = useCallback(
+    () =>
+      analyzeBriefing({
+        patientSummary: `입원 ${data.patientSummary.admitted}명, 협진 ${data.patientSummary.consult}명`,
+        alerts: openAlerts
+          .map((event) => `[${SEVERITY_LABEL[event.severity]}] ${event.message}`)
+          .join('\n'),
+        tasks: taskRows.map((row) => `${row.roomBed} ${row.patientName} · ${row.kind} · ${row.detail}`).join('\n'),
+        antibiotics: data.antibiotics
+          .map((item) => `${item.roomBed} ${item.patientName} ${item.drugName} D+${item.dDay}`)
+          .join('\n'),
+        abnormalLabs: data.recentLabs
+          .filter((lab) => lab.abnormalCount > 0)
+          .map((lab) => `${lab.roomBed} ${lab.patientName} ${lab.dateKey} ${lab.abnormalItems.join(', ')}`)
+          .join('\n'),
+      }),
+    [data, openAlerts, taskRows]
+  );
   const dateLabel = useMemo(
     () =>
       date.toLocaleDateString('ko-KR', {
@@ -123,6 +152,8 @@ export function TodayDashboard({
         onSelectFilter={setTaskFilter}
       />
 
+      <AlertSection onOpenPatient={onOpenPatient} />
+
       <TodayTaskList
         taskRows={taskRows}
         visibleTaskRows={visibleTaskRows}
@@ -133,6 +164,16 @@ export function TodayDashboard({
         onFilterChange={setTaskFilter}
         onSortChange={setTaskSort}
         onOpenPatient={onOpenPatient}
+      />
+
+      <AiActionPanel
+        title="AI 오늘 브리핑"
+        actionLabel="오늘 우선순위 정리"
+        resultTitle="오늘 먼저 볼 것"
+        ready={taskRows.length > 0 || openAlerts.length > 0}
+        readyHint="알림·할 일·항생제·Lab을 묶어 먼저 볼 환자를 정리합니다."
+        notReadyHint="정리할 오늘 항목이 없습니다."
+        run={runBriefingAnalysis}
       />
 
       <TodayDomainSections data={data} onOpenPatient={onOpenPatient} />

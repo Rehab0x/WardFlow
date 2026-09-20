@@ -189,6 +189,74 @@ export async function listLabSummaryRowsByPatientIdsDateRange(
   return rows.sort((a, b) => b.testDate.getTime() - a.testDate.getTime());
 }
 
+/** 알림 규칙 평가에 필요한 최소 형태 — 값 비교에 쓰는 컬럼만 담는다. */
+export interface LabValueRow {
+  id: string;
+  patientId: string;
+  testDate: Date;
+  items: Array<{
+    name: string;
+    value: number | string;
+    unit: string;
+    isAbnormal: boolean;
+    hlFlag?: 'H' | 'L';
+  }>;
+}
+
+/**
+ * 알림 규칙 평가용 — 값까지 포함하되 필요한 컬럼만 가져온다.
+ * (요약 쿼리는 값이 없어 임계값 비교를 할 수 없고, 전체 하이드레이션은 과하다.)
+ */
+export async function listLabValuesByPatientIdsSince(
+  patientIds: string[],
+  since: Date
+): Promise<LabValueRow[]> {
+  if (patientIds.length === 0) return [];
+
+  const chunkQueries = chunkArray(patientIds, 100).map(async (chunk) => {
+    const { data, error } = await supabase
+      .from('lab_results')
+      .select(
+        `
+        id,
+        patient_id,
+        test_date,
+        lab_items (
+          name,
+          value_text,
+          value_numeric,
+          unit,
+          is_abnormal,
+          hl_flag
+        )
+      `
+      )
+      .in('patient_id', chunk)
+      .gte('test_date', toDateOnly(since))
+      .is('deleted_at', null)
+      .order('test_date', { ascending: false });
+
+    if (error) throw error;
+
+    return data.map(
+      (row): LabValueRow => ({
+        id: row.id,
+        patientId: row.patient_id,
+        testDate: new Date(`${row.test_date}T00:00:00`),
+        items: (row.lab_items ?? []).map((item) => ({
+          name: item.name,
+          value: item.value_numeric ?? item.value_text,
+          unit: item.unit,
+          isAbnormal: item.is_abnormal,
+          hlFlag: item.hl_flag ?? undefined,
+        })),
+      })
+    );
+  });
+
+  return (await Promise.all(chunkQueries)).flat();
+}
+
 export async function listLabsByPatientDateAndCategory(input: {
   patientId: string;
   testDate: Date;

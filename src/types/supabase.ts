@@ -417,6 +417,70 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['audit_logs']['Insert']>;
         Relationships: [];
       };
+      alert_rules: {
+        Row: {
+          id: string;
+          owner_id: string;
+          name: string;
+          kind: 'lab_threshold' | 'antibiotic_duration';
+          lab_item: string | null;
+          comparator: 'lt' | 'lte' | 'gt' | 'gte' | 'abnormal' | null;
+          threshold: number | null;
+          day_threshold: number | null;
+          severity: 'info' | 'warning' | 'critical';
+          is_enabled: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          name: string;
+          kind: 'lab_threshold' | 'antibiotic_duration';
+          lab_item?: string | null;
+          comparator?: 'lt' | 'lte' | 'gt' | 'gte' | 'abnormal' | null;
+          threshold?: number | null;
+          day_threshold?: number | null;
+          severity?: 'info' | 'warning' | 'critical';
+          is_enabled?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['alert_rules']['Insert']>;
+        Relationships: [];
+      };
+      alert_events: {
+        Row: {
+          id: string;
+          owner_id: string;
+          rule_id: string | null;
+          rule_name: string;
+          patient_id: string;
+          severity: 'info' | 'warning' | 'critical';
+          title: string;
+          message: string;
+          dedupe_key: string;
+          triggered_at: string;
+          acknowledged_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          rule_id?: string | null;
+          rule_name: string;
+          patient_id: string;
+          severity: 'info' | 'warning' | 'critical';
+          title: string;
+          message: string;
+          dedupe_key: string;
+          triggered_at?: string;
+          acknowledged_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['alert_events']['Insert']>;
+        Relationships: [];
+      };
     };
     Views: {};
     Functions: {};

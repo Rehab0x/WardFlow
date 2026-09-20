@@ -32,6 +32,7 @@ describe('settingsNavigation', () => {
       'admin',
       'charting',
       'schedule-cat',
+      'alert-rules',
       'lab-cat',
       'lab-ref',
       'lab-import',
