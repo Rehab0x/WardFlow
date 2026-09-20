@@ -70,6 +70,7 @@ export const LAB_CODE_MAP: Record<string, LabCodeInfo> = {
   // Coagulation
   B1210: { name: 'PT (INR)', category: 'Coagulation', unit: 'INR' },
   B1211: { name: 'PT (%)', category: 'Coagulation', unit: '%' },
+  B1212: { name: 'PT (sec)', category: 'Coagulation', unit: 'sec' },
   B1220: { name: 'aPTT', category: 'Coagulation', unit: 'sec' },
   B1230: { name: 'D-dimer', category: 'Coagulation', unit: 'μg/mL' },
 
@@ -121,6 +122,7 @@ export const LAB_CODE_MAP: Record<string, LabCodeInfo> = {
   D0127000: { name: 'HbA1c', category: 'BC', unit: '%' },
 
   // Culture
+  b4112R: { name: 'VRE-Rectal swab', category: 'Culture', unit: '' },
   b4114B: { name: 'CRE-Blood Culture', category: 'Culture', unit: '' },
   b4114U: { name: 'CRE-Urine Culture', category: 'Culture', unit: '' },
   b4114R: { name: 'CRE-Rectal swab', category: 'Culture', unit: '' },
@@ -192,23 +194,31 @@ export function getLabInfoForXls(code: string, rawName: string): LabCodeInfo | u
   return byCode;
 }
 
+/** 선별 배양 검사의 균 종류 접두사 — 검체가 같아도 이건 절대 바꾸면 안 된다. */
+const SCREENING_PREFIX = /(^|\s)(cre|vre|mrsa|mrab|esbl|cpe)([-\s]|$)/;
+
 /**
  * Detect culture specimen names.
- * Align with labParser (`^cre-|^cre `): do NOT treat Creatinine / Cr as CRE culture.
+ *
+ * 접두사(CRE/VRE/…)는 **들어온 그대로 유지한다.** 검체 종류가 같다고 접두사를 바꾸면
+ * VRE 직장도말이 CRE로 기록되는데, 이는 격리·항생제 판단이 달라지는 임상적 오류다.
+ * Creatinine / Cr은 'cre' 부분문자열 때문에 배양으로 잘못 잡히지 않도록 단어 경계를 본다.
  */
 function resolveCultureName(rawName: string): string | undefined {
   const normalized = rawName.trim().toLowerCase();
   const hasCultureWord = /culture|배양/.test(normalized);
-  // Word-boundary CRE- / CRE  (not the "cre" substring inside "creatinine")
-  const hasCrePrefix = /(^|\s)cre([-\s]|$)/.test(normalized);
-  if (!hasCultureWord && !hasCrePrefix) return undefined;
+  const prefixMatch = normalized.match(SCREENING_PREFIX);
+  if (!hasCultureWord && !prefixMatch) return undefined;
 
-  if (/urine|소변|尿/.test(normalized)) return 'CRE-Urine Culture';
-  if (/blood|혈액/.test(normalized)) return 'CRE-Blood Culture';
-  if (/sputum|객담/.test(normalized)) return 'Sputum Culture';
-  if (/wound|상처/.test(normalized)) return 'Wound Culture';
-  if (/rectal|rectum|직장/.test(normalized)) return 'CRE-Rectal swab';
-  return hasCrePrefix ? 'CRE Culture' : 'Culture';
+  const prefix = prefixMatch ? prefixMatch[2]!.toUpperCase() : '';
+  const withPrefix = (label: string) => (prefix ? `${prefix}-${label}` : label);
+
+  if (/urine|소변|尿/.test(normalized)) return withPrefix('Urine Culture');
+  if (/blood|혈액/.test(normalized)) return withPrefix('Blood Culture');
+  if (/sputum|객담/.test(normalized)) return withPrefix('Sputum Culture');
+  if (/wound|상처/.test(normalized)) return withPrefix('Wound Culture');
+  if (/rectal|rectum|직장/.test(normalized)) return withPrefix('Rectal swab');
+  return prefix ? `${prefix} Culture` : 'Culture';
 }
 
 function resolveWbcDiffName(rawName: string): string | undefined {

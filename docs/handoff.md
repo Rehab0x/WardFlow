@@ -516,7 +516,25 @@ Use `docs/supabase-validation.md` for the current Supabase validation checklist.
   72%로 줄인 전용 파일이 필요하다. 그 전까지 512 하나를 any·maskable에 겸용해
   적응형에서 모서리가 잘리고 있었다. 생성은 `npm run icons` 한 곳에서 한다.
 
-### 다음 세션이 이어서 할 일 — Lab 파싱 (TODO 2.9)
+### Lab 파싱 수정 — 실제 파일로 두 건 해결 (2026-09-20 저녁)
+
+사용자가 이원의료재단 실파일(RES974510.xls, 111행 11명)을 줘서 두 건을 고쳤다.
+**예상과 실제가 달랐으므로, 앞으로도 추측하지 말고 파일을 먼저 받을 것.**
+
+1. **PT는 세 줄이 아니라 한 줄이다.** `B1520 / 응고기능기본검사-프로트롬빈시간` 한 행의
+   문장결과에 `INR : 1.67 / PT : 19.4 / Percent : 47`이 함께 오고, 참고치도 같은 라벨 형식
+   (`INR : 0.80 ~ 1.30`)으로 온다. 고치기 전에는 첫 숫자(INR)만 남고 **초·퍼센트가 사라졌다.**
+   → `splitCompositeResult()`가 라벨별로 나눠 `PT (INR)` / `PT (sec)` / `PT (%)`를 만들고,
+   행 안의 참고치를 항목별로 붙여 H/L까지 판정한다. 아는 라벨이 없으면 손대지 않는다.
+2. **VRE 직장도말이 CRE로 기록되고 있었다.** `resolveCultureName()`이 검체 종류만 보고
+   이름을 CRE로 고정했고, 코드가 미등록이라 `normalizeName()`이 `-` 뒤 `Rectal Swab`만 떼어
+   부분일치로 `CRE-Rectal swab`을 붙였다. 균은 Enterococcus faecium이었다.
+   → 접두사(CRE/VRE/MRSA/MRAB/ESBL/CPE)를 **들어온 그대로 유지**한다. 격리·항생제 판단이
+   달라지는 임상 오류라 이 성질을 절대 되돌리지 말 것.
+
+회귀 테스트 5건은 **환자 식별 정보 없이** 행의 모양만 재현한다(`labParser.test.ts`).
+
+### 남은 일 — Lab 파싱 (TODO 2.9)
 
 사용자가 외부 에이전트(그록봇/헤르메스)로 **이원의료재단 XLS**를 자동 입력할 계획이다.
 업로드 경로는 이미 있다 — `lab-inbox` Storage 버킷(`storageInbox.ts`)에 curl로 올리면 된다.

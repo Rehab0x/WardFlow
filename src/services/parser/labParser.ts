@@ -463,6 +463,92 @@ function isIgnoredContinuationLine(line: string) {
 //  [15] 참고치    [16] 주민등록번호
 // ─────────────────────────────────────────────────
 
+/**
+ * 한 행의 문장결과 안에 값이 여러 개 들어오는 검사.
+ *
+ * 이원 XLS는 PT를 **한 줄**로 보내면서 문장결과에 세 값을 함께 싣는다:
+ *   "INR       : 1.67\nPT        : 19.4\nPercent   : 47"
+ * 참고치도 같은 라벨 형식이라("INR : 0.80 ~ 1.30") 항목별로 나눠 붙일 수 있다.
+ *
+ * 나누지 않으면 첫 숫자 하나만 남고 나머지 두 값이 사라진다.
+ * 아는 라벨이 하나도 없으면 손대지 않는다 — 모르는 형식을 추측해서 쪼개지 않는다.
+ */
+const COMPOSITE_TEXT_RESULTS: Array<{
+  matches: (code: string, rawName: string) => boolean;
+  parts: Record<string, { name: string; category: string; unit: string }>;
+}> = [
+  {
+    matches: (code, rawName) => code === 'B1520' || /프로트롬빈|prothrombin/i.test(rawName),
+    parts: {
+      inr: { name: 'PT (INR)', category: 'Coagulation', unit: 'INR' },
+      pt: { name: 'PT (sec)', category: 'Coagulation', unit: 'sec' },
+      percent: { name: 'PT (%)', category: 'Coagulation', unit: '%' },
+    },
+  },
+];
+
+/** "INR       : 1.67" 같은 줄을 라벨→값으로 모은다. 라벨은 공백·점을 지우고 소문자로. */
+function parseLabeledLines(text: string): Map<string, string> {
+  const result = new Map<string, string>();
+  for (const line of text.replace(/\r/g, '\n').split('\n')) {
+    const matched = line.match(/^\s*([^:]+?)\s*:\s*(.+?)\s*$/);
+    if (!matched) continue;
+    result.set(matched[1]!.trim().toLowerCase().replace(/[\s.]/g, ''), matched[2]!.trim());
+  }
+  return result;
+}
+
+/**
+ * 복합 문장결과를 항목별로 나눈다.
+ * 참고치가 행 안에 들어 있으므로 H/L도 그 값으로 직접 판정한다
+ * (`buildParsedItem`은 코드·이름으로 찾은 기준만 보고, 파일이 준 범위는 안 본다).
+ */
+function splitCompositeResult(
+  code: string,
+  rawName: string,
+  textResult: string,
+  refRaw: string
+): ParsedLabItem[] | undefined {
+  const spec = COMPOSITE_TEXT_RESULTS.find((entry) => entry.matches(code, rawName));
+  if (!spec) return undefined;
+
+  const values = parseLabeledLines(textResult);
+  const references = parseLabeledLines(refRaw);
+  const items: ParsedLabItem[] = [];
+
+  for (const [label, part] of Object.entries(spec.parts)) {
+    const rawValue = values.get(label);
+    if (rawValue === undefined) continue;
+
+    const reference = parseReferenceRange(references.get(label) ?? '');
+    const numeric = parseNumericLabValue(rawValue);
+    const flag: 'H' | 'L' | '' =
+      numeric === undefined
+        ? ''
+        : reference.min !== undefined && numeric < reference.min
+          ? 'L'
+          : reference.max !== undefined && numeric > reference.max
+            ? 'H'
+            : '';
+
+    items.push(
+      buildParsedItem({
+        code: findLabByName(part.name)?.code ?? '',
+        name: part.name,
+        category: part.category,
+        unit: part.unit,
+        value: rawValue,
+        flag,
+        referenceMin: reference.min,
+        referenceMax: reference.max,
+        referenceText: reference.text,
+      })
+    );
+  }
+
+  return items.length > 0 ? items : undefined;
+}
+
 export interface XlsPatientGroup {
   patientName?: string;
   registrationNumber?: string;
@@ -563,6 +649,16 @@ function extractGroupsFromRows(rows: string[][]): XlsPatientGroup[] {
     if (!numResult && !textResult) continue;
 
     const code = labCode.toUpperCase();
+
+    // 값이 여럿 든 문장결과(PT 등)는 항목별로 나눠 담는다.
+    if (!numResult && textResult) {
+      const composite = splitCompositeResult(code, labName, textResult, refRaw);
+      if (composite) {
+        group.items.push(...composite);
+        continue;
+      }
+    }
+
     let info = getLabInfoForXls(code, labName);
     if (
       code === 'B00301' &&
