@@ -18,7 +18,7 @@ function patient(overrides: Partial<Patient> & { id: string; name: string }): Pa
 }
 
 const patients = [
-  patient({ id: 'p1', name: '김부경', roomBed: '101' }),
+  patient({ id: 'p1', name: '홍길동', roomBed: '101' }),
   patient({ id: 'p2', name: '이영희', roomBed: '102' }),
   patient({ id: 'p3', name: '박민수', roomBed: '103', attention: true }),
 ];
@@ -40,7 +40,7 @@ describe('PatientRail 메모 필터', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /^메모 \d/ }));
 
-    expect(screen.getByText('김부경')).toBeInTheDocument();
+    expect(screen.getByText('홍길동')).toBeInTheDocument();
     expect(screen.queryByText('이영희')).not.toBeInTheDocument();
     expect(screen.queryByText('박민수')).not.toBeInTheDocument();
   });
@@ -63,6 +63,6 @@ describe('PatientRail 메모 필터', () => {
 
   it('marks the row itself so it is visible in the 전체 list too', () => {
     renderRail({ p1: { note: true } });
-    expect(screen.getByLabelText(/101 김부경.*오늘 메모/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/101 홍길동.*오늘 메모/)).toBeInTheDocument();
   });
 });

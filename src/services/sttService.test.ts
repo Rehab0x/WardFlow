@@ -19,13 +19,13 @@ describe('transcribeAudio', () => {
   it('sends the audio with the Korean language and medical prompt hints', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ text: '  장영임 소듐 어땠지  ' }),
+      json: async () => ({ text: '  이몽룡 소듐 어땠지  ' }),
     });
     vi.stubGlobal('fetch', fetchMock);
 
     const text = await transcribeAudio(new Blob(['audio']));
 
-    expect(text).toBe('장영임 소듐 어땠지');
+    expect(text).toBe('이몽룡 소듐 어땠지');
     const init = fetchMock.mock.calls[0]?.[1] as { headers: Record<string, string>; body: FormData };
     expect(init.headers.Authorization).toBe('Bearer sk-test-key-that-is-long');
     const form = init.body;

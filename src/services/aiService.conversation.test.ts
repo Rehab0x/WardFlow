@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatSegmentAsNote, normalizeConversationSegments } from './aiService';
 
-const roster = ['김철수', '이영희', '장영임', '김부경'];
+const roster = ['김철수', '이영희', '이몽룡', '홍길동'];
 
 describe('normalizeConversationSegments', () => {
   it('keeps segments whose patient is on the roster', () => {
@@ -39,22 +39,22 @@ describe('normalizeConversationSegments', () => {
 
   it('links a misheard name to the roster and flags it for confirmation', () => {
     const result = normalizeConversationSegments(
-      [{ patientName: '김부겸', subjective: '어지럼 호소' }],
+      [{ patientName: '홍길돔', subjective: '어지럼 호소' }],
       roster
     );
     expect(result[0]).toMatchObject({
-      patientName: '김부경',
-      heardName: '김부겸',
+      patientName: '홍길동',
+      heardName: '홍길돔',
       nameMatch: 'similar',
     });
   });
 
   it('falls back to heardName when the model gave up on the roster spelling', () => {
     const result = normalizeConversationSegments(
-      [{ patientName: null, heardName: '장영일', plan: '소변량 확인' }],
+      [{ patientName: null, heardName: '이몽룹', plan: '소변량 확인' }],
       roster
     );
-    expect(result[0]).toMatchObject({ patientName: '장영임', nameMatch: 'similar' });
+    expect(result[0]).toMatchObject({ patientName: '이몽룡', nameMatch: 'similar' });
   });
 
   it('tolerates whitespace differences in the name', () => {

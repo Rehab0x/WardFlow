@@ -29,7 +29,7 @@ describe('parseRoomBed', () => {
 describe('buildRoundingWards', () => {
   const patients = [
     patient({ id: 'c', roomBed: '302', name: '박민수' }),
-    patient({ id: 'a', roomBed: '101-2', name: '김부경' }),
+    patient({ id: 'a', roomBed: '101-2', name: '홍길동' }),
     patient({ id: 'b', roomBed: '101-1', name: '이영희' }),
     patient({ id: 'd', roomBed: '201', name: '최동훈', patientType: 'consult' }),
     patient({ id: 'gone', roomBed: '101-3', name: '퇴원함', status: 'discharged' }),
@@ -42,7 +42,7 @@ describe('buildRoundingWards', () => {
     const first = wards[0]!;
     expect(first.rooms.map((room) => room.label)).toEqual(['101호']);
     // 병상 번호 순 — 101-1이 101-2보다 먼저
-    expect(first.rooms[0]!.patients.map((item) => item.patient.name)).toEqual(['이영희', '김부경']);
+    expect(first.rooms[0]!.patients.map((item) => item.patient.name)).toEqual(['이영희', '홍길동']);
     expect(first.rooms[0]!.patients[0]!.bed).toBe('1');
   });
 
@@ -86,7 +86,7 @@ describe('buildRoundingWards', () => {
   it('collects patients without a room number into 기타, listed last', () => {
     const wards = buildRoundingWards([
       patient({ id: 'x', roomBed: '외래', name: '미배정' }),
-      patient({ id: 'y', roomBed: '101', name: '김부경' }),
+      patient({ id: 'y', roomBed: '101', name: '홍길동' }),
     ]);
     expect(wards.map((ward) => ward.label)).toEqual(['1병동', '기타']);
     expect(wards[1]!.rooms[0]!.label).toBe('외래');

@@ -4,7 +4,7 @@ import type { Patient } from '@/types/patient';
 import { buildPatientIndexes, buildPatientIndicators } from './patientIndexes';
 
 const patients = [
-  { id: 'p1', name: '김부경', roomBed: '101', status: 'active', patientType: 'admitted' } as Patient,
+  { id: 'p1', name: '홍길동', roomBed: '101', status: 'active', patientType: 'admitted' } as Patient,
   { id: 'p2', name: '이영희', roomBed: '102', status: 'active', patientType: 'consult' } as Patient,
 ];
 

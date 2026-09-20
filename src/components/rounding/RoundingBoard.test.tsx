@@ -29,7 +29,7 @@ function patient(overrides: Partial<Patient> & { id: string; roomBed: string }):
 }
 
 const patients = [
-  patient({ id: 'a', roomBed: '101-1', name: '김부경' }),
+  patient({ id: 'a', roomBed: '101-1', name: '홍길동' }),
   patient({ id: 'b', roomBed: '102', name: '이영희' }),
   patient({ id: 'c', roomBed: '301', name: '박민수' }),
 ];
@@ -53,7 +53,7 @@ describe('RoundingBoard', () => {
     expect(screen.getByRole('button', { name: /1병동/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /3병동/ })).toBeInTheDocument();
     // 1병동 환자만 보이고, 3병동 환자는 아직 안 보인다
-    expect(screen.getByText('김부경')).toBeInTheDocument();
+    expect(screen.getByText('홍길동')).toBeInTheDocument();
     expect(screen.getByText('이영희')).toBeInTheDocument();
     expect(screen.queryByText('박민수')).not.toBeInTheDocument();
   });
@@ -70,7 +70,7 @@ describe('RoundingBoard', () => {
         recentLabs: [
           {
             patientId: 'a',
-            patientName: '김부경',
+            patientName: '홍길동',
             roomBed: '101-1',
             dateKey: '2026-09-20',
             abnormalCount: 3,
@@ -81,7 +81,7 @@ describe('RoundingBoard', () => {
         antibiotics: [
           {
             patientId: 'a',
-            patientName: '김부경',
+            patientName: '홍길동',
             roomBed: '101-1',
             medicationId: 'm1',
             drugName: '세프트리악손주 2g',
@@ -129,12 +129,12 @@ describe('RoundingBoard', () => {
   it('renders the ward it is told to show', () => {
     renderBoard({ activeWard: '3' });
     expect(screen.getByText('박민수')).toBeInTheDocument();
-    expect(screen.queryByText('김부경')).not.toBeInTheDocument();
+    expect(screen.queryByText('홍길동')).not.toBeInTheDocument();
   });
 
   it('opens the patient workspace on tap', async () => {
     const props = renderBoard();
-    await userEvent.click(screen.getByText('김부경'));
+    await userEvent.click(screen.getByText('홍길동'));
     expect(props.onOpenPatient).toHaveBeenCalledWith('a');
   });
 

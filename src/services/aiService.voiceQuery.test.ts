@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeVoiceQuery, parseVoiceQueryJson } from './aiService';
 
-const roster = ['장영임', '김철수', '이영희'];
+const roster = ['이몽룡', '김철수', '이영희'];
 
 describe('parseVoiceQueryJson', () => {
   it('parses a bare JSON object', () => {
@@ -31,12 +31,12 @@ describe('parseVoiceQueryJson', () => {
 describe('normalizeVoiceQuery', () => {
   it('keeps a name that exists on the roster', () => {
     const result = normalizeVoiceQuery(
-      { patientName: '장영임', queryType: 'lab', item: 'Na' },
+      { patientName: '이몽룡', queryType: 'lab', item: 'Na' },
       roster
     );
     expect(result).toEqual({
-      patientName: '장영임',
-      heardName: '장영임',
+      patientName: '이몽룡',
+      heardName: '이몽룡',
       nameMatch: 'exact',
       queryType: 'lab',
       item: 'Na',
@@ -50,10 +50,10 @@ describe('normalizeVoiceQuery', () => {
   });
 
   it('links a misheard name to the roster and flags it for confirmation', () => {
-    // STT가 받침을 틀려도(장영임→장영일) 발음으로 이어 붙이되, 확인이 필요함을 표시한다.
+    // STT가 받침을 틀려도(이몽룡→이몽룹) 발음으로 이어 붙이되, 확인이 필요함을 표시한다.
     expect(
-      normalizeVoiceQuery({ patientName: '장영일', queryType: 'lab', item: 'Na' }, roster)
-    ).toMatchObject({ patientName: '장영임', heardName: '장영일', nameMatch: 'similar' });
+      normalizeVoiceQuery({ patientName: '이몽룹', queryType: 'lab', item: 'Na' }, roster)
+    ).toMatchObject({ patientName: '이몽룡', heardName: '이몽룹', nameMatch: 'similar' });
   });
 
   it('rejects a name the model invented', () => {

@@ -1,7 +1,7 @@
 /**
  * 한국어 환자명 매칭 — STT/받아쓰기 오인식을 감안해 명단에서 같은 사람을 찾는다.
  *
- * 배경: 음성 인식은 이름의 받침·모음을 자주 틀린다("김부경"→"김부겸", "장영임"→"장영일").
+ * 배경: 음성 인식은 이름의 받침·모음을 자주 틀린다("홍길동"→"홍길돔", "이몽룡"→"이몽룹").
  * LLM에 명단을 넘겨 보정하게 해도 명단에 없는 철자를 그대로 돌려주는 경우가 있어,
  * **코드에서 한 번 더** 자모 단위로 비교한다.
  *
@@ -45,8 +45,8 @@ const CONFUSABLE_GROUPS: Record<'cho' | 'jung' | 'jong', string[][]> = {
     ['ㅡ', 'ㅢ', 'ㅣ'],
   ],
   jong: [
-    ['ㄴ', 'ㅇ', 'ㅁ'], // 김부겸/김부경, 장영임/장영인 — 가장 흔한 오인식
-    ['ㄴ', 'ㄹ'], // 장영임/장영일 계열
+    ['ㄴ', 'ㅇ', 'ㅁ'], // 홍길동/홍길돔, 이몽룡/이몽룐 — 가장 흔한 오인식
+    ['ㄴ', 'ㄹ'], // 이몽룡/이몽룹 계열
     ['ㄱ', 'ㄲ', 'ㅋ', 'ㄺ'],
     ['ㅂ', 'ㅍ', 'ㅄ'],
     ['ㅅ', 'ㅆ', 'ㅈ', 'ㅊ', 'ㅌ', 'ㄷ', 'ㅎ'], // 받침에서 모두 ㄷ 소리로 난다
@@ -72,7 +72,7 @@ function buildConfusablePairs(): Record<string, Set<string>> {
 /** 같으면 0, 혼동 자모면 0.35, 한쪽만 비어 있으면 0.7, 완전히 다르면 1 */
 function jamoCost(position: 'cho' | 'jung' | 'jong', a: string, b: string): number {
   if (a === b) return 0;
-  if (!a || !b) return 0.7; // 받침 유무 차이 (예: 부경/부겨)
+  if (!a || !b) return 0.7; // 받침 유무 차이 (예: 길동/길도)
   return CONFUSABLE_PAIRS[position]!.has(`${a}|${b}`) ? 0.35 : 1;
 }
 
@@ -138,7 +138,7 @@ const HONORIFIC = /(환자분|환자님|환자|어르신|할머니|할아버지|
 /** 비교용 키로 이름을 정리한다 (공백·문장부호·호칭 제거, 영문은 소문자로). */
 export function normalizePatientName(value: string): string {
   let name = value.replace(/[\s.,·'"“”‘’()[\]]/g, '').trim().toLowerCase();
-  // "김부경님환자" 처럼 겹쳐 붙는 경우가 있어 반복해서 떼되, 이름이 한 글자로 줄면 멈춘다.
+  // "홍길동님환자" 처럼 겹쳐 붙는 경우가 있어 반복해서 떼되, 이름이 한 글자로 줄면 멈춘다.
   while (HONORIFIC.test(name) && name.replace(HONORIFIC, '').length >= 2) {
     name = name.replace(HONORIFIC, '');
   }
@@ -157,7 +157,7 @@ export interface RosterMatch {
 /** 유사 매칭 허용 한도 — 이름이 짧을수록 엄격하게 본다. */
 function allowedDistance(length: number): number {
   if (length >= 4) return 1;
-  if (length === 3) return 0.8; // 자모 두어 개가 틀린 정도까지 (김부겸→김부경, 김민수→김민준)
+  if (length === 3) return 0.8; // 자모 두어 개가 틀린 정도까지 (홍길돔→홍길동, 김민수→김민준)
   if (length === 2) return 0.3; // 두 글자 이름은 혼동 자모 수준만 허용 (김순↔김수 ○, 박수↔김수 ✗)
   return 0; // 한 글자는 유사 매칭하지 않는다
 }

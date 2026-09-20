@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { matchRosterName, normalizePatientName } from './koreanName';
 
-const ROSTER = ['김부경', '이영희', '장영임', '박민수'];
+const ROSTER = ['홍길동', '이영희', '이몽룡', '박민수'];
 
 describe('normalizePatientName', () => {
   it('strips spaces, punctuation and honorifics', () => {
-    expect(normalizePatientName(' 김 부경 ')).toBe('김부경');
-    expect(normalizePatientName('김부경님')).toBe('김부경');
-    expect(normalizePatientName('김부경 환자분')).toBe('김부경');
+    expect(normalizePatientName(' 홍 길동 ')).toBe('홍길동');
+    expect(normalizePatientName('홍길동님')).toBe('홍길동');
+    expect(normalizePatientName('홍길동 환자분')).toBe('홍길동');
     expect(normalizePatientName('“이영희”')).toBe('이영희');
   });
 
@@ -27,18 +27,18 @@ describe('matchRosterName', () => {
   });
 
   it('treats spacing and honorifics as an exact match', () => {
-    expect(matchRosterName('김 부경 님', ROSTER)).toMatchObject({ name: '김부경', exact: true });
+    expect(matchRosterName('홍 길동 님', ROSTER)).toMatchObject({ name: '홍길동', exact: true });
   });
 
-  it('links a misheard final consonant (김부겸 → 김부경)', () => {
-    const match = matchRosterName('김부겸', ROSTER);
-    expect(match).toMatchObject({ name: '김부경', exact: false });
+  it('links a misheard final consonant (홍길돔 → 홍길동)', () => {
+    const match = matchRosterName('홍길돔', ROSTER);
+    expect(match).toMatchObject({ name: '홍길동', exact: false });
     expect(match!.distance).toBeLessThan(0.2);
   });
 
   it('links other common STT slips', () => {
-    expect(matchRosterName('장영일', ROSTER)).toMatchObject({ name: '장영임', exact: false });
-    expect(matchRosterName('김보경', ROSTER)).toMatchObject({ name: '김부경', exact: false });
+    expect(matchRosterName('이몽룹', ROSTER)).toMatchObject({ name: '이몽룡', exact: false });
+    expect(matchRosterName('홍갈동', ROSTER)).toMatchObject({ name: '홍길동', exact: false });
     expect(matchRosterName('박민주', ROSTER)).toMatchObject({ name: '박민수', exact: false });
   });
 
@@ -46,7 +46,7 @@ describe('matchRosterName', () => {
     expect(matchRosterName('최동훈', ROSTER)).toBeNull();
     expect(matchRosterName('', ROSTER)).toBeNull();
     expect(matchRosterName(null, ROSTER)).toBeNull();
-    expect(matchRosterName('김부경', [])).toBeNull();
+    expect(matchRosterName('홍길동', [])).toBeNull();
   });
 
   it('refuses to guess when two patients are similarly close', () => {

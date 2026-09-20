@@ -5,7 +5,7 @@ import type { Patient } from '@/types/patient';
 import { buildRoundingBadges, shortenDrugName } from './roundingBadges';
 
 const patients = [
-  { id: 'p1', name: '김부경', roomBed: '101-1', status: 'active' } as Patient,
+  { id: 'p1', name: '홍길동', roomBed: '101-1', status: 'active' } as Patient,
   { id: 'p2', name: '이영희', roomBed: '102', status: 'active', attention: true } as Patient,
 ];
 
@@ -78,7 +78,7 @@ describe('buildRoundingBadges', () => {
         recentLabs: [
           {
             patientId: 'p1',
-            patientName: '김부경',
+            patientName: '홍길동',
             roomBed: '101-1',
             dateKey: '2026-09-20',
             abnormalCount: 3,
@@ -89,7 +89,7 @@ describe('buildRoundingBadges', () => {
         antibiotics: [
           {
             patientId: 'p1',
-            patientName: '김부경',
+            patientName: '홍길동',
             roomBed: '101-1',
             medicationId: 'm1',
             drugName: '타조페란주 4.5g',
@@ -113,7 +113,7 @@ describe('buildRoundingBadges', () => {
         recentLabs: [
           {
             patientId: 'p1',
-            patientName: '김부경',
+            patientName: '홍길동',
             roomBed: '101-1',
             dateKey: '2026-09-20',
             abnormalCount: 0,
@@ -131,13 +131,13 @@ describe('buildRoundingBadges', () => {
       patients,
       briefing: briefing({
         reminders: [
-          { patientId: 'p1', patientName: '김부경', roomBed: '101-1', noteId: 'n1', content: '보호자 설명' },
-          { patientId: 'p1', patientName: '김부경', roomBed: '101-1', noteId: 'n2', content: 'CT 확인' },
+          { patientId: 'p1', patientName: '홍길동', roomBed: '101-1', noteId: 'n1', content: '보호자 설명' },
+          { patientId: 'p1', patientName: '홍길동', roomBed: '101-1', noteId: 'n2', content: 'CT 확인' },
         ],
         todaySchedules: [
           {
             patientId: 'p1',
-            patientName: '김부경',
+            patientName: '홍길동',
             roomBed: '101-1',
             scheduleId: 's1',
             title: '복부 CT',
@@ -147,7 +147,7 @@ describe('buildRoundingBadges', () => {
           },
           {
             patientId: 'p1',
-            patientName: '김부경',
+            patientName: '홍길동',
             roomBed: '101-1',
             scheduleId: 's2',
             title: '끝난 일정',
@@ -169,7 +169,7 @@ describe('buildRoundingBadges', () => {
         progressNotes: [
           {
             patientId: 'p1',
-            patientName: '김부경',
+            patientName: '홍길동',
             roomBed: '101-1',
             noteId: 'n1',
             content: 'S) 어지럼 호소\nO) BP 100/60',
@@ -189,7 +189,7 @@ describe('buildRoundingBadges', () => {
   it('counts several notes written today', () => {
     const note = (noteId: string) => ({
       patientId: 'p1',
-      patientName: '김부경',
+      patientName: '홍길동',
       roomBed: '101-1',
       noteId,
       content: '경과 관찰',

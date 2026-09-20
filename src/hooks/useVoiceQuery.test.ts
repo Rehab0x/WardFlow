@@ -14,7 +14,7 @@ vi.mock('@/services/sttService', async () => {
 });
 vi.mock('@/services/aiService', () => ({ parseVoiceQuery: ai.parseVoiceQuery }));
 
-const patient = { id: 'p1', name: '장영임', status: 'active' } as Patient;
+const patient = { id: 'p1', name: '이몽룡', status: 'active' } as Patient;
 const discharged = { id: 'p2', name: '퇴원환자', status: 'discharged' } as Patient;
 
 vi.mock('@/stores/usePatientStore', () => ({
@@ -41,7 +41,7 @@ describe('useVoiceQuery', () => {
     vi.clearAllMocks();
     recorder.stop.mockResolvedValue(new Blob(['audio']));
     stt.startRecording.mockResolvedValue(recorder);
-    stt.transcribeAudio.mockResolvedValue('장영임 소듐 요즘 어땠지');
+    stt.transcribeAudio.mockResolvedValue('이몽룡 소듐 요즘 어땠지');
     meds.medications = [];
   });
 
@@ -55,7 +55,7 @@ describe('useVoiceQuery', () => {
   }
 
   it('answers a lab question with a trend and a summary line', async () => {
-    ai.parseVoiceQuery.mockResolvedValue({ patientName: '장영임', queryType: 'lab', item: 'Na' });
+    ai.parseVoiceQuery.mockResolvedValue({ patientName: '이몽룡', queryType: 'lab', item: 'Na' });
     labs.getLabTrendData.mockResolvedValue({
       itemCode: '',
       itemName: 'Na',
@@ -71,7 +71,7 @@ describe('useVoiceQuery', () => {
 
     await waitFor(() => expect(hook.result.current.state.stage).toBe('done'));
     const answer = hook.result.current.state.answer!;
-    expect(answer.headline).toContain('장영임');
+    expect(answer.headline).toContain('이몽룡');
     expect(answer.headline).toContain('134');
     expect(answer.headline).toContain('이전 대비 +4');
     expect(answer.trend?.dataPoints).toHaveLength(2);
@@ -79,17 +79,17 @@ describe('useVoiceQuery', () => {
   });
 
   it('only offers active patients to the parser', async () => {
-    ai.parseVoiceQuery.mockResolvedValue({ patientName: '장영임', queryType: 'lab', item: 'Na' });
+    ai.parseVoiceQuery.mockResolvedValue({ patientName: '이몽룡', queryType: 'lab', item: 'Na' });
     labs.getLabTrendData.mockResolvedValue(null);
 
     const hook = renderHook(() => useVoiceQuery());
     await run(hook);
 
-    expect(ai.parseVoiceQuery).toHaveBeenCalledWith('장영임 소듐 요즘 어땠지', ['장영임']);
+    expect(ai.parseVoiceQuery).toHaveBeenCalledWith('이몽룡 소듐 요즘 어땠지', ['이몽룡']);
   });
 
   it('reports a missing lab result instead of failing', async () => {
-    ai.parseVoiceQuery.mockResolvedValue({ patientName: '장영임', queryType: 'lab', item: 'Na' });
+    ai.parseVoiceQuery.mockResolvedValue({ patientName: '이몽룡', queryType: 'lab', item: 'Na' });
     labs.getLabTrendData.mockResolvedValue(null);
 
     const hook = renderHook(() => useVoiceQuery());
@@ -101,7 +101,7 @@ describe('useVoiceQuery', () => {
 
   it('answers a medication question from the store', async () => {
     ai.parseVoiceQuery.mockResolvedValue({
-      patientName: '장영임',
+      patientName: '이몽룡',
       queryType: 'medication',
       item: null,
     });
@@ -142,7 +142,7 @@ describe('useVoiceQuery', () => {
 
   it('explains when the question type was not understood', async () => {
     ai.parseVoiceQuery.mockResolvedValue({
-      patientName: '장영임',
+      patientName: '이몽룡',
       queryType: 'unknown',
       item: null,
     });
@@ -166,7 +166,7 @@ describe('useVoiceQuery', () => {
   });
 
   it('drops the transcript on reset so nothing is retained', async () => {
-    ai.parseVoiceQuery.mockResolvedValue({ patientName: '장영임', queryType: 'lab', item: 'Na' });
+    ai.parseVoiceQuery.mockResolvedValue({ patientName: '이몽룡', queryType: 'lab', item: 'Na' });
     labs.getLabTrendData.mockResolvedValue(null);
 
     const hook = renderHook(() => useVoiceQuery());
