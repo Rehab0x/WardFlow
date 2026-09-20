@@ -7,12 +7,12 @@ import {
   Menu,
   Search,
   Settings,
-  Stethoscope,
   UserPlus,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { WardFlowMark } from '@/components/brand/WardFlowMark';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -107,7 +107,7 @@ export function TopBar({
             <Menu className="h-4 w-4" />
           </IconButton>
           <Link to="/" className="flex min-w-0 items-center gap-2 text-zinc-900">
-            <Stethoscope className="h-4 w-4 shrink-0" />
+            <WardFlowMark className="h-5 w-5 shrink-0 text-teal-600" />
             <span className="truncate text-[13px] font-medium tracking-tight">WardFlow</span>
           </Link>
         </div>
