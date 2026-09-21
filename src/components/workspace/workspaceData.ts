@@ -402,3 +402,28 @@ export function groupNotesByDate(
 
   return [...groups.values()].sort((a, b) => b.dateKey.localeCompare(a.dateKey));
 }
+
+/**
+ * 메모 묶음을 최근 N개까지만 남긴다 — 입원이 길어지면 목록이 한없이 길어진다.
+ *
+ * 날짜 묶음은 쪼개지 않는다. 같은 날 메모가 중간에서 잘리면 "그 날 전부"인지
+ * 알 수 없기 때문에, 한도를 넘더라도 그 날짜까지는 통째로 보여준다.
+ */
+export function limitNoteGroups(
+  groups: NoteDateGroup[],
+  limit: number
+): { groups: NoteDateGroup[]; hiddenCount: number } {
+  if (limit <= 0) return { groups: [], hiddenCount: groups.reduce((sum, g) => sum + g.notes.length, 0) };
+
+  const visible: NoteDateGroup[] = [];
+  let shown = 0;
+
+  for (const group of groups) {
+    if (shown >= limit) break;
+    visible.push(group);
+    shown += group.notes.length;
+  }
+
+  const total = groups.reduce((sum, group) => sum + group.notes.length, 0);
+  return { groups: visible, hiddenCount: total - shown };
+}

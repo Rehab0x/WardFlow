@@ -61,16 +61,19 @@ export const useNoteStore = create<NoteStore>((set) => ({
       const { currentUser } = useAuthStore.getState();
       if (!currentUser) throw new Error('로그인이 필요합니다.');
 
-      const createdAt = noteData.date ? parseLocalDate(noteData.date) : new Date();
+      // 날짜를 지정하면 그 날짜로 **저장한다**. 예전에는 화면에만 그렇게 보이고
+      // 서버에는 오늘로 들어가, 새로고침하면 날짜가 되돌아갔다.
+      const createdAt = noteData.date ? parseLocalDate(noteData.date) : undefined;
       const alertDate = noteData.alertDate ? parseLocalDate(noteData.alertDate) : undefined;
       const note = await createNote({
         patientId: noteData.patientId,
         content: noteData.content,
         type: noteData.type,
         alertDate,
+        createdAt,
         createdBy: currentUser.id,
       });
-      const viewNote = { ...fromDomainNote(note), createdAt };
+      const viewNote = fromDomainNote(note);
       set((state) => ({ notes: upsertById(state.notes, viewNote) }));
       return viewNote.id;
     } catch (error) {

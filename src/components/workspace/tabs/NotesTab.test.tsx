@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { BriefingData } from '@/services/briefingService';
 import type { Note } from '@/types/note';
 import type { Patient } from '@/types/patient';
@@ -122,5 +123,69 @@ describe('NotesTab', () => {
     useNoteStore.setState({ notes: [], isLoading: true });
     render(<NotesTab patient={patient} data={briefing} />);
     expect(screen.getByText('불러오는 중')).toBeInTheDocument();
+  });
+});
+
+describe('NotesTab 목록 접기', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useNoteStore.setState({ notes: [], isLoading: false, error: null, fetchNotesByPatient });
+  });
+
+  function manyNotes(count: number) {
+    return Array.from({ length: count }, (_, index) =>
+      note({ id: `n${index}`, createdAt: day(-index), content: `메모 ${index}` })
+    );
+  }
+
+  it('shows the recent ones and offers the rest', async () => {
+    useNoteStore.setState({ notes: manyNotes(14) });
+    render(<NotesTab patient={patient} data={briefing} />);
+
+    expect(screen.getByText('메모 0')).toBeInTheDocument();
+    expect(screen.getByText('메모 9')).toBeInTheDocument();
+    expect(screen.queryByText('메모 13')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: '지난 메모 4개 더 보기' }));
+    expect(screen.getByText('메모 13')).toBeInTheDocument();
+  });
+
+  it('does not offer it when everything already fits', () => {
+    useNoteStore.setState({ notes: manyNotes(6) });
+    render(<NotesTab patient={patient} data={briefing} />);
+
+    expect(screen.queryByRole('button', { name: /더 보기/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('NotesTab 날짜 지정', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useNoteStore.setState({ notes: [], isLoading: false, error: null, fetchNotesByPatient });
+  });
+
+  it('writes today unless the date is changed', async () => {
+    const onAddNote = vi.fn().mockResolvedValue(undefined);
+    render(<NotesTab patient={patient} data={briefing} onAddNote={onAddNote} />);
+
+    expect(screen.getByLabelText('메모 날짜')).toHaveValue(dateKey(day(0)));
+
+    await userEvent.type(screen.getByPlaceholderText('빠른 메모 입력'), '오늘 경과');
+    await userEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    expect(onAddNote).toHaveBeenCalledWith('오늘 경과', 'progress', dateKey(day(0)));
+  });
+
+  it('can file a note on an earlier day', async () => {
+    const onAddNote = vi.fn().mockResolvedValue(undefined);
+    render(<NotesTab patient={patient} data={briefing} onAddNote={onAddNote} />);
+
+    const twoDaysAgo = dateKey(day(-2));
+    await userEvent.clear(screen.getByLabelText('메모 날짜'));
+    await userEvent.type(screen.getByLabelText('메모 날짜'), twoDaysAgo);
+    await userEvent.type(screen.getByPlaceholderText('빠른 메모 입력'), '이틀 전 경과');
+    await userEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    expect(onAddNote).toHaveBeenCalledWith('이틀 전 경과', 'progress', twoDaysAgo);
   });
 });

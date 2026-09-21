@@ -113,7 +113,12 @@ export interface PatientWorkspaceProps {
     nutritionActivityFactorId: string;
     nutritionInjuryFactorId: string;
   }) => void | Promise<void>;
-  onAddNote?: (content: string, type: 'progress' | 'reminder') => void | Promise<void>;
+  onAddNote?: (
+    content: string,
+    type: 'progress' | 'reminder',
+    /** 지난 날짜로 적을 때 YYYY-MM-DD */
+    dateKey?: string
+  ) => void | Promise<void>;
   onRemoveNote?: (noteId: string, type: 'progress' | 'reminder') => void | Promise<void>;
   onAddAntibiotic?: (draft: AntibioticDraft) => void | Promise<void>;
   onAddMedication?: (draft: MedicationDraft) => void | Promise<void>;

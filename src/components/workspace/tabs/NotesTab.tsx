@@ -5,9 +5,14 @@ import { AiActionPanel } from '@/components/ai/AiActionPanel';
 import { generateSOAP } from '@/services/aiService';
 import { Input, RemoveButton, SaveButton } from '../controls';
 import type { PatientWorkspaceProps, WorkspaceTabBaseProps } from '../types';
-import { buildSoapContext, groupNotesByDate, insertAssessmentProblem } from '../workspaceData';
+import {
+  buildSoapContext,
+  groupNotesByDate,
+  insertAssessmentProblem,
+  limitNoteGroups,
+} from '../workspaceData';
 import { useNoteStore } from '@/stores/useNoteStore';
-import { formatRelativeDayLabel } from '@/components/clinical/dateLabels';
+import { formatDateInput, formatRelativeDayLabel } from '@/components/clinical/dateLabels';
 import { isComposingKeyboardEvent } from '../workspaceInput';
 
 interface NotesTabProps extends WorkspaceTabBaseProps {
@@ -15,10 +20,15 @@ interface NotesTabProps extends WorkspaceTabBaseProps {
   onRemoveNote?: PatientWorkspaceProps['onRemoveNote'];
 }
 
+/** 한 번에 펼쳐 두는 메모 개수 — 이보다 많으면 접고 "더 보기"로 연다. */
+const VISIBLE_NOTE_LIMIT = 10;
+
 export function NotesTab({ patient, data, onAddNote, onRemoveNote, onDirtyChange }: NotesTabProps) {
   const [content, setContent] = useState('');
   const [type, setType] = useState<'progress' | 'reminder'>('progress');
+  const [dateKey, setDateKey] = useState(() => formatDateInput(new Date()));
   const [saving, setSaving] = useState(false);
+  const [showAllNotes, setShowAllNotes] = useState(false);
 
   // 메모는 이 탭에 들어올 때 환자 전체 기간을 불러온다.
   // Today 브리핑에는 오늘 것만 들어 있어, 그대로 쓰면 지난 메모가 보이지 않는다.
@@ -35,6 +45,10 @@ export function NotesTab({ patient, data, onAddNote, onRemoveNote, onDirtyChange
     [allNotes, patient.id]
   );
   const noteGroups = useMemo(() => groupNotesByDate(notes), [notes]);
+  const visible = useMemo(
+    () => limitNoteGroups(noteGroups, showAllNotes ? Number.MAX_SAFE_INTEGER : VISIBLE_NOTE_LIMIT),
+    [noteGroups, showAllNotes]
+  );
   const patientProgressNotes = useMemo(
     () => notes.filter((item) => item.type === 'progress'),
     [notes]
@@ -48,7 +62,9 @@ export function NotesTab({ patient, data, onAddNote, onRemoveNote, onDirtyChange
   useEffect(() => {
     setContent('');
     setType('progress');
+    setDateKey(formatDateInput(new Date()));
     setSaving(false);
+    setShowAllNotes(false);
   }, [patient.id]);
   useEffect(() => onDirtyChange?.(hasDraft), [hasDraft, onDirtyChange]);
   // 미저장 플래그는 "현재 마운트된 탭"의 것이다. 탭을 벗어나면 반드시 내려놓아야
@@ -60,14 +76,14 @@ export function NotesTab({ patient, data, onAddNote, onRemoveNote, onDirtyChange
     if (!text || saving) return;
     setSaving(true);
     try {
-      await onAddNote?.(text, type);
+      await onAddNote?.(text, type, dateKey);
       setContent('');
     } catch {
       return;
     } finally {
       setSaving(false);
     }
-  }, [content, onAddNote, saving, type]);
+  }, [content, dateKey, onAddNote, saving, type]);
 
   const runSoap = useCallback(() => generateSOAP(soapContext), [soapContext]);
 
@@ -109,7 +125,7 @@ export function NotesTab({ patient, data, onAddNote, onRemoveNote, onDirtyChange
     <div className="space-y-3">
       <DataSection title="메모 추가">
         <div
-          className="grid gap-2 p-2 sm:grid-cols-[120px_minmax(0,1fr)_auto]"
+          className="grid gap-2 p-2 sm:grid-cols-[110px_130px_minmax(0,1fr)_auto]"
           onKeyDown={(event) => {
             if (event.key !== 'Enter' || isComposingKeyboardEvent(event)) return;
             event.preventDefault();
@@ -125,9 +141,16 @@ export function NotesTab({ patient, data, onAddNote, onRemoveNote, onDirtyChange
             <option value="progress">경과</option>
             <option value="reminder">알림</option>
           </select>
+          <input
+            type="date"
+            aria-label="메모 날짜"
+            value={dateKey}
+            onChange={(event) => setDateKey(event.target.value)}
+            className="h-8 w-full min-w-0 rounded-md border border-zinc-200 bg-white px-2 font-mono text-[12px] tabular-nums text-zinc-700 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+          />
           <Input
             value={content}
-            placeholder={type === 'reminder' ? '오늘 계속 띄울 알림' : '빠른 메모 입력'}
+            placeholder={type === 'reminder' ? '그날 띄울 알림' : '빠른 메모 입력'}
             onChange={setContent}
           />
           <SaveButton disabled={!hasDraft} pending={saving} onClick={save}>
@@ -158,7 +181,7 @@ export function NotesTab({ patient, data, onAddNote, onRemoveNote, onDirtyChange
             detail={notesLoading ? '불러오는 중' : '메모 없음'}
           />
         ) : (
-          noteGroups.map((group) => (
+          visible.groups.map((group) => (
             <div key={group.dateKey}>
               <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-3 py-1">
                 <span className="font-mono text-[11px] font-medium tabular-nums text-zinc-600">
@@ -186,6 +209,24 @@ export function NotesTab({ patient, data, onAddNote, onRemoveNote, onDirtyChange
               ))}
             </div>
           ))
+        )}
+        {visible.hiddenCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowAllNotes(true)}
+            className="w-full border-t border-zinc-100 px-3 py-1.5 text-[11px] font-medium text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900"
+          >
+            지난 메모 {visible.hiddenCount}개 더 보기
+          </button>
+        )}
+        {showAllNotes && noteGroups.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowAllNotes(false)}
+            className="w-full border-t border-zinc-100 px-3 py-1.5 text-[11px] font-medium text-zinc-400 hover:bg-zinc-50 hover:text-zinc-700"
+          >
+            접기
+          </button>
         )}
       </DataSection>
     </div>

@@ -107,17 +107,29 @@ export function useClinicalWriters({
     }, '필요열량 입력값을 저장하지 못했습니다.');
   };
 
-  const handleAddNote = async (content: string, type: 'progress' | 'reminder') => {
+  /**
+   * @param dateKey 지난 날짜로 적을 때 YYYY-MM-DD. 없으면 오늘.
+   */
+  const handleAddNote = async (
+    content: string,
+    type: 'progress' | 'reminder',
+    dateKey?: string
+  ) => {
     if (!selectedPatient) return;
+    const writeDate = dateKey || todayKey();
     await runWrite(async () => {
       const noteId = await addNote({
         patientId: selectedPatient.id,
         content,
         type,
-        alertDate: type === 'reminder' ? todayKey() : undefined,
+        date: writeDate,
+        alertDate: type === 'reminder' ? writeDate : undefined,
       });
-      applyOptimisticNote(setBriefingData, selectedPatient, noteId, content, type);
-      markLocalBriefingUpdated();
+      // Today 브리핑은 오늘 것만 담는다 — 지난 날짜로 적은 메모를 끼워 넣으면 안 된다.
+      if (writeDate === todayKey()) {
+        applyOptimisticNote(setBriefingData, selectedPatient, noteId, content, type);
+        markLocalBriefingUpdated();
+      }
       queueBriefingRefresh();
     }, '메모를 저장하지 못했습니다.');
   };

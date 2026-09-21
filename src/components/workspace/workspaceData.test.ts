@@ -6,6 +6,7 @@ import {
   formatAssessmentProblem,
   groupNotesByDate,
   insertAssessmentProblem,
+  limitNoteGroups,
 } from './workspaceData';
 import type { ChartingDraft } from './types';
 import type { LabResult } from '@/types/lab';
@@ -206,5 +207,45 @@ describe('groupNotesByDate', () => {
 
   it('returns nothing for an empty list', () => {
     expect(groupNotesByDate([])).toEqual([]);
+  });
+});
+
+describe('limitNoteGroups', () => {
+  const group = (dateKey: string, count: number) => ({
+    dateKey,
+    notes: Array.from({ length: count }, (_, index) => ({
+      id: `${dateKey}-${index}`,
+      type: 'progress' as const,
+      content: `${dateKey} ${index}`,
+    })),
+  });
+
+  it('keeps everything when it already fits', () => {
+    const groups = [group('2026-09-21', 2), group('2026-09-20', 3)];
+    expect(limitNoteGroups(groups, 10)).toEqual({ groups, hiddenCount: 0 });
+  });
+
+  it('counts what it left out', () => {
+    const groups = [group('2026-09-21', 4), group('2026-09-20', 4), group('2026-09-19', 5)];
+    const limited = limitNoteGroups(groups, 10);
+
+    // 8개까지 담고 다음 묶음을 통째로 더한다(=13) — 남은 것이 없다
+    expect(limited.groups).toHaveLength(3);
+    expect(limited.hiddenCount).toBe(0);
+  });
+
+  it('never splits a day in half', () => {
+    const groups = [group('2026-09-21', 12), group('2026-09-20', 3)];
+    const limited = limitNoteGroups(groups, 10);
+
+    // 첫 날이 한도를 넘지만 그 날은 통째로 보여준다
+    expect(limited.groups).toHaveLength(1);
+    expect(limited.groups[0]!.notes).toHaveLength(12);
+    expect(limited.hiddenCount).toBe(3);
+  });
+
+  it('handles an empty list and a zero limit', () => {
+    expect(limitNoteGroups([], 10)).toEqual({ groups: [], hiddenCount: 0 });
+    expect(limitNoteGroups([group('2026-09-21', 2)], 0)).toEqual({ groups: [], hiddenCount: 2 });
   });
 });

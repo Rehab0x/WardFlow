@@ -22,6 +22,8 @@ export function toNoteInsert(input: NoteCreateInput): Inserts<'notes'> {
     type: input.type,
     alert_date: toNullableDateOnly(input.alertDate),
     created_by: input.createdBy,
+    // 지정하지 않으면 컬럼을 보내지 않고 DB 기본값(now)을 쓴다.
+    ...(input.createdAt ? { created_at: input.createdAt.toISOString() } : {}),
   };
 }
 
