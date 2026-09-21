@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_COPY_FORMAT } from '@/types/charting';
-import { buildChartingCopy, buildLabValueTable } from './workspaceData';
+import {
+  buildChartingCopy,
+  buildLabValueTable,
+  formatAssessmentProblem,
+  insertAssessmentProblem,
+} from './workspaceData';
 import type { ChartingDraft } from './types';
 import type { LabResult } from '@/types/lab';
 
@@ -94,5 +99,71 @@ describe('buildLabValueTable', () => {
     expect(table.dates).toContain('2026-09-15');
     expect(table.dateLabIds.get('2026-09-15')).toBeUndefined();
     expect(table.dateLabIds.get('2026-09-10')).toEqual(['lab-1']);
+  });
+});
+
+describe('insertAssessmentProblem', () => {
+  const draft = ['S)', '열감 호소', 'O)', 'BT 38.2', 'A)', '#. R/O Pneumonia', 'P)', '타이레놀'].join(
+    '\n'
+  );
+
+  it('adds the problem at the end of the A) section, before P)', () => {
+    expect(insertAssessmentProblem(draft, 'HTN').split('\n')).toEqual([
+      'S)',
+      '열감 호소',
+      'O)',
+      'BT 38.2',
+      'A)',
+      '#. R/O Pneumonia',
+      '#. HTN',
+      'P)',
+      '타이레놀',
+    ]);
+  });
+
+  it('does not add the same problem twice', () => {
+    const once = insertAssessmentProblem(draft, 'HTN');
+    expect(insertAssessmentProblem(once, 'HTN')).toBe(once);
+    // 이미 적혀 있던 항목도 마찬가지
+    expect(insertAssessmentProblem(draft, 'R/O Pneumonia')).toBe(draft);
+  });
+
+  it('keeps the blank line that separates sections', () => {
+    const spaced = ['A)', '#. DM', '', 'P)', '경과 관찰'].join('\n');
+    expect(insertAssessmentProblem(spaced, 'HTN').split('\n')).toEqual([
+      'A)',
+      '#. DM',
+      '#. HTN',
+      '',
+      'P)',
+      '경과 관찰',
+    ]);
+  });
+
+  it('creates the A) section when the draft has none', () => {
+    expect(insertAssessmentProblem('S)\n열감', 'HTN')).toBe('S)\n열감\n\nA)\n#. HTN');
+    expect(insertAssessmentProblem('', 'HTN')).toBe('A)\n#. HTN');
+  });
+
+  it('appends to the end when P) is missing', () => {
+    expect(insertAssessmentProblem('A)\n#. DM', 'HTN')).toBe('A)\n#. DM\n#. HTN');
+  });
+
+  it('ignores an empty problem', () => {
+    expect(insertAssessmentProblem(draft, '   ')).toBe(draft);
+  });
+});
+
+describe('formatAssessmentProblem', () => {
+  it('prefixes the problem with the problem-list marker', () => {
+    expect(formatAssessmentProblem('HTN')).toBe('#. HTN');
+    expect(formatAssessmentProblem('  HTN  ')).toBe('#. HTN');
+  });
+
+  it('does not stack markers that are already there', () => {
+    expect(formatAssessmentProblem('#. HTN')).toBe('#. HTN');
+    expect(formatAssessmentProblem('#1. HTN')).toBe('#. HTN');
+    expect(formatAssessmentProblem('- HTN')).toBe('#. HTN');
+    expect(formatAssessmentProblem('• HTN')).toBe('#. HTN');
   });
 });

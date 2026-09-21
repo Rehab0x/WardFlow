@@ -5,7 +5,7 @@ import { AiActionPanel } from '@/components/ai/AiActionPanel';
 import { generateSOAP } from '@/services/aiService';
 import { Input, RemoveButton, SaveButton } from '../controls';
 import type { PatientWorkspaceProps, WorkspaceTabBaseProps } from '../types';
-import { buildSoapContext } from '../workspaceData';
+import { buildSoapContext, insertAssessmentProblem } from '../workspaceData';
 import { isComposingKeyboardEvent } from '../workspaceInput';
 
 interface NotesTabProps extends WorkspaceTabBaseProps {
@@ -64,6 +64,34 @@ export function NotesTab({ patient, data, onAddNote, onRemoveNote, onDirtyChange
   }, [content, onAddNote, saving, type]);
 
   const runSoap = useCallback(() => generateSOAP(soapContext), [soapContext]);
+
+  // 차트 Problem List에서 골라 A) 섹션에 바로 끼워 넣는다.
+  const problems = useMemo(
+    () => patient.problemList.map((item) => item.trim()).filter(Boolean),
+    [patient.problemList]
+  );
+  const renderSoapTools = useCallback(
+    ({ result, setResult }: { result: string; setResult: (next: string) => void }) => {
+      if (problems.length === 0) return null;
+      return (
+        <div className="flex flex-wrap items-center gap-1">
+          <span className="mr-1 text-[11px] text-zinc-400">A)에 추가</span>
+          {problems.map((problem) => (
+            <button
+              key={problem}
+              type="button"
+              onClick={() => setResult(insertAssessmentProblem(result, problem))}
+              title={`A) 섹션에 "#. ${problem}" 추가`}
+              className="inline-flex h-7 items-center rounded-md border border-zinc-200 bg-white px-2 text-[11px] font-medium text-zinc-700 transition-colors hover:bg-zinc-50"
+            >
+              #. {problem}
+            </button>
+          ))}
+        </div>
+      );
+    },
+    [problems]
+  );
   const saveSoapAsNote = useCallback(
     async (text: string) => {
       await onAddNote?.(text, 'progress');
@@ -111,6 +139,7 @@ export function NotesTab({ patient, data, onAddNote, onRemoveNote, onDirtyChange
         readyHint="입력 중인 메모와 최근 정보를 바탕으로 초안을 만듭니다."
         notReadyHint="메모를 입력하거나 최근 경과 메모가 필요합니다."
         run={runSoap}
+        renderResultTools={renderSoapTools}
         onSaveResult={saveSoapAsNote}
         saveLabel="메모로 저장"
       />

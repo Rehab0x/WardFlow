@@ -168,6 +168,48 @@ export function buildChartingCopy(draft: ChartingDraft, format?: ChartingCopyFor
   );
 }
 
+/** SOAP 초안의 A) 섹션에 쓰는 Problem List 접두사. */
+const ASSESSMENT_PREFIX = '#. ';
+
+/** "HTN" → "#. HTN". 이미 접두사가 붙어 있으면 덧붙이지 않는다. */
+export function formatAssessmentProblem(problem: string): string {
+  const text = problem.trim().replace(/^[#•\-*]+\s*\d*\.?\s*/, '');
+  return text ? `${ASSESSMENT_PREFIX}${text}` : '';
+}
+
+/**
+ * SOAP 초안의 A) 섹션에 Problem 한 줄을 끼워 넣는다.
+ *
+ * A)와 P) 사이가 Assessment 구간이다. P) 앞에 붙여야 순서가 깨지지 않는다.
+ * 같은 문제가 이미 있으면 그대로 둔다 — 누르는 실수로 중복이 쌓이지 않게.
+ * A) 섹션이 없으면 초안 끝에 만들어 붙인다.
+ */
+export function insertAssessmentProblem(draft: string, problem: string): string {
+  const line = formatAssessmentProblem(problem);
+  if (!line) return draft;
+
+  const lines = draft.replace(/\r\n/g, '\n').split('\n');
+  const startIndex = lines.findIndex((text) => /^\s*A\)/.test(text));
+
+  if (startIndex === -1) {
+    const base = draft.trimEnd();
+    return base ? `${base}\n\nA)\n${line}` : `A)\n${line}`;
+  }
+
+  let endIndex = lines.findIndex((text, index) => index > startIndex && /^\s*P\)/.test(text));
+  if (endIndex === -1) endIndex = lines.length;
+
+  const section = lines.slice(startIndex, endIndex);
+  const normalized = line.toLowerCase();
+  if (section.some((text) => text.trim().toLowerCase() === normalized)) return draft;
+
+  // 섹션 끝의 빈 줄 앞에 넣어야 P)와 붙어 버리지 않는다.
+  let insertAt = endIndex;
+  while (insertAt > startIndex + 1 && !lines[insertAt - 1]!.trim()) insertAt--;
+
+  return [...lines.slice(0, insertAt), line, ...lines.slice(insertAt)].join('\n');
+}
+
 export function buildSoapContext(
   patient: Patient,
   data: BriefingData,
@@ -187,6 +229,7 @@ export function buildSoapContext(
     chiefComplaint: patient.chiefComplaint,
     onset: patient.onset,
     progressNote: noteLines.join('\n\n'),
+    problemList: patient.problemList.filter((item) => item.trim()).join('\n'),
     currentMedications: buildMedicationLines(patient.id, data).join('\n'),
     recentLab: buildLabLines(patient.id, data).join('\n'),
   };

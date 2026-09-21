@@ -23,6 +23,11 @@ interface AiActionPanelProps {
   saveLabel?: string;
   /** 패널 상단에 끼워넣을 추가 컨트롤 */
   extraControls?: ReactNode;
+  /**
+   * 결과 상자 안에 넣을 편집 보조 컨트롤.
+   * 생성된 초안을 저장 전에 손볼 수 있도록 결과 텍스트와 수정 함수를 함께 넘긴다.
+   */
+  renderResultTools?: (args: { result: string; setResult: (next: string) => void }) => ReactNode;
   /** 환자 전환 등으로 결과를 초기화해야 할 때 바꿔주는 키 */
   resetKey?: string;
 }
@@ -42,6 +47,7 @@ export function AiActionPanel({
   onSaveResult,
   saveLabel = '저장',
   extraControls,
+  renderResultTools,
   resetKey,
 }: AiActionPanelProps) {
   const aiConfigured = useAIStore((state) => state.isConfigured());
@@ -175,9 +181,19 @@ export function AiActionPanel({
                 </button>
               </div>
             </div>
-            <pre className="max-h-80 overflow-auto whitespace-pre-wrap p-2 font-mono text-[12px] leading-5 text-zinc-700">
-              {result}
-            </pre>
+            {renderResultTools && (
+              <div className="border-b border-zinc-100 px-2 py-1.5">
+                {renderResultTools({ result, setResult })}
+              </div>
+            )}
+            {/* 초안은 저장 전에 고칠 수 있어야 한다 — AI가 쓴 문장을 그대로 차트에 넣지 않도록. */}
+            <textarea
+              value={result}
+              onChange={(event) => setResult(event.target.value)}
+              aria-label={resultTitle}
+              rows={Math.min(Math.max(result.split('\n').length + 1, 6), 20)}
+              className="block max-h-80 w-full resize-y overflow-auto whitespace-pre-wrap rounded-b-md p-2 font-mono text-[12px] leading-5 text-zinc-700 outline-none focus:bg-zinc-50/60"
+            />
           </div>
         )}
       </div>

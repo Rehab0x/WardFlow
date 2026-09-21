@@ -183,7 +183,14 @@ const SOAP_SYSTEM_PROMPT = `당신은 병원 입원환자 담당 의사의 경�
 3. 간결하고 의학적으로 정확하게 작성하세요.
 4. OCS/EMR에 바로 붙여넣기 좋은 형식으로 출력하세요.
 5. 한국어로 작성하되, 의학 용어는 영어 병기 가능.
-6. 입력 정보가 부족한 섹션은 추정하지 말고 빈칸으로 두세요.`;
+6. 입력 정보가 부족한 섹션은 추정하지 말고 빈칸으로 두세요.
+7. A) 섹션은 **Problem List 형식**으로 씁니다. 줄글로 쓰지 마세요.
+   - 한 줄에 하나씩, "#. 진단명" 형태
+   - 아직 확정되지 않은 **의심 진단은 "#. R/O 진단명"** (rule out)
+     예) "Urinary Tract Infection (UTI) 의심" → "#. R/O Urinary Tract Infection"
+   - 진단명은 영어로 쓰고, 괄호 약어 병기는 생략합니다
+   - 환자 차트의 Problem List에 이미 있는 문제는 **그 표기를 그대로** 쓰세요 (예: "#. HTN")
+   - 대화·메모에 근거가 없는 진단은 넣지 마세요`;
 
 const LAB_SUMMARY_SYSTEM_PROMPT = `당신은 병원 입원환자의 Lab 결과를 요약하는 의료 AI 어시스턴트입니다.
 
@@ -205,11 +212,14 @@ export async function generateSOAP(context: {
   progressNote: string;
   currentMedications?: string;
   recentLab?: string;
+  /** 차트에 적어 둔 Problem List — A) 섹션에서 같은 문제는 이 표기를 그대로 쓰게 한다 */
+  problemList?: string;
 }): Promise<string> {
   const userMessage = [
     `환자: ${context.patientName}`,
     `C/C: ${context.chiefComplaint}`,
     `Onset: ${context.onset}`,
+    context.problemList ? `차트 Problem List:\n${context.problemList}` : '',
     context.currentMedications ? `현재 투약:\n${context.currentMedications}` : '',
     context.recentLab ? `최근 Lab:\n${context.recentLab}` : '',
     `\n오늘의 경과기록 메모:\n${context.progressNote}`,
