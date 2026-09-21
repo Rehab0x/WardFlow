@@ -126,3 +126,22 @@ function addDays(date: Date, days: number) {
 function daysBetween(startDate: Date, endDate: Date) {
   return Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
 }
+
+/**
+ * 날짜 키(YYYY-MM-DD)에 붙일 상대 표현 — 오늘 / 어제 / N일 전.
+ * 한 주를 넘어가면 날짜 자체가 더 빠르게 읽히므로 빈 문자열을 준다.
+ */
+export function formatRelativeDayLabel(dateKey: string, today = new Date()): string {
+  const parsed = parseDateInput(dateKey);
+  if (!parsed) return '';
+
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const diffDays = Math.round((start.getTime() - parsed.getTime()) / 86_400_000);
+
+  if (diffDays === 0) return '오늘';
+  if (diffDays === 1) return '어제';
+  if (diffDays > 1 && diffDays <= 7) return `${diffDays}일 전`;
+  if (diffDays === -1) return '내일';
+  if (diffDays < -1 && diffDays >= -7) return `${-diffDays}일 후`;
+  return '';
+}

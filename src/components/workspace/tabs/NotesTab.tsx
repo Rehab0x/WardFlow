@@ -5,7 +5,9 @@ import { AiActionPanel } from '@/components/ai/AiActionPanel';
 import { generateSOAP } from '@/services/aiService';
 import { Input, RemoveButton, SaveButton } from '../controls';
 import type { PatientWorkspaceProps, WorkspaceTabBaseProps } from '../types';
-import { buildSoapContext, insertAssessmentProblem } from '../workspaceData';
+import { buildSoapContext, groupNotesByDate, insertAssessmentProblem } from '../workspaceData';
+import { useNoteStore } from '@/stores/useNoteStore';
+import { formatRelativeDayLabel } from '@/components/clinical/dateLabels';
 import { isComposingKeyboardEvent } from '../workspaceInput';
 
 interface NotesTabProps extends WorkspaceTabBaseProps {
@@ -18,17 +20,21 @@ export function NotesTab({ patient, data, onAddNote, onRemoveNote, onDirtyChange
   const [type, setType] = useState<'progress' | 'reminder'>('progress');
   const [saving, setSaving] = useState(false);
 
+  // 메모는 이 탭에 들어올 때 환자 전체 기간을 불러온다.
+  // Today 브리핑에는 오늘 것만 들어 있어, 그대로 쓰면 지난 메모가 보이지 않는다.
+  const allNotes = useNoteStore((store) => store.notes);
+  const notesLoading = useNoteStore((store) => store.isLoading);
+  const fetchNotesByPatient = useNoteStore((store) => store.fetchNotesByPatient);
+
+  useEffect(() => {
+    void fetchNotesByPatient(patient.id);
+  }, [fetchNotesByPatient, patient.id]);
+
   const notes = useMemo(
-    () => [
-      ...data.reminders
-        .filter((item) => item.patientId === patient.id)
-        .map((item) => ({ ...item, type: 'reminder' as const })),
-      ...data.progressNotes
-        .filter((item) => item.patientId === patient.id)
-        .map((item) => ({ ...item, type: 'progress' as const })),
-    ],
-    [data.progressNotes, data.reminders, patient.id]
+    () => allNotes.filter((item) => item.patientId === patient.id),
+    [allNotes, patient.id]
   );
+  const noteGroups = useMemo(() => groupNotesByDate(notes), [notes]);
   const patientProgressNotes = useMemo(
     () => notes.filter((item) => item.type === 'progress'),
     [notes]
@@ -146,20 +152,39 @@ export function NotesTab({ patient, data, onAddNote, onRemoveNote, onDirtyChange
 
       <DataSection title="메모" count={notes.length}>
         {notes.length === 0 ? (
-          <ClinicalRow prefix="-" title="0" detail="메모 없음" />
+          <ClinicalRow
+            prefix="-"
+            title="0"
+            detail={notesLoading ? '불러오는 중' : '메모 없음'}
+          />
         ) : (
-          notes.map((item) => (
-            <ClinicalRow
-              key={item.noteId}
-              prefix={item.type === 'reminder' ? '알림' : '경과'}
-              title={item.content}
-              tone={item.type === 'reminder' ? 'warning' : 'default'}
-              action={
-                onRemoveNote ? (
-                  <RemoveButton onClick={() => onRemoveNote(item.noteId, item.type)} />
-                ) : undefined
-              }
-            />
+          noteGroups.map((group) => (
+            <div key={group.dateKey}>
+              <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/80 px-3 py-1">
+                <span className="font-mono text-[11px] font-medium tabular-nums text-zinc-600">
+                  {group.dateKey}
+                </span>
+                <span className="text-[10.5px] text-zinc-400">
+                  {formatRelativeDayLabel(group.dateKey)}
+                </span>
+                <span className="ml-auto font-mono text-[10.5px] text-zinc-400">
+                  {group.notes.length}
+                </span>
+              </div>
+              {group.notes.map((item) => (
+                <ClinicalRow
+                  key={item.id}
+                  prefix={item.type === 'reminder' ? '알림' : '경과'}
+                  title={item.content}
+                  tone={item.type === 'reminder' ? 'warning' : 'default'}
+                  action={
+                    onRemoveNote ? (
+                      <RemoveButton onClick={() => onRemoveNote(item.id, item.type)} />
+                    ) : undefined
+                  }
+                />
+              ))}
+            </div>
           ))
         )}
       </DataSection>

@@ -363,3 +363,42 @@ export function buildStandardLabItemOptions(): StandardLabItemOption[] {
 
   return options;
 }
+
+export interface NoteDateGroup {
+  /** YYYY-MM-DD */
+  dateKey: string;
+  notes: Array<{ id: string; type: 'progress' | 'reminder'; content: string; alertDate?: Date }>;
+}
+
+/**
+ * 메모를 날짜별로 묶는다 — 최근 날짜가 위로.
+ *
+ * 경과기록은 작성일 기준, 알림은 **알림 날짜** 기준으로 묶는다.
+ * 알림은 "언제 띄울 것인가"가 본래 의미라, 적어 둔 날이 아니라 뜨는 날에 있어야 찾기 쉽다.
+ */
+export function groupNotesByDate(
+  notes: Array<{
+    id: string;
+    type: 'progress' | 'reminder';
+    content: string;
+    alertDate?: Date;
+    createdAt: Date;
+  }>
+): NoteDateGroup[] {
+  const groups = new Map<string, NoteDateGroup>();
+
+  for (const note of notes) {
+    const basis = note.type === 'reminder' ? (note.alertDate ?? note.createdAt) : note.createdAt;
+    const dateKey = formatDateInput(basis);
+    const group = groups.get(dateKey) ?? { dateKey, notes: [] };
+    group.notes.push({
+      id: note.id,
+      type: note.type,
+      content: note.content,
+      alertDate: note.alertDate,
+    });
+    groups.set(dateKey, group);
+  }
+
+  return [...groups.values()].sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+}

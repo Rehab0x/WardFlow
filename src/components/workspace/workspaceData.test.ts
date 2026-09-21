@@ -4,6 +4,7 @@ import {
   buildChartingCopy,
   buildLabValueTable,
   formatAssessmentProblem,
+  groupNotesByDate,
   insertAssessmentProblem,
 } from './workspaceData';
 import type { ChartingDraft } from './types';
@@ -165,5 +166,45 @@ describe('formatAssessmentProblem', () => {
     expect(formatAssessmentProblem('#1. HTN')).toBe('#. HTN');
     expect(formatAssessmentProblem('- HTN')).toBe('#. HTN');
     expect(formatAssessmentProblem('• HTN')).toBe('#. HTN');
+  });
+});
+
+describe('groupNotesByDate', () => {
+  const at = (iso: string) => new Date(iso);
+
+  it('groups by day with the newest first', () => {
+    const groups = groupNotesByDate([
+      { id: 'a', type: 'progress', content: '어제', createdAt: at('2026-09-20T09:00:00') },
+      { id: 'b', type: 'progress', content: '오늘 1', createdAt: at('2026-09-21T08:00:00') },
+      { id: 'c', type: 'progress', content: '오늘 2', createdAt: at('2026-09-21T15:00:00') },
+    ]);
+
+    expect(groups.map((group) => group.dateKey)).toEqual(['2026-09-21', '2026-09-20']);
+    expect(groups[0]!.notes.map((note) => note.content)).toEqual(['오늘 1', '오늘 2']);
+  });
+
+  it('files a reminder under its alert date, not the day it was written', () => {
+    const groups = groupNotesByDate([
+      {
+        id: 'a',
+        type: 'reminder',
+        content: '내일 확인',
+        createdAt: at('2026-09-18T09:00:00'),
+        alertDate: at('2026-09-22T00:00:00'),
+      },
+    ]);
+
+    expect(groups[0]!.dateKey).toBe('2026-09-22');
+  });
+
+  it('falls back to the written date when a reminder has no alert date', () => {
+    const groups = groupNotesByDate([
+      { id: 'a', type: 'reminder', content: '알림', createdAt: at('2026-09-18T09:00:00') },
+    ]);
+    expect(groups[0]!.dateKey).toBe('2026-09-18');
+  });
+
+  it('returns nothing for an empty list', () => {
+    expect(groupNotesByDate([])).toEqual([]);
   });
 });
