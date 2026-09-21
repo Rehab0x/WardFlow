@@ -23,7 +23,8 @@ interface TopBarProps {
   onAddPatient?: () => boolean | void;
   onOpenLabImport?: () => void;
   onOpenConversationNotes?: () => void;
-  onToday?: () => void;
+  /** Today로 돌아간다. 미저장 변경 때문에 막히면 false를 돌려준다. */
+  onToday?: () => boolean | void;
   onOpenRounding?: () => void;
   onSettings?: () => void;
   onLogout?: () => void;
@@ -106,7 +107,21 @@ export function TopBar({
           >
             <Menu className="h-4 w-4" />
           </IconButton>
-          <Link to="/" className="flex min-w-0 items-center gap-2 text-zinc-900">
+          {/*
+            로고는 홈 버튼이기도 하다. 앱 화면에서는 이미 "/"에 있어 라우터가 아무 것도 하지
+            않으므로, 환자 워크스페이스를 닫고 Today로 돌리는 일은 onToday가 해야 한다.
+            새 탭으로 열기(⌘/Ctrl·가운데 클릭)는 그대로 두려고 링크는 유지한다.
+          */}
+          <Link
+            to="/"
+            aria-label="WardFlow 홈 (Today)"
+            onClick={(event) => {
+              if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+              // 미저장 변경으로 이동이 막히면 주소 이동도 막는다.
+              if (onToday?.() === false) event.preventDefault();
+            }}
+            className="flex min-w-0 items-center gap-2 text-zinc-900"
+          >
             <WardFlowMark className="h-5 w-5 shrink-0 text-teal-600" />
             <span className="truncate text-[13px] font-medium tracking-tight">WardFlow</span>
           </Link>

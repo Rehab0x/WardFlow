@@ -87,8 +87,9 @@ export function AppShell({
 
   const handleToday = useCallback(() => {
     const shouldClose = onToday?.();
-    if (shouldClose === false) return;
+    if (shouldClose === false) return false;
     setPatientsOpen(false);
+    return true;
   }, [onToday]);
 
   const handleRounding = useCallback(() => {
