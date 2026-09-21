@@ -5,28 +5,47 @@ import { fromPatientRow, toPatientInsert, toPatientUpdate } from '@/mappers/pati
 import { fromDateOnly, fromNullableDateOnly } from '@/mappers/date';
 
 /**
- * 지시오더 컬럼은 202609210001 마이그레이션으로 추가된다.
- * 아직 적용 전인 DB에서 이 컬럼을 요청하면 PostgREST가 42703으로 거절하고
- * **환자 조회 전체가 실패한다.** 그 경우 컬럼만 빼고 한 번 더 조회한다
- * (앱을 먼저 배포하고 마이그레이션을 나중에 적용하는 이 프로젝트의 흐름에 맞춘 것).
+ * 마이그레이션으로 나중에 붙은 컬럼들(지시오더 202609210001, 영양 202609210002).
+ *
+ * 아직 적용 전인 DB에 이 컬럼을 요청하면 PostgREST가 42703으로 거절하는데,
+ * 그러면 **환자 조회 전체가 실패한다.** 없다고 알려 온 컬럼만 빼고 다시 조회해서,
+ * 앱을 먼저 배포하고 마이그레이션을 나중에 적용해도 앱이 멀쩡하도록 한다.
+ * (해당 컬럼 값만 비어 보이고 나머지는 정상 동작한다.)
  */
-const STANDING_ORDERS_COLUMN = 'standing_orders';
 const UNDEFINED_COLUMN = '42703';
+const MAX_MISSING_COLUMN_RETRIES = 6;
 
-type QueryResult<T> = { data: T | null; error: { code?: string } | null };
+type QueryError = { code?: string; message?: string } | null;
+type QueryResult<T> = { data: T | null; error: QueryError };
+
+/** PostgREST 오류 문구에서 없다고 한 컬럼 이름을 꺼낸다. */
+function missingColumnFrom(error: QueryError): string | undefined {
+  const match = error?.message?.match(/column\s+(?:\w+\.)?"?([a-z0-9_]+)"?\s+does not exist/i);
+  return match?.[1];
+}
 
 /**
  * 컬럼 목록을 런타임에 만들기 때문에 supabase-js의 행 타입 추론이 풀린다.
  * 돌려주는 행 모양은 호출부가 지정한 T로 단언한다 — 컬럼 목록과 T를 함께 바꿀 것.
  */
-async function withStandingOrdersFallback<T>(
-  run: (columns: string) => PromiseLike<{ data: unknown; error: { code?: string } | null }>,
+async function withMissingColumnFallback<T>(
+  run: (columns: string) => PromiseLike<{ data: unknown; error: QueryError }>,
   columns: string
 ): Promise<QueryResult<T>> {
-  const first = await run(columns);
-  if (first.error?.code !== UNDEFINED_COLUMN) return first as QueryResult<T>;
-  const reduced = columns.replace(new RegExp(`\\s*${STANDING_ORDERS_COLUMN},`), '');
-  return (await run(reduced)) as QueryResult<T>;
+  let current = columns;
+
+  for (let attempt = 0; attempt <= MAX_MISSING_COLUMN_RETRIES; attempt++) {
+    const result = await run(current);
+    if (result.error?.code !== UNDEFINED_COLUMN) return result as QueryResult<T>;
+
+    const missing = missingColumnFrom(result.error);
+    const reduced = missing ? current.replace(new RegExp(`\\s*\\b${missing}\\b,`), '') : current;
+    // 줄일 수 없으면 더 돌려봐야 같은 오류다.
+    if (reduced === current) return result as QueryResult<T>;
+    current = reduced;
+  }
+
+  return run(current) as Promise<QueryResult<T>>;
 }
 
 const patientColumns = `
@@ -55,6 +74,11 @@ const patientColumns = `
   guardian_explanation,
   etc,
   standing_orders,
+  height_cm,
+  weight_kg,
+  nutrition_enabled,
+  nutrition_activity_factor,
+  nutrition_injury_factor,
   created_at,
   updated_at,
   deleted_at
@@ -121,7 +145,7 @@ export type PatientShellRow = Pick<
 >;
 
 export async function listPatients(): Promise<Patient[]> {
-  const { data, error } = await withStandingOrdersFallback<Tables<'patients'>[]>(
+  const { data, error } = await withMissingColumnFallback<Tables<'patients'>[]>(
     (columns) =>
       supabase
         .from('patients')
@@ -186,7 +210,7 @@ export async function listActivePatientBriefingRows(): Promise<ActivePatientBrie
 }
 
 export async function listActivePatients(): Promise<Patient[]> {
-  const { data, error } = await withStandingOrdersFallback<Tables<'patients'>[]>(
+  const { data, error } = await withMissingColumnFallback<Tables<'patients'>[]>(
     (columns) =>
       supabase
         .from('patients')
@@ -202,7 +226,7 @@ export async function listActivePatients(): Promise<Patient[]> {
 }
 
 export async function getPatient(id: string): Promise<Patient | null> {
-  const { data, error } = await withStandingOrdersFallback<Tables<'patients'>>(
+  const { data, error } = await withMissingColumnFallback<Tables<'patients'>>(
     (columns) =>
       supabase.from('patients').select(columns).eq('id', id).is('deleted_at', null).maybeSingle(),
     patientColumns
@@ -251,7 +275,7 @@ export async function createPatient(input: PatientCreateInput): Promise<Patient>
 }
 
 export async function updatePatient(id: string, input: PatientUpdateInput): Promise<Patient> {
-  const { data, error } = await withStandingOrdersFallback<Tables<'patients'>>(
+  const { data, error } = await withMissingColumnFallback<Tables<'patients'>>(
     (columns) =>
       supabase
         .from('patients')
@@ -272,3 +296,6 @@ export async function deletePatient(id: string): Promise<void> {
 
   if (error) throw error;
 }
+
+/** 테스트 전용 — 마이그레이션 미적용 폴백은 실제 DB 없이 검증한다. */
+export const __testing = { missingColumnFrom, withMissingColumnFallback };

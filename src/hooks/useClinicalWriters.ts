@@ -87,6 +87,19 @@ export function useClinicalWriters({
     }, '지시오더를 저장하지 못했습니다.');
   };
 
+  const handleSaveNutrition = async (input: {
+    heightCm?: number;
+    weightKg?: number;
+    nutritionEnabled: boolean;
+    nutritionActivityFactorId: string;
+    nutritionInjuryFactorId: string;
+  }) => {
+    if (!selectedPatient) return;
+    await runWrite(async () => {
+      await updatePatient(selectedPatient.id, input);
+    }, '필요열량 입력값을 저장하지 못했습니다.');
+  };
+
   const handleAddNote = async (content: string, type: 'progress' | 'reminder') => {
     if (!selectedPatient) return;
     await runWrite(async () => {
@@ -372,6 +385,7 @@ export function useClinicalWriters({
     () => ({
       handleChartingSave,
       handleSaveStandingOrders,
+      handleSaveNutrition,
       handleAddNote,
       handleAddNoteForPatient,
       handleRemoveNote,

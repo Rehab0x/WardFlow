@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Patient } from '@/types/patient';
@@ -95,9 +95,12 @@ describe('CalorieNeedsSection', () => {
   });
 
   it('does not carry one patient measurements over to the next', async () => {
-    const { rerender } = render(<CalorieNeedsSection patient={patient()} />);
-    await turnOn();
-    await enterMeasurements('170', '65');
+    const { rerender } = render(
+      <CalorieNeedsSection
+        patient={patient({ nutritionEnabled: true, heightCm: 170, weightKg: 65 })}
+      />
+    );
+    expect(screen.getByLabelText('키 (cm)')).toHaveValue(170);
 
     rerender(<CalorieNeedsSection patient={patient({ id: 'p2', name: '성춘향', sex: 'F' })} />);
 
@@ -106,5 +109,62 @@ describe('CalorieNeedsSection', () => {
       'false'
     );
     expect(screen.queryByLabelText('키 (cm)')).not.toBeInTheDocument();
+  });
+
+  it('opens with what was saved for this patient', () => {
+    render(
+      <CalorieNeedsSection
+        patient={patient({
+          nutritionEnabled: true,
+          heightCm: 170,
+          weightKg: 65,
+          nutritionActivityFactorId: 'out-of-bed',
+          nutritionInjuryFactorId: 'fever',
+        })}
+      />
+    );
+
+    expect(screen.getByLabelText('키 (cm)')).toHaveValue(170);
+    expect(screen.getByLabelText('몸무게 (kg)')).toHaveValue(65);
+    expect(screen.getByLabelText('활동계수')).toHaveValue('out-of-bed');
+    // 1367.5 × 1.3 × 1.3 = 2311
+    expect(screen.getByText('2,311')).toBeInTheDocument();
+  });
+
+  it('saves the measurements and the switch state together', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<CalorieNeedsSection patient={patient()} onSave={onSave} />);
+
+    await turnOn();
+    await enterMeasurements('170', '65');
+    await userEvent.selectOptions(screen.getByLabelText('상해·스트레스 계수'), 'sepsis-mid');
+    await userEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    expect(onSave).toHaveBeenCalledWith({
+      heightCm: 170,
+      weightKg: 65,
+      nutritionEnabled: true,
+      nutritionActivityFactorId: 'bedridden',
+      nutritionInjuryFactorId: 'sepsis-mid',
+    });
+  });
+
+  it('keeps the save button quiet until something changes', async () => {
+    const onSave = vi.fn();
+    render(
+      <CalorieNeedsSection
+        patient={patient({ nutritionEnabled: true, heightCm: 170, weightKg: 65 })}
+        onSave={onSave}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: '저장' })).toBeDisabled();
+    expect(screen.getByText('저장됨')).toBeInTheDocument();
+
+    await userEvent.clear(screen.getByLabelText('몸무게 (kg)'));
+    await userEvent.type(screen.getByLabelText('몸무게 (kg)'), '70');
+
+    expect(screen.getByText('미저장')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '저장' })).toBeEnabled();
   });
 });

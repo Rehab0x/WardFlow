@@ -32,6 +32,7 @@ export function PatientWorkspace({
   onEditPatient,
   onChartingDraftChange,
   onSaveStandingOrders,
+  onSaveNutrition,
   onAddNote,
   onRemoveNote,
   onAddAntibiotic,
@@ -122,6 +123,7 @@ export function PatientWorkspace({
               onOpenTab={handleTabChange}
               onDirtyChange={setDirty}
               onSaveStandingOrders={onSaveStandingOrders}
+              onSaveNutrition={onSaveNutrition}
             />
           )}
           {tab === 'charting' && (

@@ -29,6 +29,11 @@ export function fromDomainPatient(patient: DomainPatient): ViewPatient {
     guardianExplanation: patient.guardianExplanation,
     etc: patient.etc,
     standingOrders: patient.standingOrders,
+    heightCm: patient.heightCm,
+    weightKg: patient.weightKg,
+    nutritionEnabled: patient.nutritionEnabled,
+    nutritionActivityFactorId: patient.nutritionActivityFactorId,
+    nutritionInjuryFactorId: patient.nutritionInjuryFactorId,
     createdAt: patient.createdAt,
     updatedAt: patient.updatedAt,
   };
@@ -60,6 +65,11 @@ export function toDomainPatientCreateInput(patient: Omit<ViewPatient, 'id' | 'cr
     guardianExplanation: patient.guardianExplanation,
     etc: patient.etc,
     standingOrders: patient.standingOrders,
+    heightCm: patient.heightCm,
+    weightKg: patient.weightKg,
+    nutritionEnabled: patient.nutritionEnabled,
+    nutritionActivityFactorId: patient.nutritionActivityFactorId,
+    nutritionInjuryFactorId: patient.nutritionInjuryFactorId,
   };
 }
 
@@ -88,6 +98,11 @@ export function toDomainPatientUpdateInput(updates: Partial<ViewPatient>): Patie
     guardianExplanation: updates.guardianExplanation,
     etc: updates.etc,
     standingOrders: updates.standingOrders,
+    heightCm: updates.heightCm,
+    weightKg: updates.weightKg,
+    nutritionEnabled: updates.nutritionEnabled,
+    nutritionActivityFactorId: updates.nutritionActivityFactorId,
+    nutritionInjuryFactorId: updates.nutritionInjuryFactorId,
   };
 }
 

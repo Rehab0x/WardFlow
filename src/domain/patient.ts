@@ -29,6 +29,16 @@ export interface Patient {
   etc: string;
   /** 지시오더 — 처방마다 갱신하는 간호 지시 묶음 */
   standingOrders: string;
+  /** 키(cm) — 필요열량 계산 등에 쓴다. 측정 전이면 비어 있다 */
+  heightCm?: number;
+  /** 체중(kg) */
+  weightKg?: number;
+  /** 요약 탭 필요열량 박스를 켜 둔 환자인지 */
+  nutritionEnabled?: boolean;
+  /** 활동계수 선택 키 (`features/nutrition/calorieNeeds`의 id) */
+  nutritionActivityFactorId?: string;
+  /** 상해·스트레스 계수 선택 키 */
+  nutritionInjuryFactorId?: string;
   createdAt: Date;
   updatedAt: Date;
 }

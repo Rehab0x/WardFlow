@@ -7,6 +7,7 @@ import { AiActionPanel } from '@/components/ai/AiActionPanel';
 import { EvidencePanel } from '@/components/ai/EvidencePanel';
 import { generateHandoff } from '@/services/aiService';
 import type { Patient } from '@/types/patient';
+import type { PatientWorkspaceProps } from '../types';
 import type { BriefingData } from '@/services/briefingService';
 import { calculateAge } from '@/utils/dateUtils';
 import { buildHandoffLines, buildLabLines, buildMedicationLines, getPatientRows } from '../workspaceData';
@@ -19,12 +20,14 @@ export function OverviewTab({
   data,
   onOpenTab,
   onSaveStandingOrders,
+  onSaveNutrition,
   onDirtyChange,
 }: {
   patient: Patient;
   data: BriefingData;
   onOpenTab: (tab: WorkspaceTabId) => void;
   onSaveStandingOrders?: (text: string) => void | Promise<void>;
+  onSaveNutrition?: PatientWorkspaceProps['onSaveNutrition'];
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const rows = useMemo(() => getPatientRows(patient.id, data), [patient.id, data]);
@@ -71,7 +74,7 @@ export function OverviewTab({
         onSave={onSaveStandingOrders}
         onDirtyChange={onDirtyChange}
       />
-      <CalorieNeedsSection patient={patient} />
+      <CalorieNeedsSection patient={patient} onSave={onSaveNutrition} />
       <div className="grid gap-3 lg:grid-cols-2">
         <DataSection title="차팅 요약">
           <ClinicalRow

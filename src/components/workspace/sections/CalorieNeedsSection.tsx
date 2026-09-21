@@ -20,28 +20,89 @@ import { cn } from '@/lib/utils';
  * 모든 환자에게 필요한 값이 아니라 영양 처방을 낼 때만 보는 값이라,
  * 평소에는 접어 두고 스위치를 켠 환자에서만 입력칸을 연다.
  *
- * 입력값은 저장하지 않는다 — 브라우저 저장소는 UI 편의 상태만 두는 것이
- * 이 프로젝트의 규칙이고(키·체중은 임상 데이터다), 서버에 남기려면 컬럼이 필요하다.
+ * 키·체중은 환자마다 다시 입력할 값이 아니므로 서버에 저장한다(`onSave`).
+ * 브라우저 저장소를 쓰지 않는 이유는 키·체중이 UI 상태가 아니라 임상 데이터이기 때문이다.
  */
-export function CalorieNeedsSection({ patient }: { patient: Patient }) {
-  const [enabled, setEnabled] = useState(false);
-  const [heightText, setHeightText] = useState('');
-  const [weightText, setWeightText] = useState('');
-  const [activityId, setActivityId] = useState(DEFAULT_ACTIVITY_FACTOR_ID);
-  const [injuryId, setInjuryId] = useState(DEFAULT_INJURY_FACTOR_ID);
+export function CalorieNeedsSection({
+  patient,
+  onSave,
+}: {
+  patient: Patient;
+  onSave?: (input: {
+    heightCm?: number;
+    weightKg?: number;
+    nutritionEnabled: boolean;
+    nutritionActivityFactorId: string;
+    nutritionInjuryFactorId: string;
+  }) => void | Promise<void>;
+}) {
+  const saved = useMemo(
+    () => ({
+      enabled: patient.nutritionEnabled ?? false,
+      heightText: patient.heightCm === undefined ? '' : String(patient.heightCm),
+      weightText: patient.weightKg === undefined ? '' : String(patient.weightKg),
+      activityId: patient.nutritionActivityFactorId ?? DEFAULT_ACTIVITY_FACTOR_ID,
+      injuryId: patient.nutritionInjuryFactorId ?? DEFAULT_INJURY_FACTOR_ID,
+    }),
+    [
+      patient.heightCm,
+      patient.nutritionActivityFactorId,
+      patient.nutritionEnabled,
+      patient.nutritionInjuryFactorId,
+      patient.weightKg,
+    ]
+  );
+
+  const [enabled, setEnabled] = useState(saved.enabled);
+  const [heightText, setHeightText] = useState(saved.heightText);
+  const [weightText, setWeightText] = useState(saved.weightText);
+  const [activityId, setActivityId] = useState(saved.activityId);
+  const [injuryId, setInjuryId] = useState(saved.injuryId);
   const [stepsOpen, setStepsOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const ageYears = useMemo(() => calculateAge(patient.birthDate), [patient.birthDate]);
 
-  // 환자를 바꾸면 이전 환자의 키·체중이 남아 있으면 안 된다.
+  // 환자를 바꾸거나 저장이 반영되면 서버 값으로 되돌린다.
+  // (이전 환자의 키·체중이 남아 있으면 안 된다.)
   useEffect(() => {
-    setEnabled(false);
-    setHeightText('');
-    setWeightText('');
-    setActivityId(DEFAULT_ACTIVITY_FACTOR_ID);
-    setInjuryId(DEFAULT_INJURY_FACTOR_ID);
+    setEnabled(saved.enabled);
+    setHeightText(saved.heightText);
+    setWeightText(saved.weightText);
+    setActivityId(saved.activityId);
+    setInjuryId(saved.injuryId);
     setStepsOpen(false);
-  }, [patient.id]);
+  }, [patient.id, saved]);
+
+  const isDirty =
+    enabled !== saved.enabled ||
+    heightText.trim() !== saved.heightText ||
+    weightText.trim() !== saved.weightText ||
+    activityId !== saved.activityId ||
+    injuryId !== saved.injuryId;
+
+  const toNumber = (text: string) => {
+    const value = Number(text.trim());
+    return text.trim() !== '' && Number.isFinite(value) ? value : undefined;
+  };
+
+  const save = async () => {
+    if (!isDirty || saving) return;
+    setSaving(true);
+    try {
+      await onSave?.({
+        heightCm: toNumber(heightText),
+        weightKg: toNumber(weightText),
+        nutritionEnabled: enabled,
+        nutritionActivityFactorId: activityId,
+        nutritionInjuryFactorId: injuryId,
+      });
+    } catch {
+      return;
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const result = useMemo(() => {
     if (!enabled) return null;
@@ -61,24 +122,41 @@ export function CalorieNeedsSection({ patient }: { patient: Patient }) {
     <DataSection
       title="1일 필요열량"
       action={
-        <button
-          type="button"
-          role="switch"
-          aria-checked={enabled}
-          aria-label="1일 필요열량 계산"
-          onClick={() => setEnabled((current) => !current)}
-          className={cn(
-            'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
-            enabled ? 'bg-zinc-900' : 'bg-zinc-200'
+        <div className="flex items-center gap-2">
+          {enabled && onSave && (
+            <>
+              <span className={cn('text-[11px]', isDirty ? 'text-amber-600' : 'text-zinc-400')}>
+                {isDirty ? '미저장' : '저장됨'}
+              </span>
+              <button
+                type="button"
+                onClick={save}
+                disabled={!isDirty || saving}
+                className="rounded-md bg-zinc-900 px-2 py-1 text-[11px] font-medium text-white disabled:bg-zinc-300"
+              >
+                {saving ? '저장 중' : '저장'}
+              </button>
+            </>
           )}
-        >
-          <span
+          <button
+            type="button"
+            role="switch"
+            aria-checked={enabled}
+            aria-label="1일 필요열량 계산"
+            onClick={() => setEnabled((current) => !current)}
             className={cn(
-              'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-              enabled ? 'translate-x-[18px]' : 'translate-x-0.5'
+              'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
+              enabled ? 'bg-zinc-900' : 'bg-zinc-200'
             )}
-          />
-        </button>
+          >
+            <span
+              className={cn(
+                'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                enabled ? 'translate-x-[18px]' : 'translate-x-0.5'
+              )}
+            />
+          </button>
+        </div>
       }
     >
       {!enabled ? (
