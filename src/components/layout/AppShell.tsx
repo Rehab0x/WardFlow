@@ -11,6 +11,10 @@ interface AppShellProps {
   userName?: string;
   selectedPatientId?: string;
   patientIndicators?: Record<string, PatientRailIndicators>;
+  railBasisDate?: Date | null;
+  railBasisLoading?: boolean;
+  railBasisError?: string | null;
+  onRailBasisDateChange?: (date: Date | null) => void;
   searchValue?: string;
   activeMobileAction?: 'today' | 'rounding' | 'patients' | 'settings';
   children: ReactNode;
@@ -30,6 +34,10 @@ export function AppShell({
   userName,
   selectedPatientId,
   patientIndicators,
+  railBasisDate,
+  railBasisLoading,
+  railBasisError,
+  onRailBasisDateChange,
   searchValue,
   activeMobileAction,
   children,
@@ -121,6 +129,10 @@ export function AppShell({
           patients={patients}
           selectedPatientId={selectedPatientId}
           patientIndicators={patientIndicators}
+          basisDate={railBasisDate}
+          basisLoading={railBasisLoading}
+          basisError={railBasisError}
+          onBasisDateChange={onRailBasisDateChange}
           onPatientSelect={handlePatientSelect}
           onAddPatient={handleAddPatient}
           className="hidden md:flex"
@@ -163,6 +175,10 @@ export function AppShell({
               patients={patients}
               selectedPatientId={selectedPatientId}
               patientIndicators={patientIndicators}
+              basisDate={railBasisDate}
+              basisLoading={railBasisLoading}
+              basisError={railBasisError}
+              onBasisDateChange={onRailBasisDateChange}
               onPatientSelect={handlePatientSelect}
               onAddPatient={handleAddPatient}
               className="min-h-0 w-full border-r-0"

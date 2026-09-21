@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Plus, X } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
 import { memo, useCallback, useDeferredValue, useMemo, useState } from 'react';
 import type { Patient } from '@/types/patient';
 import { cn } from '@/lib/utils';
@@ -22,6 +22,11 @@ interface PatientRailProps {
   patients: Patient[];
   selectedPatientId?: string;
   patientIndicators?: Record<string, PatientRailIndicators>;
+  /** 할 일·메모 필터의 기준일. null이면 오늘 */
+  basisDate?: Date | null;
+  basisLoading?: boolean;
+  basisError?: string | null;
+  onBasisDateChange?: (date: Date | null) => void;
   onPatientSelect?: (patientId: string) => void;
   onAddPatient?: () => boolean | void;
   className?: string;
@@ -31,6 +36,10 @@ export function PatientRail({
   patients,
   selectedPatientId,
   patientIndicators = {},
+  basisDate = null,
+  basisLoading = false,
+  basisError = null,
+  onBasisDateChange,
   onPatientSelect,
   onAddPatient,
   className,
@@ -199,6 +208,14 @@ export function PatientRail({
             </button>
           ))}
         </div>
+        {onBasisDateChange && (
+          <BasisDateRow
+            basisDate={basisDate}
+            loading={basisLoading}
+            error={basisError}
+            onChange={onBasisDateChange}
+          />
+        )}
         {(query || filter !== 'all') && (
           <div className="mt-2 flex h-5 items-center justify-between px-0.5 text-[11px] text-zinc-400">
             <span>표시 {visibleCount}</span>
@@ -362,4 +379,97 @@ const PatientRowItem = memo(function PatientRowItem({
 
 function formatRailDate(date: Date) {
   return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
+}
+
+/** 기준일 한 줄 — 할 일·메모를 어느 날짜로 볼지 고른다. */
+function BasisDateRow({
+  basisDate,
+  loading,
+  error,
+  onChange,
+}: {
+  basisDate: Date | null;
+  loading: boolean;
+  error?: string | null;
+  onChange: (date: Date | null) => void;
+}) {
+  const active = basisDate !== null;
+  const value = toDateInputValue(basisDate ?? new Date());
+
+  const shift = (days: number) => {
+    const base = basisDate ?? new Date();
+    onChange(new Date(base.getFullYear(), base.getMonth(), base.getDate() + days));
+  };
+
+  return (
+    <div className="mt-2 space-y-1">
+      <div className="flex items-center gap-1">
+        <CalendarDays className={cn('h-3.5 w-3.5', active ? 'text-amber-600' : 'text-zinc-400')} />
+        <button
+          type="button"
+          aria-label="하루 전"
+          onClick={() => shift(-1)}
+          className="inline-flex h-6 w-5 items-center justify-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </button>
+        <input
+          type="date"
+          aria-label="기준일"
+          value={value}
+          onChange={(event) => {
+            const next = fromDateInputValue(event.target.value);
+            onChange(next);
+          }}
+          className={cn(
+            'h-6 min-w-0 flex-1 rounded border px-1 font-mono text-[11px] tabular-nums focus:outline-none focus:ring-1 focus:ring-zinc-400',
+            active ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-zinc-200 text-zinc-600'
+          )}
+        />
+        <button
+          type="button"
+          aria-label="하루 후"
+          onClick={() => shift(1)}
+          className="inline-flex h-6 w-5 items-center justify-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+        {active && (
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            className="h-6 shrink-0 rounded px-1.5 text-[11px] font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+          >
+            오늘
+          </button>
+        )}
+      </div>
+      {active && (
+        <p
+          className={cn(
+            'px-0.5 text-[10.5px] leading-4',
+            error ? 'text-red-600' : 'text-amber-700'
+          )}
+        >
+          {error ??
+            (loading
+              ? '그 날짜 기록을 불러오는 중…'
+              : '이 날짜의 메모·알림·일정 기준입니다 (항생제·Lab 제외)')}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function toDateInputValue(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+/** 날짜 입력은 비어 있을 수 있다 — 그때는 오늘로 되돌린다. */
+function fromDateInputValue(value: string): Date | null {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
 }

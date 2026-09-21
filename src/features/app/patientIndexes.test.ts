@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BriefingData } from '@/services/briefingService';
 import type { Patient } from '@/types/patient';
-import { buildPatientIndexes, buildPatientIndicators } from './patientIndexes';
+import { buildDayIndicators, buildPatientIndexes, buildPatientIndicators } from './patientIndexes';
 
 const patients = [
   { id: 'p1', name: '홍길동', roomBed: '101', status: 'active', patientType: 'admitted' } as Patient,
@@ -79,5 +79,43 @@ describe('buildPatientIndicators', () => {
 
     expect(indicators.p1).toEqual({ note: true });
     expect(indicators.p2).toEqual({ reminder: true, lab: true });
+  });
+});
+
+describe('buildDayIndicators', () => {
+  const { patientsById } = buildPatientIndexes(patients);
+
+  it('marks notes, reminders and schedules for the chosen day', () => {
+    const indicators = buildDayIndicators({
+      progressNotes: [{ patientId: 'p1' }],
+      reminders: [{ patientId: 'p2' }],
+      schedules: [{ patientId: 'p2' }],
+      patientsById,
+    });
+
+    expect(indicators.p1).toEqual({ note: true });
+    expect(indicators.p2).toEqual({ reminder: true, schedule: true });
+  });
+
+  it('leaves out antibiotic and lab — they are not tied to a past day', () => {
+    const indicators = buildDayIndicators({
+      progressNotes: [{ patientId: 'p1' }],
+      reminders: [],
+      schedules: [],
+      patientsById,
+    });
+
+    expect(indicators.p1).not.toHaveProperty('antibiotic');
+    expect(indicators.p1).not.toHaveProperty('lab');
+  });
+
+  it('ignores rows for patients who are not on the list', () => {
+    const indicators = buildDayIndicators({
+      progressNotes: [{ patientId: 'gone' }],
+      reminders: [],
+      schedules: [],
+      patientsById,
+    });
+    expect(indicators).toEqual({});
   });
 });

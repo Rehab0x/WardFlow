@@ -20,6 +20,7 @@ import { usePatientStore } from '@/stores/usePatientStore';
 import { useAlertEvaluation } from '@/hooks/useAlertEvaluation';
 import { useAlertStore } from '@/stores/useAlertStore';
 import { useBriefingData } from '@/hooks/useBriefingData';
+import { useRailBasisDate } from '@/hooks/useRailBasisDate';
 import { useClinicalWriters } from '@/hooks/useClinicalWriters';
 import { usePatientWriters } from '@/hooks/usePatientWriters';
 import type { BulkImportResult } from '@/services/bulkLabImport';
@@ -111,6 +112,9 @@ export default function AppPage() {
     () => buildPatientIndicators(patientListIndexes.patientsById, displayedBriefingData),
     [patientListIndexes.patientsById, displayedBriefingData]
   );
+
+  // 환자 목록의 할 일·메모를 다른 날짜 기준으로 볼 수 있게 한다.
+  const rail = useRailBasisDate({ patients, todayIndicators: patientIndicators });
 
   const confirmWorkspaceNavigation = useCallback(
     () => !workspaceUnsaved || window.confirm('저장하지 않은 변경이 있습니다. 이동할까요?'),
@@ -310,7 +314,11 @@ export default function AppPage() {
       patients={patients}
       userName={currentUser?.name}
       selectedPatientId={selectedPatientId ?? undefined}
-      patientIndicators={patientIndicators}
+      patientIndicators={rail.indicators}
+      railBasisDate={rail.basisDate}
+      railBasisLoading={rail.loading}
+      railBasisError={rail.error}
+      onRailBasisDateChange={rail.setBasisDate}
       searchValue={searchQuery}
       activeMobileAction={
         selectedPatientId ? 'patients' : mainView === 'rounding' ? 'rounding' : 'today'

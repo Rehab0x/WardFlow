@@ -276,3 +276,33 @@ function buildPatientSummary(patients: Array<Pick<BriefingPatient, 'status' | 'p
 
   return { total, admitted, consult };
 }
+
+/**
+ * 하루치 신호만 모아 온다 — 환자 목록의 기준일을 오늘이 아닌 날로 바꿨을 때.
+ *
+ * Today 브리핑을 통째로 다시 부르지 않는다. 필요한 것은 그 날짜의
+ * 메모·알림·일정뿐이고, 항생제·Lab은 날짜에 묶이는 신호가 아니다.
+ */
+export async function fetchDayScopedNotes(
+  patientIds: string[],
+  date: Date
+): Promise<{
+  reminders: Array<{ patientId: string }>;
+  progressNotes: Array<{ patientId: string }>;
+  schedules: Array<{ patientId: string }>;
+}> {
+  if (patientIds.length === 0) {
+    return { reminders: [], progressNotes: [], schedules: [] };
+  }
+
+  const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+
+  const [reminders, progressNotes, schedules] = await Promise.all([
+    listReminderNotesByPatientIdsAndAlertDate(patientIds, date),
+    listProgressNotesByPatientIdsCreatedBetween(patientIds, dayStart, dayEnd),
+    listSchedulesByPatientIdsAndDate(patientIds, date),
+  ]);
+
+  return { reminders, progressNotes, schedules };
+}

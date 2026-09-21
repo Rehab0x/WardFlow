@@ -97,3 +97,29 @@ export function buildPatientIndicators(
 
   return indicators;
 }
+
+/**
+ * 특정 날짜 기준 인디케이터 — 환자 목록의 기준일을 바꿀 때 쓴다.
+ *
+ * 날짜에 묶이는 신호만 담는다(메모·알림·일정). 항생제와 Lab은 "지금 상태"라
+ * 과거 날짜에 붙이면 뜻이 흐려지므로 넣지 않는다.
+ */
+export function buildDayIndicators(input: {
+  reminders: Array<{ patientId: string }>;
+  progressNotes: Array<{ patientId: string }>;
+  schedules: Array<{ patientId: string }>;
+  /** 현재 목록에 있는 환자만 남긴다 */
+  patientsById: Map<string, Patient>;
+}): Record<string, PatientRailIndicators> {
+  const indicators: Record<string, PatientRailIndicators> = {};
+  const mark = (patientId: string, key: 'note' | 'reminder' | 'schedule') => {
+    if (!input.patientsById.has(patientId)) return;
+    (indicators[patientId] ??= {})[key] = true;
+  };
+
+  for (const item of input.progressNotes) mark(item.patientId, 'note');
+  for (const item of input.reminders) mark(item.patientId, 'reminder');
+  for (const item of input.schedules) mark(item.patientId, 'schedule');
+
+  return indicators;
+}

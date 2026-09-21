@@ -23,10 +23,24 @@ const patients = [
   patient({ id: 'p3', name: '박민수', roomBed: '103', attention: true }),
 ];
 
-function renderRail(indicators: Record<string, { note?: boolean; reminder?: boolean }> = {}) {
+function renderRail(
+  indicators: Record<string, { note?: boolean; reminder?: boolean }> = {},
+  extra: Partial<Parameters<typeof PatientRail>[0]> = {}
+) {
   render(
-    <PatientRail patients={patients} patientIndicators={indicators} onPatientSelect={vi.fn()} />
+    <PatientRail
+      patients={patients}
+      patientIndicators={indicators}
+      onPatientSelect={vi.fn()}
+      {...extra}
+    />
   );
+}
+
+function dateInputValue(date: Date) {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 describe('PatientRail 메모 필터', () => {
@@ -64,5 +78,71 @@ describe('PatientRail 메모 필터', () => {
   it('marks the row itself so it is visible in the 전체 list too', () => {
     renderRail({ p1: { note: true } });
     expect(screen.getByLabelText(/101 홍길동.*오늘 메모/)).toBeInTheDocument();
+  });
+
+});
+
+describe('PatientRail 기준일', () => {
+  it('is hidden unless the page can handle a date change', () => {
+    renderRail();
+    expect(screen.queryByLabelText('기준일')).not.toBeInTheDocument();
+  });
+
+  it('starts on today and steps back a day', async () => {
+    const onBasisDateChange = vi.fn();
+    renderRail({}, { onBasisDateChange });
+
+    const today = new Date();
+    expect(screen.getByLabelText('기준일')).toHaveValue(dateInputValue(today));
+
+    await userEvent.click(screen.getByRole('button', { name: '하루 전' }));
+
+    const asked = onBasisDateChange.mock.calls[0]![0] as Date;
+    const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+    expect(dateInputValue(asked)).toBe(dateInputValue(yesterday));
+  });
+
+  it('explains what the shifted basis covers and offers a way back', async () => {
+    const onBasisDateChange = vi.fn();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    renderRail({}, { basisDate: yesterday, onBasisDateChange });
+
+    expect(screen.getByText(/메모·알림·일정 기준/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: '오늘' }));
+    expect(onBasisDateChange).toHaveBeenCalledWith(null);
+  });
+
+  it('shows loading and error in place of the hint', () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const { unmount } = render(
+      <PatientRail
+        patients={patients}
+        onPatientSelect={vi.fn()}
+        basisDate={yesterday}
+        basisLoading
+        onBasisDateChange={vi.fn()}
+      />
+    );
+    expect(screen.getByText(/불러오는 중/)).toBeInTheDocument();
+    unmount();
+
+    renderRail({}, { basisDate: yesterday, basisError: '불러오지 못했습니다.', onBasisDateChange: vi.fn() });
+    expect(screen.getByText('불러오지 못했습니다.')).toBeInTheDocument();
+  });
+
+  it('filters by the indicators it is given, whatever date they came from', async () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    // 어제 기준으로 받아 온 인디케이터
+    renderRail({ p2: { note: true } }, { basisDate: yesterday, onBasisDateChange: vi.fn() });
+
+    await userEvent.click(screen.getByRole('button', { name: /^메모 \d/ }));
+
+    expect(screen.getByText('이영희')).toBeInTheDocument();
+    expect(screen.queryByText('홍길동')).not.toBeInTheDocument();
   });
 });
