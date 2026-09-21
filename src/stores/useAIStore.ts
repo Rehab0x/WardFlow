@@ -8,6 +8,14 @@ export interface LLMModelOption {
   name: string;
 }
 
+/**
+ * 제공사별 모델 목록.
+ *
+ * 모델은 자주 바뀌고 옛 모델은 조용히 은퇴한다. 목록에서 모델을 빼면
+ * **이미 그 모델을 저장해 둔 브라우저**가 문제가 되므로(localStorage에 남는다),
+ * 하이드레이션 때 목록에 없는 모델은 해당 제공사의 기본값으로 되돌린다.
+ * 가격은 자주 바뀌니 여기 적지 않는다 — 각 제공사 요금 페이지를 볼 것.
+ */
 export const LLM_PROVIDERS: Record<LLMProvider, {
   name: string;
   models: LLMModelOption[];
@@ -16,32 +24,30 @@ export const LLM_PROVIDERS: Record<LLMProvider, {
   claude: {
     name: 'Claude (Anthropic)',
     models: [
-      { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4' },
-      { id: 'claude-haiku-4-20250414', name: 'Claude Haiku 4' },
+      { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' },
+      { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5' },
+      { id: 'claude-opus-5', name: 'Claude Opus 5' },
     ],
     apiUrl: 'https://api.anthropic.com/v1/messages',
   },
   gpt: {
     name: 'GPT (OpenAI)',
-    models: [
-      { id: 'gpt-4o', name: 'GPT-4o' },
-      { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
-    ],
+    models: [{ id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna' }],
     apiUrl: 'https://api.openai.com/v1/chat/completions',
   },
   gemini: {
     name: 'Gemini (Google)',
     models: [
-      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
-      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+      { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash-Lite' },
+      { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite' },
     ],
     apiUrl: 'https://generativelanguage.googleapis.com/v1beta/models',
   },
   grok: {
     name: 'Grok (xAI)',
     models: [
-      { id: 'grok-3', name: 'Grok 3' },
-      { id: 'grok-3-mini', name: 'Grok 3 Mini' },
+      { id: 'grok-4.6', name: 'Grok 4.6' },
+      { id: 'grok-4.3', name: 'Grok 4.3' },
     ],
     apiUrl: 'https://api.x.ai/v1/chat/completions',
   },
@@ -78,7 +84,7 @@ export const useAIStore = create<AIStore>()(
     (set, get) => ({
       provider: 'claude',
       apiKey: '',
-      model: 'claude-sonnet-4-20250514',
+      model: getDefaultModel('claude'),
       whisperApiKey: '',
 
       setProvider: (provider) => {
@@ -107,6 +113,14 @@ export const useAIStore = create<AIStore>()(
     }),
     {
       name: 'wardflow-ai-settings',
+      // 저장돼 있던 모델이 목록에서 사라졌으면(은퇴·교체) 기본값으로 되돌린다.
+      // 그대로 두면 설정 화면에는 아무것도 선택돼 있지 않은데 호출은 옛 모델로 나간다.
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        if (!isModelForProvider(state.provider, state.model)) {
+          state.model = getDefaultModel(state.provider);
+        }
+      },
     }
   )
 );
