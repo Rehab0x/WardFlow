@@ -419,9 +419,12 @@ AI 음성 질의 → 알림 고도화 → 간호사 대화 SOAP 분리 → 근�
 > **배경 (사용자)**: 목록이 오래됐다. 비용 대비 효율이 좋은 모델로 바꾼다.
 
 - [x] GPT — `gpt-4o` / `gpt-4o-mini` → **`gpt-5.6-luna`** (사용자 지정, 공식 문서에서 ID 확인)
-- [x] Gemini — `gemini-2.5-flash` / `-pro` → **`gemini-3.5-flash-lite`** + **`gemini-2.5-flash-lite`** (사용자 지정)
+- [x] Gemini — `gemini-2.5-flash` / `-pro` → **`gemini-3.1-flash-lite`** + **`gemini-3.5-flash-lite`**
+  - `gemini-2.5-flash-lite`는 실사용에서 **사용 불가 응답** 확인(2026-09-21) → 3.1로 교체
 - [x] Claude — `claude-sonnet-4` / `haiku-4` → `claude-sonnet-5` / `claude-haiku-4-5-20251001` / `claude-opus-5`
-- [x] Grok — `grok-3` / `grok-3-mini` → `grok-4.6` / `grok-4.3` (docs.x.ai에서 ID 확인)
+- [x] Grok — `grok-3` / `grok-3-mini` → `grok-4.3`(기본) / `grok-4.6`
+  - 사용자가 요청한 `grok-4.1-fast`는 **2026-05-15 은퇴**했다(요청이 `grok-4.3`으로 리다이렉트되고
+    4.3 요금이 청구된다). 지금 x.ai 목록에서 가장 싼 것이 4.3이라 그걸 기본으로 뒀다
 - [x] **은퇴 모델 방어** — 저장돼 있던 모델이 목록에서 빠지면 하이드레이션 때 기본값으로 되돌린다.
   없으면 설정 화면엔 아무것도 선택 안 된 채 **호출은 옛 모델로 나간다** (localStorage 잔존)
 - [x] 테스트 5건 — `useAIStore.test.ts` (모델 전환·은퇴 모델 복구·ID 유효성)
@@ -707,3 +710,4 @@ AI 음성 질의 → 알림 고도화 → 간호사 대화 SOAP 분리 → 근�
 | 2026-09-20 | **환자 목록 '메모' 필터 추가 (2.7)**: 대화 정리 SOAP이 `progress` 메모로 저장되므로, 금일 메모 보유 환자를 따로 거를 수 있게 했다. 판정은 브리핑의 `progressNotes`(오늘 작성분)를 그대로 쓰므로 추가 쿼리가 없다. **할 일 카운트에는 섞지 않았다** — 메모는 이미 한 일이고, 할 일과 섞이면 둘 다 의미가 흐려진다. | ✅ 완료 | @Coder-UI |
 | 2026-09-20 | **앱 아이콘 재디자인 (2.8)**: 기존 아이콘은 W·심전도선·FLOW 글자 셋이 겹쳐 작은 크기에서 뭉갰다. 맥박이 그리는 W 하나로 줄이고 글자를 뺐다. 시안 3종 중 사용자가 **다크 + 티얼 W**를 선택. 생성은 `scripts/generate-icons.mjs` 한 곳에서 하며(`npm run icons`), rounded/square/maskable 세 변형을 따로 낸다 — iOS는 자체 마스크가 있어 정사각이 맞고, 안드로이드 적응형은 바깥 20%가 잘려 마크를 72%로 줄여야 한다(기존에는 512 하나를 any·maskable에 겸용해 모서리가 잘렸다). 상단바 청진기 아이콘도 같은 마크로 교체. | ✅ 완료 | @Coder-UI |
 | 2026-09-21 | **LLM 모델 목록 갱신 (2.10)**: GPT→`gpt-5.6-luna`, Gemini→`gemini-3.5-flash-lite`/`gemini-2.5-flash-lite`(사용자 지정), Claude→Sonnet 5/Haiku 4.5/Opus 5, Grok→4.6/4.3. 모델 ID는 각 제공사 공식 문서에서 확인했다. **가격은 코드에 적지 않았다** — 자주 바뀌어 금방 틀린 정보가 된다. 목록에서 모델을 빼면 그 모델을 저장해 둔 브라우저가 문제라, `onRehydrateStorage`에서 기본값으로 되돌리도록 했다. | ✅ 완료 | @Coder-Logic |
+| 2026-09-21 | **모델 목록 2차 수정**: `gemini-2.5-flash-lite`가 사용 불가(사용자 확인) → `gemini-3.1-flash-lite`로 교체. 요청받은 `grok-4.1-fast`는 x.ai 공식 문서상 **2026-05-15 은퇴**해 `grok-4.3`으로 리다이렉트되므로(4.3 요금 청구) 처음부터 `grok-4.3`을 기본으로 넣었다. 가격 비교 사이트의 정보가 은퇴 모델을 계속 싣고 있어, **모델 ID는 제공사 공식 문서에서만 확인할 것**. | ✅ 완료 | @Coder-Logic |

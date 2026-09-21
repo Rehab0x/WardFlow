@@ -38,16 +38,18 @@ export const LLM_PROVIDERS: Record<LLMProvider, {
   gemini: {
     name: 'Gemini (Google)',
     models: [
+      { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash-Lite' },
       { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash-Lite' },
-      { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite' },
     ],
     apiUrl: 'https://generativelanguage.googleapis.com/v1beta/models',
   },
   grok: {
     name: 'Grok (xAI)',
     models: [
-      { id: 'grok-4.6', name: 'Grok 4.6' },
+      // grok-4-1-fast 계열은 2026-05-15에 은퇴했고 요청이 grok-4.3으로 넘어간다.
+      // 현재 목록에서 가장 싼 것이 4.3이다.
       { id: 'grok-4.3', name: 'Grok 4.3' },
+      { id: 'grok-4.6', name: 'Grok 4.6' },
     ],
     apiUrl: 'https://api.x.ai/v1/chat/completions',
   },

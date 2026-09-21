@@ -26,7 +26,7 @@ describe('useAIStore', () => {
 
   it('switches to the new provider default when the current model belongs elsewhere', () => {
     useAIStore.getState().setProvider('gemini');
-    expect(useAIStore.getState().model).toBe('gemini-3.5-flash-lite');
+    expect(useAIStore.getState().model).toBe('gemini-3.1-flash-lite');
   });
 
   it('drops a model that was retired from the list', () => {
