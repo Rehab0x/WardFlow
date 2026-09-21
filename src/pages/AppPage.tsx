@@ -184,6 +184,7 @@ export default function AppPage() {
     handleChartingSave,
     handleSaveStandingOrders,
     handleSaveNutrition,
+    handleSaveImportantNotes,
     handleAddNote,
     handleAddNoteForPatient,
     handleRemoveNote,
@@ -350,6 +351,7 @@ export default function AppPage() {
           onChartingDraftChange={handleChartingSave}
           onSaveStandingOrders={handleSaveStandingOrders}
           onSaveNutrition={handleSaveNutrition}
+          onSaveImportantNotes={handleSaveImportantNotes}
           onAddNote={handleAddNote}
           onRemoveNote={handleRemoveNote}
           onAddAntibiotic={handleAddAntibiotic}

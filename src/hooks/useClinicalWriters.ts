@@ -87,6 +87,13 @@ export function useClinicalWriters({
     }, '지시오더를 저장하지 못했습니다.');
   };
 
+  const handleSaveImportantNotes = async (text: string) => {
+    if (!selectedPatient) return;
+    await runWrite(async () => {
+      await updatePatient(selectedPatient.id, { importantNotes: text });
+    }, '중요사항을 저장하지 못했습니다.');
+  };
+
   const handleSaveNutrition = async (input: {
     heightCm?: number;
     weightKg?: number;
@@ -386,6 +393,7 @@ export function useClinicalWriters({
       handleChartingSave,
       handleSaveStandingOrders,
       handleSaveNutrition,
+      handleSaveImportantNotes,
       handleAddNote,
       handleAddNoteForPatient,
       handleRemoveNote,

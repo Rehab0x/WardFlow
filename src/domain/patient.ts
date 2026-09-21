@@ -27,6 +27,8 @@ export interface Patient {
   plan: string;
   guardianExplanation: string;
   etc: string;
+  /** 환자별 중요사항 — 환자를 열 때 가장 먼저 보이는 메모 */
+  importantNotes?: string;
   /** 지시오더 — 처방마다 갱신하는 간호 지시 묶음 */
   standingOrders: string;
   /** 키(cm) — 필요열량 계산 등에 쓴다. 측정 전이면 비어 있다 */

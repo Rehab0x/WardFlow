@@ -42,6 +42,9 @@ export interface Patient {
   guardianExplanation: string;
   etc: string;
 
+  /** 환자별 중요사항 — 요약 탭 최상단에 표시 */
+  importantNotes?: string;
+
   /** 지시오더 — 처방마다 갱신하는 간호 지시 묶음 (요약 탭에서 편집) */
   standingOrders: string;
 

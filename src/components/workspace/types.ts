@@ -103,6 +103,8 @@ export interface PatientWorkspaceProps {
   onChartingDraftChange?: (draft: ChartingDraft) => void | Promise<void>;
   /** 지시오더 저장 (요약 탭) */
   onSaveStandingOrders?: (text: string) => void | Promise<void>;
+  /** 중요사항 저장 (요약 탭) */
+  onSaveImportantNotes?: (text: string) => void | Promise<void>;
   /** 필요열량 입력값 저장 (요약 탭) */
   onSaveNutrition?: (input: {
     heightCm?: number;

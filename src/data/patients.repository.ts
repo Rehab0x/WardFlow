@@ -74,6 +74,7 @@ const patientColumns = `
   guardian_explanation,
   etc,
   standing_orders,
+  important_notes,
   height_cm,
   weight_kg,
   nutrition_enabled,

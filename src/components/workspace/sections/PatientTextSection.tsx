@@ -3,20 +3,33 @@ import { CopyBar } from '@/components/clinical/CopyBar';
 import { DataSection } from '@/components/clinical/DataSection';
 import { formatClockTime } from '@/components/clinical/dateLabels';
 import { TemplatePopup } from '@/components/charting/TemplatePopup';
+import type { TemplateField } from '@/services/templateService';
 import { ChartField } from '../controls';
 
 /**
- * 지시오더 — 처방할 때마다 다시 적어 넣는 간호 지시 묶음.
+ * 환자당 글 한 덩어리를 두는 요약 탭 박스 (중요사항 · 지시오더).
  *
- * 환자를 열면 가장 먼저 보이는 요약 탭에 둔다. 내용은 매번 통째로 갈아 끼우다시피 하므로
- * 차팅과 같은 템플릿 팝업을 붙여 붙여넣기로 채울 수 있게 했다.
+ * 저장 방식은 차팅과 같다 — 고치면 미저장 표시가 뜨고 저장 버튼을 눌러야 반영된다.
+ * 템플릿과 복사는 필요한 박스에서만 켠다(`templateField`, `copyTitle`).
  */
-export function StandingOrdersSection({
+export function PatientTextSection({
+  title,
   value,
+  placeholder,
+  rows = 6,
+  templateField,
+  copyTitle,
   onSave,
   onDirtyChange,
 }: {
+  title: string;
   value: string;
+  placeholder?: string;
+  rows?: number;
+  /** 지정하면 템플릿 팝업 버튼이 붙는다 */
+  templateField?: TemplateField;
+  /** 지정하면 복사 바가 붙는다 */
+  copyTitle?: string;
   onSave?: (text: string) => void | Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
@@ -51,18 +64,18 @@ export function StandingOrdersSection({
 
   return (
     <>
-      {templateOpen && (
+      {templateField && templateOpen && (
         <TemplatePopup
           open
-          field="standingOrders"
-          fieldLabel="지시오더"
+          field={templateField}
+          fieldLabel={title}
           currentContent={draft}
           onClose={() => setTemplateOpen(false)}
           onApply={setDraft}
         />
       )}
       <DataSection
-        title="지시오더"
+        title={title}
         action={
           <div className="flex items-center gap-2 text-[11px] text-zinc-400">
             <span className={isDirty ? 'text-amber-600' : 'text-zinc-400'}>
@@ -95,14 +108,14 @@ export function StandingOrdersSection({
           }}
         >
           <ChartField
-            label="지시오더"
+            label={title}
             value={draft}
-            rows={6}
-            placeholder="처방과 함께 넣을 지시 내용 (템플릿에서 불러올 수 있습니다)"
+            rows={rows}
+            placeholder={placeholder}
             onChange={setDraft}
-            onTemplate={() => setTemplateOpen(true)}
+            onTemplate={templateField ? () => setTemplateOpen(true) : undefined}
           />
-          <CopyBar title="지시오더 복사" text={draft} emptyText="복사할 지시오더 없음" />
+          {copyTitle && <CopyBar title={copyTitle} text={draft} emptyText="복사할 내용 없음" />}
         </div>
       </DataSection>
     </>

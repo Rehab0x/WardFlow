@@ -67,6 +67,8 @@ export interface Database {
           etc: string;
           /** 202609210001 마이그레이션으로 추가. 미적용 DB에서는 응답에 없다. */
           standing_orders?: string;
+          /** 202609210003 마이그레이션으로 추가. 미적용 DB에서는 응답에 없다. */
+          important_notes?: string;
           /** 202609210002 마이그레이션으로 추가. 미적용 DB에서는 응답에 없다. */
           height_cm?: number | null;
           weight_kg?: number | null;
@@ -103,6 +105,7 @@ export interface Database {
           guardian_explanation?: string;
           etc?: string;
           standing_orders?: string;
+          important_notes?: string;
           height_cm?: number | null;
           weight_kg?: number | null;
           nutrition_enabled?: boolean;

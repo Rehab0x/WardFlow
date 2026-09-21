@@ -12,7 +12,7 @@ import type { BriefingData } from '@/services/briefingService';
 import { calculateAge } from '@/utils/dateUtils';
 import { buildHandoffLines, buildLabLines, buildMedicationLines, getPatientRows } from '../workspaceData';
 import { CalorieNeedsSection } from '../sections/CalorieNeedsSection';
-import { StandingOrdersSection } from '../sections/StandingOrdersSection';
+import { PatientTextSection } from '../sections/PatientTextSection';
 import type { WorkspaceTabId } from '../WorkspaceTabs';
 
 export function OverviewTab({
@@ -20,6 +20,7 @@ export function OverviewTab({
   data,
   onOpenTab,
   onSaveStandingOrders,
+  onSaveImportantNotes,
   onSaveNutrition,
   onDirtyChange,
 }: {
@@ -27,6 +28,7 @@ export function OverviewTab({
   data: BriefingData;
   onOpenTab: (tab: WorkspaceTabId) => void;
   onSaveStandingOrders?: (text: string) => void | Promise<void>;
+  onSaveImportantNotes?: (text: string) => void | Promise<void>;
   onSaveNutrition?: PatientWorkspaceProps['onSaveNutrition'];
   onDirtyChange?: (dirty: boolean) => void;
 }) {
@@ -68,9 +70,21 @@ export function OverviewTab({
         text={handoffLines.join('\n')}
         emptyText="복사할 인계 내용 없음"
       />
-      {/* 처방할 때마다 손대는 내용이라 요약 탭 위쪽에 둔다. */}
-      <StandingOrdersSection
+      {/* 환자를 열었을 때 가장 먼저 봐야 하는 것부터 위에서 아래로. */}
+      <PatientTextSection
+        title="중요사항"
+        value={patient.importantNotes ?? ''}
+        placeholder="이 환자에서 놓치면 안 되는 것"
+        rows={3}
+        onSave={onSaveImportantNotes}
+        onDirtyChange={onDirtyChange}
+      />
+      <PatientTextSection
+        title="지시오더"
         value={patient.standingOrders}
+        placeholder="처방과 함께 넣을 지시 내용 (템플릿에서 불러올 수 있습니다)"
+        templateField="standingOrders"
+        copyTitle="지시오더 복사"
         onSave={onSaveStandingOrders}
         onDirtyChange={onDirtyChange}
       />

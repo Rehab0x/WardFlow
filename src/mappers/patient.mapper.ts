@@ -30,6 +30,7 @@ export function fromPatientRow(row: Tables<'patients'>): Patient {
     etc: row.etc,
     // 마이그레이션 적용 전에는 컬럼이 없어 undefined로 온다.
     standingOrders: row.standing_orders ?? '',
+    importantNotes: row.important_notes ?? undefined,
     heightCm: row.height_cm ?? undefined,
     weightKg: row.weight_kg ?? undefined,
     nutritionEnabled: row.nutrition_enabled ?? undefined,
@@ -68,6 +69,7 @@ export function toPatientInsert(input: PatientCreateInput): Inserts<'patients'> 
     // 빈 값이면 컬럼 자체를 보내지 않는다 — 마이그레이션 적용 전 DB에서도 환자 추가가 되도록.
     ...(input.standingOrders ? { standing_orders: input.standingOrders } : {}),
     // 값이 있을 때만 보낸다 — 마이그레이션 적용 전 DB에서도 나머지 저장이 되도록.
+    ...(input.importantNotes === undefined ? {} : { important_notes: input.importantNotes }),
     ...(input.heightCm === undefined ? {} : { height_cm: input.heightCm }),
     ...(input.weightKg === undefined ? {} : { weight_kg: input.weightKg }),
     ...(input.nutritionEnabled === undefined ? {} : { nutrition_enabled: input.nutritionEnabled }),
@@ -106,6 +108,7 @@ export function toPatientUpdate(input: PatientUpdateInput): Updates<'patients'> 
     etc: input.etc,
     standing_orders: input.standingOrders,
     // 값이 있을 때만 보낸다 — 마이그레이션 적용 전 DB에서도 나머지 저장이 되도록.
+    ...(input.importantNotes === undefined ? {} : { important_notes: input.importantNotes }),
     ...(input.heightCm === undefined ? {} : { height_cm: input.heightCm }),
     ...(input.weightKg === undefined ? {} : { weight_kg: input.weightKg }),
     ...(input.nutritionEnabled === undefined ? {} : { nutrition_enabled: input.nutritionEnabled }),
