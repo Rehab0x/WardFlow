@@ -10,6 +10,7 @@ import type { Patient } from '@/types/patient';
 import type { BriefingData } from '@/services/briefingService';
 import { calculateAge } from '@/utils/dateUtils';
 import { buildHandoffLines, buildLabLines, buildMedicationLines, getPatientRows } from '../workspaceData';
+import { CalorieNeedsSection } from '../sections/CalorieNeedsSection';
 import { StandingOrdersSection } from '../sections/StandingOrdersSection';
 import type { WorkspaceTabId } from '../WorkspaceTabs';
 
@@ -70,6 +71,7 @@ export function OverviewTab({
         onSave={onSaveStandingOrders}
         onDirtyChange={onDirtyChange}
       />
+      <CalorieNeedsSection patient={patient} />
       <div className="grid gap-3 lg:grid-cols-2">
         <DataSection title="차팅 요약">
           <ClinicalRow
