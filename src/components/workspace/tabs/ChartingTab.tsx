@@ -120,7 +120,7 @@ export function ChartingTab({
         }
       >
         <div
-          className="grid gap-2 p-2 lg:grid-cols-2"
+          className="grid min-w-0 grid-cols-1 gap-2 p-2 lg:grid-cols-2"
           onKeyDown={(event) => {
             if (!(event.ctrlKey || event.metaKey) || event.key !== 'Enter') return;
             event.preventDefault();

@@ -82,8 +82,12 @@ export function StandingOrdersSection({
           </div>
         }
       >
+        {/*
+          grid-cols-1은 minmax(0,1fr)이라 열이 내용 너비를 따라 늘어나지 않는다.
+          클래스 없이 grid만 쓰면 암묵 열이 auto가 되어 긴 줄에 밀려 옆으로 넘친다.
+        */}
         <div
-          className="grid gap-2 p-2"
+          className="grid min-w-0 grid-cols-1 gap-2 p-2"
           onKeyDown={(event) => {
             if (!(event.ctrlKey || event.metaKey) || event.key !== 'Enter') return;
             event.preventDefault();

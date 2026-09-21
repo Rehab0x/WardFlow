@@ -134,7 +134,7 @@ export function ChartField({
   onTemplate?: () => void;
 }) {
   return (
-    <div className="grid gap-1">
+    <div className="grid min-w-0 gap-1">
       <span className="flex items-center justify-between gap-2">
         <span className="font-mono text-[10.5px] text-zinc-400">{label}</span>
         {onTemplate && (
@@ -156,7 +156,7 @@ export function ChartField({
         rows={rows}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
-        className="min-h-8 resize-y rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-[12px] leading-5 text-zinc-800 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+        className="min-h-8 w-full min-w-0 resize-y rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-[12px] leading-5 text-zinc-800 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400"
       />
     </div>
   );

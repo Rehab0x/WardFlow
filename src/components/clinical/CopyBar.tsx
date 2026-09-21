@@ -66,7 +66,7 @@ export function CopyBar({ title, text, emptyText = '복사할 내용 없음' }: 
   };
 
   return (
-    <div className="flex flex-col gap-2 border border-zinc-200 bg-zinc-50 p-2 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex w-full min-w-0 flex-col gap-2 border border-zinc-200 bg-zinc-50 p-2 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">
           <div className="text-[12px] font-medium text-zinc-900">{title}</div>
