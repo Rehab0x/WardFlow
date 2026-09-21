@@ -27,6 +27,8 @@ export interface Patient {
   plan: string;
   guardianExplanation: string;
   etc: string;
+  /** 지시오더 — 처방마다 갱신하는 간호 지시 묶음 */
+  standingOrders: string;
   createdAt: Date;
   updatedAt: Date;
 }

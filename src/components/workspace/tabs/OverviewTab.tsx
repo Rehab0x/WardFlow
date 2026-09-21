@@ -10,16 +10,21 @@ import type { Patient } from '@/types/patient';
 import type { BriefingData } from '@/services/briefingService';
 import { calculateAge } from '@/utils/dateUtils';
 import { buildHandoffLines, buildLabLines, buildMedicationLines, getPatientRows } from '../workspaceData';
+import { StandingOrdersSection } from '../sections/StandingOrdersSection';
 import type { WorkspaceTabId } from '../WorkspaceTabs';
 
 export function OverviewTab({
   patient,
   data,
   onOpenTab,
+  onSaveStandingOrders,
+  onDirtyChange,
 }: {
   patient: Patient;
   data: BriefingData;
   onOpenTab: (tab: WorkspaceTabId) => void;
+  onSaveStandingOrders?: (text: string) => void | Promise<void>;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const rows = useMemo(() => getPatientRows(patient.id, data), [patient.id, data]);
   const handoffLines = useMemo(() => buildHandoffLines(patient, rows), [patient, rows]);
@@ -58,6 +63,12 @@ export function OverviewTab({
         title="인계 요약 복사"
         text={handoffLines.join('\n')}
         emptyText="복사할 인계 내용 없음"
+      />
+      {/* 처방할 때마다 손대는 내용이라 요약 탭 위쪽에 둔다. */}
+      <StandingOrdersSection
+        value={patient.standingOrders}
+        onSave={onSaveStandingOrders}
+        onDirtyChange={onDirtyChange}
       />
       <div className="grid gap-3 lg:grid-cols-2">
         <DataSection title="차팅 요약">

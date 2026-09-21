@@ -54,6 +54,7 @@ function makeDomainPatient(overrides: Partial<DomainPatient> = {}): DomainPatien
     plan: '',
     guardianExplanation: '',
     etc: '',
+    standingOrders: '',
     createdAt: new Date('2026-05-25T00:00:00Z'),
     updatedAt: new Date('2026-05-25T00:00:00Z'),
     ...overrides,
@@ -121,6 +122,7 @@ describe('usePatientStore Supabase flow', () => {
       plan: '',
       guardianExplanation: '',
       etc: '',
+      standingOrders: '',
     });
 
     expect(id).toBe('created-patient');

@@ -101,6 +101,8 @@ export interface PatientWorkspaceProps {
   onToggleAttention?: () => void;
   onEditPatient?: () => void;
   onChartingDraftChange?: (draft: ChartingDraft) => void | Promise<void>;
+  /** 지시오더 저장 (요약 탭) */
+  onSaveStandingOrders?: (text: string) => void | Promise<void>;
   onAddNote?: (content: string, type: 'progress' | 'reminder') => void | Promise<void>;
   onRemoveNote?: (noteId: string, type: 'progress' | 'reminder') => void | Promise<void>;
   onAddAntibiotic?: (draft: AntibioticDraft) => void | Promise<void>;

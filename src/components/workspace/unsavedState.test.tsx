@@ -28,6 +28,7 @@ const make = (id: string, name: string): Patient => ({
   plan: 'abx',
   guardianExplanation: '',
   etc: '',
+  standingOrders: '',
   createdAt: new Date(2026, 8, 1),
   updatedAt: new Date(2026, 8, 1),
 });

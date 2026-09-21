@@ -65,6 +65,8 @@ export interface Database {
           plan: string;
           guardian_explanation: string;
           etc: string;
+          /** 202609210001 마이그레이션으로 추가. 미적용 DB에서는 응답에 없다. */
+          standing_orders?: string;
           created_at: string;
           updated_at: string;
           deleted_at: string | null;
@@ -94,6 +96,7 @@ export interface Database {
           plan?: string;
           guardian_explanation?: string;
           etc?: string;
+          standing_orders?: string;
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;

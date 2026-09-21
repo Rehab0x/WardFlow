@@ -31,6 +31,7 @@ const makePatient = (overrides: Partial<Patient>): Patient => ({
   plan: '',
   guardianExplanation: '',
   etc: '',
+  standingOrders: '',
   createdAt: new Date('2026-05-25T00:00:00Z'),
   updatedAt: new Date('2026-05-25T00:00:00Z'),
   ...overrides,

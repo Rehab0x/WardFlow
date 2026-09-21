@@ -28,6 +28,8 @@ export function fromPatientRow(row: Tables<'patients'>): Patient {
     plan: row.plan,
     guardianExplanation: row.guardian_explanation,
     etc: row.etc,
+    // 마이그레이션 적용 전에는 컬럼이 없어 undefined로 온다.
+    standingOrders: row.standing_orders ?? '',
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   };
@@ -58,6 +60,8 @@ export function toPatientInsert(input: PatientCreateInput): Inserts<'patients'> 
     plan: input.plan,
     guardian_explanation: input.guardianExplanation,
     etc: input.etc,
+    // 빈 값이면 컬럼 자체를 보내지 않는다 — 마이그레이션 적용 전 DB에서도 환자 추가가 되도록.
+    ...(input.standingOrders ? { standing_orders: input.standingOrders } : {}),
   };
 }
 
@@ -85,6 +89,7 @@ export function toPatientUpdate(input: PatientUpdateInput): Updates<'patients'> 
     plan: input.plan,
     guardian_explanation: input.guardianExplanation,
     etc: input.etc,
+    standing_orders: input.standingOrders,
   };
 }
 

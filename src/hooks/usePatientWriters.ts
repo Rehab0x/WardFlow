@@ -121,6 +121,7 @@ export function usePatientWriters({
         plan: '',
         guardianExplanation: '',
         etc: '',
+        standingOrders: '',
       });
       setAddOpen(false);
       markLocalBriefingUpdated();

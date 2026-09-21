@@ -1,7 +1,33 @@
 import { supabase } from '@/lib/supabase';
+import type { Tables } from '@/types/supabase';
 import type { Patient, PatientCreateInput, PatientUpdateInput } from '@/domain/patient';
 import { fromPatientRow, toPatientInsert, toPatientUpdate } from '@/mappers/patient.mapper';
 import { fromDateOnly, fromNullableDateOnly } from '@/mappers/date';
+
+/**
+ * 지시오더 컬럼은 202609210001 마이그레이션으로 추가된다.
+ * 아직 적용 전인 DB에서 이 컬럼을 요청하면 PostgREST가 42703으로 거절하고
+ * **환자 조회 전체가 실패한다.** 그 경우 컬럼만 빼고 한 번 더 조회한다
+ * (앱을 먼저 배포하고 마이그레이션을 나중에 적용하는 이 프로젝트의 흐름에 맞춘 것).
+ */
+const STANDING_ORDERS_COLUMN = 'standing_orders';
+const UNDEFINED_COLUMN = '42703';
+
+type QueryResult<T> = { data: T | null; error: { code?: string } | null };
+
+/**
+ * 컬럼 목록을 런타임에 만들기 때문에 supabase-js의 행 타입 추론이 풀린다.
+ * 돌려주는 행 모양은 호출부가 지정한 T로 단언한다 — 컬럼 목록과 T를 함께 바꿀 것.
+ */
+async function withStandingOrdersFallback<T>(
+  run: (columns: string) => PromiseLike<{ data: unknown; error: { code?: string } | null }>,
+  columns: string
+): Promise<QueryResult<T>> {
+  const first = await run(columns);
+  if (first.error?.code !== UNDEFINED_COLUMN) return first as QueryResult<T>;
+  const reduced = columns.replace(new RegExp(`\\s*${STANDING_ORDERS_COLUMN},`), '');
+  return (await run(reduced)) as QueryResult<T>;
+}
 
 const patientColumns = `
   id,
@@ -28,6 +54,7 @@ const patientColumns = `
   plan,
   guardian_explanation,
   etc,
+  standing_orders,
   created_at,
   updated_at,
   deleted_at
@@ -94,15 +121,19 @@ export type PatientShellRow = Pick<
 >;
 
 export async function listPatients(): Promise<Patient[]> {
-  const { data, error } = await supabase
-    .from('patients')
-    .select(patientColumns)
-    .is('deleted_at', null)
-    .order('status', { ascending: true })
-    .order('room_bed', { ascending: true });
+  const { data, error } = await withStandingOrdersFallback<Tables<'patients'>[]>(
+    (columns) =>
+      supabase
+        .from('patients')
+        .select(columns)
+        .is('deleted_at', null)
+        .order('status', { ascending: true })
+        .order('room_bed', { ascending: true }),
+    patientColumns
+  );
 
   if (error) throw error;
-  return data.map(fromPatientRow);
+  return (data ?? []).map(fromPatientRow);
 }
 
 export async function listPatientShellRows(): Promise<PatientShellRow[]> {
@@ -155,24 +186,27 @@ export async function listActivePatientBriefingRows(): Promise<ActivePatientBrie
 }
 
 export async function listActivePatients(): Promise<Patient[]> {
-  const { data, error } = await supabase
-    .from('patients')
-    .select(patientColumns)
-    .eq('status', 'active')
-    .is('deleted_at', null)
-    .order('room_bed', { ascending: true });
+  const { data, error } = await withStandingOrdersFallback<Tables<'patients'>[]>(
+    (columns) =>
+      supabase
+        .from('patients')
+        .select(columns)
+        .eq('status', 'active')
+        .is('deleted_at', null)
+        .order('room_bed', { ascending: true }),
+    patientColumns
+  );
 
   if (error) throw error;
-  return data.map(fromPatientRow);
+  return (data ?? []).map(fromPatientRow);
 }
 
 export async function getPatient(id: string): Promise<Patient | null> {
-  const { data, error } = await supabase
-    .from('patients')
-    .select(patientColumns)
-    .eq('id', id)
-    .is('deleted_at', null)
-    .maybeSingle();
+  const { data, error } = await withStandingOrdersFallback<Tables<'patients'>>(
+    (columns) =>
+      supabase.from('patients').select(columns).eq('id', id).is('deleted_at', null).maybeSingle(),
+    patientColumns
+  );
 
   if (error) throw error;
   return data ? fromPatientRow(data) : null;
@@ -217,14 +251,19 @@ export async function createPatient(input: PatientCreateInput): Promise<Patient>
 }
 
 export async function updatePatient(id: string, input: PatientUpdateInput): Promise<Patient> {
-  const { data, error } = await supabase
-    .from('patients')
-    .update(toPatientUpdate(input))
-    .eq('id', id)
-    .select(patientColumns)
-    .single();
+  const { data, error } = await withStandingOrdersFallback<Tables<'patients'>>(
+    (columns) =>
+      supabase
+        .from('patients')
+        .update(toPatientUpdate(input))
+        .eq('id', id)
+        .select(columns)
+        .single(),
+    patientColumns
+  );
 
   if (error) throw error;
+  if (!data) throw new Error('환자 정보를 저장했지만 다시 불러오지 못했습니다.');
   return fromPatientRow(data);
 }
 

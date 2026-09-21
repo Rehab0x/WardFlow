@@ -182,6 +182,7 @@ export default function AppPage() {
 
   const {
     handleChartingSave,
+    handleSaveStandingOrders,
     handleAddNote,
     handleAddNoteForPatient,
     handleRemoveNote,
@@ -346,6 +347,7 @@ export default function AppPage() {
           onToggleAttention={handleToggleAttention}
           onEditPatient={handleEditPatient}
           onChartingDraftChange={handleChartingSave}
+          onSaveStandingOrders={handleSaveStandingOrders}
           onAddNote={handleAddNote}
           onRemoveNote={handleRemoveNote}
           onAddAntibiotic={handleAddAntibiotic}

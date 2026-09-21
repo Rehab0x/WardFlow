@@ -36,6 +36,7 @@ function makePatient(overrides: Partial<Patient> = {}): Patient {
     plan: '',
     guardianExplanation: '',
     etc: '',
+    standingOrders: '',
     createdAt: new Date(2026, 8, 1),
     updatedAt: new Date(2026, 8, 1),
     ...overrides,

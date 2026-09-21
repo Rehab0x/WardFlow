@@ -80,6 +80,13 @@ export function useClinicalWriters({
     }, '차팅을 저장하지 못했습니다.');
   };
 
+  const handleSaveStandingOrders = async (text: string) => {
+    if (!selectedPatient) return;
+    await runWrite(async () => {
+      await updatePatient(selectedPatient.id, { standingOrders: text });
+    }, '지시오더를 저장하지 못했습니다.');
+  };
+
   const handleAddNote = async (content: string, type: 'progress' | 'reminder') => {
     if (!selectedPatient) return;
     await runWrite(async () => {
@@ -364,6 +371,7 @@ export function useClinicalWriters({
   return useMemo(
     () => ({
       handleChartingSave,
+      handleSaveStandingOrders,
       handleAddNote,
       handleAddNoteForPatient,
       handleRemoveNote,

@@ -31,6 +31,7 @@ export function PatientWorkspace({
   onToggleAttention,
   onEditPatient,
   onChartingDraftChange,
+  onSaveStandingOrders,
   onAddNote,
   onRemoveNote,
   onAddAntibiotic,
@@ -115,7 +116,13 @@ export function PatientWorkspace({
         />
         <div className="space-y-3 p-3 sm:p-4">
           {tab === 'overview' && (
-            <OverviewTab patient={patient} data={data} onOpenTab={handleTabChange} />
+            <OverviewTab
+              patient={patient}
+              data={data}
+              onOpenTab={handleTabChange}
+              onDirtyChange={setDirty}
+              onSaveStandingOrders={onSaveStandingOrders}
+            />
           )}
           {tab === 'charting' && (
             <ChartingTab

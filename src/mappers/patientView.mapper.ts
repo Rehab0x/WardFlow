@@ -28,6 +28,7 @@ export function fromDomainPatient(patient: DomainPatient): ViewPatient {
     plan: patient.plan,
     guardianExplanation: patient.guardianExplanation,
     etc: patient.etc,
+    standingOrders: patient.standingOrders,
     createdAt: patient.createdAt,
     updatedAt: patient.updatedAt,
   };
@@ -58,6 +59,7 @@ export function toDomainPatientCreateInput(patient: Omit<ViewPatient, 'id' | 'cr
     plan: patient.plan,
     guardianExplanation: patient.guardianExplanation,
     etc: patient.etc,
+    standingOrders: patient.standingOrders,
   };
 }
 
@@ -85,6 +87,7 @@ export function toDomainPatientUpdateInput(updates: Partial<ViewPatient>): Patie
     plan: updates.plan,
     guardianExplanation: updates.guardianExplanation,
     etc: updates.etc,
+    standingOrders: updates.standingOrders,
   };
 }
 

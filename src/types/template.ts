@@ -11,6 +11,7 @@ export type TemplateField =
   | 'plan'
   | 'guardianExplanation'
   | 'etc'
+  | 'standingOrders'
   | 'global';
 
 export interface Template {
