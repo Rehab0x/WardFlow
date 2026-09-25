@@ -182,7 +182,8 @@ export function AppShell({
               onBasisDateChange={onRailBasisDateChange}
               onPatientSelect={handlePatientSelect}
               onAddPatient={handleAddPatient}
-              className="min-h-0 w-full border-r-0"
+              // 위에 "환자 목록" 머리줄(h-12)이 있어 h-full이면 그만큼 화면 밖으로 밀린다 — 남은 높이만 차지한다
+              className="h-auto min-h-0 w-full flex-1 border-r-0"
             />
           </div>
         </div>

@@ -146,28 +146,3 @@ describe('PatientRail 기준일', () => {
     expect(screen.queryByText('홍길동')).not.toBeInTheDocument();
   });
 });
-
-describe('PatientRail 퇴원 그룹', () => {
-  const withDischarged = [
-    ...patients,
-    patient({ id: 'p4', name: '김퇴원', status: 'discharged', dischargeDate: new Date('2026-09-20') }),
-  ];
-
-  it('keeps the discharged toggle pinned to the bottom of the list', () => {
-    renderRail({}, { patients: withDischarged });
-    const toggle = screen.getByRole('button', { name: /퇴원/ });
-    expect(toggle.parentElement).toHaveClass('sticky', 'bottom-0');
-    expect(screen.queryByText('김퇴원')).not.toBeInTheDocument();
-  });
-
-  it('opens the discharged list and scrolls it into view', async () => {
-    const scrollIntoView = vi.fn();
-    Element.prototype.scrollIntoView = scrollIntoView;
-    renderRail({}, { patients: withDischarged });
-
-    await userEvent.click(screen.getByRole('button', { name: /퇴원/ }));
-
-    expect(screen.getByText('김퇴원')).toBeInTheDocument();
-    await vi.waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
-  });
-});

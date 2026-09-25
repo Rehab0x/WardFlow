@@ -1,5 +1,5 @@
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
-import { memo, useCallback, useDeferredValue, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useDeferredValue, useMemo, useState } from 'react';
 import type { Patient } from '@/types/patient';
 import { cn } from '@/lib/utils';
 import { formatAgeYears, formatDetailedAge } from '../clinical/dateLabels';
@@ -253,7 +253,6 @@ export function PatientRail({
           onPatientSelect={onPatientSelect}
           collapsed={!showDischarged}
           onToggle={toggleDischarged}
-          pinToBottom
         />
       </div>
     </aside>
@@ -288,7 +287,6 @@ const PatientGroup = memo(function PatientGroup({
   onPatientSelect,
   collapsed,
   onToggle,
-  pinToBottom,
 }: {
   title: string;
   patients: Patient[];
@@ -297,42 +295,18 @@ const PatientGroup = memo(function PatientGroup({
   onPatientSelect?: (patientId: string) => void;
   collapsed?: boolean;
   onToggle?: () => void;
-  /** 명단이 길어도 머리줄이 목록 바닥에 붙어 보이게 한다 (퇴원 그룹) */
-  pinToBottom?: boolean;
 }) {
   const ToggleIcon = collapsed ? ChevronRight : ChevronDown;
-  const anchorRef = useRef<HTMLDivElement>(null);
-
-  const handleToggle = useCallback(() => {
-    onToggle?.();
-    // 바닥에 붙은 머리줄을 눌러 펼치면 목록이 화면 밖에 열린다 — 머리줄 위치로 스크롤해 보여준다
-    if (pinToBottom && collapsed) {
-      requestAnimationFrame(() =>
-        anchorRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
-      );
-    }
-  }, [collapsed, onToggle, pinToBottom]);
 
   return (
-    // pinToBottom일 때 section은 상자를 만들지 않아(contents) 머리줄의 sticky 기준이 스크롤 영역이 된다
-    <section className={pinToBottom ? 'contents' : 'mb-3'}>
-      {pinToBottom && <div ref={anchorRef} aria-hidden="true" />}
-      <div
-        className={cn(
-          'mb-1 flex h-6 items-center justify-between px-1',
-          pinToBottom &&
-            'sticky bottom-0 z-10 -mx-2 mb-0 h-10 border-t border-zinc-200 bg-white px-3 md:h-9'
-        )}
-      >
+    <section className="mb-3">
+      <div className="mb-1 flex h-6 items-center justify-between px-1">
         {onToggle ? (
           <button
             type="button"
-            onClick={handleToggle}
+            onClick={onToggle}
             aria-expanded={!collapsed}
-            className={cn(
-              'inline-flex min-w-0 items-center gap-1 rounded text-[11px] font-medium text-zinc-500 transition-colors hover:text-zinc-900',
-              pinToBottom && 'h-full flex-1 text-[12px]'
-            )}
+            className="inline-flex min-w-0 items-center gap-1 rounded text-[11px] font-medium text-zinc-500 transition-colors hover:text-zinc-900"
           >
             <ToggleIcon className="h-3 w-3" />
             <span>{title}</span>
