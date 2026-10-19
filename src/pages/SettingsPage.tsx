@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { AdminSettings } from '@/components/settings/AdminSettings';
 import { AlertRuleSettings } from '@/components/settings/AlertRuleSettings';
 import { SupabaseBackupSettings } from '@/components/settings/SupabaseBackupSettings';
+import { PatientIdentitySettings } from '@/components/settings/PatientIdentitySettings';
 import { SettingsMobileNav, SettingsSidebar } from '@/components/settings/SettingsNavigation';
 import {
   LabCategorySettings,
@@ -53,6 +54,7 @@ const SettingsPage = () => {
         'lab-import': <LabImportSettings />,
         ai: <AISettings />,
         backup: <SupabaseBackupSettings />,
+        identity: <PatientIdentitySettings />,
       }) satisfies Record<SettingsSectionId, React.ReactNode>,
     [isAdmin]
   );

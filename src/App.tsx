@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { Toaster } from './components/ui/toaster';
 import { useAuthStore } from './stores/useAuthStore';
 import { useSupabaseUserSettingsSync } from './hooks/useSupabaseUserSettingsSync';
+import { PatientIdentityGate } from './components/identity/PatientIdentityGate';
 
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/RegisterPage'));
@@ -44,7 +45,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  return <>{children}</>;
+  return <PatientIdentityGate>{children}</PatientIdentityGate>;
 };
 
 function App() {
@@ -72,7 +73,14 @@ function App() {
             }
           />
 
-          <Route path="/lab-import" element={<LabImportPage />} />
+          <Route
+            path="/lab-import"
+            element={
+              <ProtectedRoute>
+                <LabImportPage />
+              </ProtectedRoute>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>

@@ -5,6 +5,7 @@ import { DataSection } from '../clinical/DataSection';
 import type { AlertEvent } from '@/domain/alert';
 import { SEVERITY_LABEL, SEVERITY_ORDER } from '@/services/alertEngine';
 import { useAlertStore } from '@/stores/useAlertStore';
+import { usePatientStore } from '@/stores/usePatientStore';
 
 const TONE_BY_SEVERITY = {
   critical: 'danger',
@@ -22,6 +23,7 @@ export function AlertSection({
   onOpenPatient?: (patientId: string, tab?: string) => void;
 }) {
   const { events, acknowledge, removeEvent, clearAcknowledged } = useAlertStore();
+  const patientById = usePatientStore((state) => state.patientById);
   const [showHistory, setShowHistory] = useState(false);
 
   const { open, acknowledged } = useMemo(() => {
@@ -78,6 +80,7 @@ export function AlertSection({
             <AlertRow
               key={event.id}
               event={event}
+              patientLabel={patientLabel(patientById.get(event.patientId))}
               onOpen={onOpenPatient}
               onAcknowledge={() => void acknowledge(event.id)}
               onRemove={() => void removeEvent(event.id)}
@@ -89,13 +92,20 @@ export function AlertSection({
   );
 }
 
+/** 알림 문구에는 환자 이름이 없다(DB에 남기지 않음) — 지금 열려 있는 환자 목록에서 붙인다 */
+function patientLabel(patient: { roomBed: string; name: string } | undefined): string {
+  return patient ? `${patient.roomBed} ${patient.name}` : '';
+}
+
 function AlertRow({
   event,
+  patientLabel,
   onOpen,
   onAcknowledge,
   onRemove,
 }: {
   event: AlertEvent;
+  patientLabel: string;
   onOpen?: (patientId: string, tab?: string) => void;
   onAcknowledge: () => void;
   onRemove: () => void;
@@ -105,7 +115,7 @@ function AlertRow({
   return (
     <ClinicalRow
       prefix={SEVERITY_LABEL[event.severity]}
-      title={event.title}
+      title={patientLabel ? `${patientLabel} · ${event.title}` : event.title}
       detail={event.message}
       tone={done ? 'muted' : TONE_BY_SEVERITY[event.severity]}
       meta={event.ruleName}

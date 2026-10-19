@@ -280,6 +280,12 @@ wardflow/
 - 인증은 **Supabase Auth**. 신규 가입자는 승인 대기(`pending`) 상태이며 관리자 승인 후 로그인 가능
 - 첫 가입자는 DB 트리거로 `admin` + `approved` 자동 부여
 - 환자 접근 권한은 **RLS 정책**으로 강제한다
+- **환자 이름·등록번호·생년월일은 DB에 평문으로 두지 않는다** (2026-10-19, TODO 2.19).
+  기기에서 AES-GCM으로 암호화해 `patients.identity_ciphertext`에 저장하고, 키는 사용자 암호문구/복구 코드로
+  감싸 `patient_identity_vaults`에만 둔다. 등록번호 매칭은 HMAC 조회키(`registration_hmac`)로 한다
+  - 암복호화는 `data/patientIdentity.ts`에서만 — 다른 곳에서 식별정보 칸을 직접 읽거나 쓰지 않는다
+  - DB에 저장되는 다른 문구(알림 제목 등)에 환자 이름을 넣지 않는다. 화면에서 patientId로 붙인다
+  - 서버 Lab import는 Vercel `PATIENT_LOOKUP_KEY`(설정 화면에서 복사)로 등록번호를 찾는다
 - AI API 키는 사용자별 설정에 저장되며 환자 데이터는 사용자가 명시적으로 AI 기능을 실행할 때만 전송된다
 - PIN 잠금은 2026-09-19 리팩토링에서 제거되었다 (IndexedDB 자격증명 모델에 의존했기 때문)
 

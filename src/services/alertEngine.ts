@@ -114,9 +114,9 @@ function evaluateLabRule(
         ruleName: rule.name,
         patientId: patient.id,
         severity: rule.severity,
-        title: `${patient.name} · ${item.name} ${item.value}${unit}`,
+        // 환자 이름은 DB에 남기지 않는다(TODO 2.19) — 화면에서 patientId로 붙인다
+        title: `${item.name} ${item.value}${unit}`,
         message: [
-          `${patient.roomBed} ${patient.name}`,
           `${item.name} ${item.value}${unit}${item.hlFlag ? ` (${item.hlFlag})` : ''}`,
           `검사일 ${formatDate(lab.testDate)}`,
           `규칙: ${describeRule(rule)}`,
@@ -262,9 +262,9 @@ function evaluateAntibioticRule(
       ruleName: rule.name,
       patientId: patient.id,
       severity: rule.severity,
-      title: `${patient.name} · ${medication.drugName} ${days}일째`,
+      // 환자 이름은 DB에 남기지 않는다(TODO 2.19) — 화면에서 patientId로 붙인다
+      title: `${medication.drugName} ${days}일째`,
       message: [
-        `${patient.roomBed} ${patient.name}`,
         `${medication.drugName} ${days}일째 (시작 ${formatDate(medication.startDate)})`,
         `규칙: ${describeRule(rule)}`,
       ].join(' · '),

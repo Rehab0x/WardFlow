@@ -42,9 +42,14 @@ export interface Database {
       patients: {
         Row: {
           id: string;
-          registration_number: string;
-          name: string;
-          birth_date: string;
+          /** 평문 식별정보 — 202610190002 마이그레이션에서 삭제된다. 암호화된 행은 null */
+          registration_number?: string | null;
+          name?: string | null;
+          birth_date?: string | null;
+          /** 202610190001 마이그레이션으로 추가. 이름·등록번호·생년월일 암호문 */
+          identity_ciphertext?: string | null;
+          /** 등록번호 HMAC 조회키 (hex) */
+          registration_hmac?: string | null;
           sex: 'M' | 'F';
           room_bed: string;
           admission_date: string;
@@ -81,9 +86,11 @@ export interface Database {
         };
         Insert: {
           id?: string;
-          registration_number: string;
-          name: string;
-          birth_date: string;
+          registration_number?: string | null;
+          name?: string | null;
+          birth_date?: string | null;
+          identity_ciphertext?: string | null;
+          registration_hmac?: string | null;
           sex: 'M' | 'F';
           room_bed: string;
           admission_date: string;
@@ -370,6 +377,32 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database['public']['Tables']['user_settings']['Insert']>;
+        Relationships: [];
+      };
+      patient_identity_vaults: {
+        Row: {
+          owner_id: string;
+          version: number;
+          kdf_salt: string;
+          kdf_iterations: number;
+          passphrase_wrapped_key: string;
+          recovery_wrapped_key: string;
+          key_check: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          owner_id: string;
+          version?: number;
+          kdf_salt: string;
+          kdf_iterations: number;
+          passphrase_wrapped_key: string;
+          recovery_wrapped_key: string;
+          key_check: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['patient_identity_vaults']['Insert']>;
         Relationships: [];
       };
       backup_snapshots: {

@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { parseLabXls, type ParsedLabItem } from '../parser/labParser.js';
 import { normalizeRegistrationNumber } from '../../lib/registrationNumber.js';
+import { computeRegistrationLookup, decodeLookupKey } from '../../lib/registrationLookup.js';
 import { maskErrorMessage, maskFileName, maskId, maskRegistrationNumber } from './logMasking.js';
 import type { Database } from '../../types/supabase';
 
@@ -10,8 +11,17 @@ const BUCKET = 'lab-inbox';
 
 type PatientRow = Pick<
   Database['public']['Tables']['patients']['Row'],
-  'id' | 'registration_number' | 'name' | 'created_by' | 'room_bed' | 'patient_type' | 'status'
+  'id' | 'registration_number' | 'registration_hmac' | 'created_by' | 'status'
 >;
+
+/**
+ * 환자 등록번호 → 환자 행.
+ * 암호화된 환자(TODO 2.19)는 HMAC 조회키로, 아직 평문인 환자는 정규화한 등록번호로 찾는다.
+ * 서버는 환자 이름을 알 수 없고 알 필요도 없다.
+ */
+interface PatientDirectory {
+  find(registrationNumber: string | undefined): Promise<PatientRow | undefined>;
+}
 
 type LabResultRow = Pick<Database['public']['Tables']['lab_results']['Row'], 'id'>;
 
@@ -27,7 +37,7 @@ export interface ApiFileImportDetail {
     orderDate?: string;
     itemCount: number;
   }>;
-  errors?: Array<{ patientId?: string; name?: string; error: string }>;
+  errors?: Array<{ patientId?: string; error: string }>;
   deleted?: boolean;
   deleteError?: string;
   error?: string;
@@ -43,7 +53,7 @@ export interface ApiStorageImportSummary {
   savedPatients: number;
   savedItems: number;
   failedPatients: number;
-  errors: Array<{ fileName: string; patientId?: string; name?: string; error: string }>;
+  errors: Array<{ fileName: string; patientId?: string; error: string }>;
   deletedFiles: number;
   deleteErrors: Array<{ fileName: string; error: string }>;
   details: ApiFileImportDetail[];
@@ -178,7 +188,7 @@ async function processStorageFile(supabase: SupabaseClient<Database>, fullPath: 
   if (error || !data) throw new Error(`Storage download failed: ${error?.message ?? 'No data'}`);
 
   const groups = await parseLabXls(await data.arrayBuffer());
-  const patients = await listActivePatientsByRegistration(supabase);
+  const patients = await loadPatientDirectory(supabase);
 
   let savedPatients = 0;
   let savedItems = 0;
@@ -187,9 +197,7 @@ async function processStorageFile(supabase: SupabaseClient<Database>, fullPath: 
 
   for (const group of groups) {
     const registrationNumber = group.registrationNumber?.trim();
-    // 매칭 규칙(앞자리 0 무시)은 `lib/registrationNumber`에 한 곳에만 정의돼 있다.
-    const registrationKey = normalizeRegistrationNumber(registrationNumber);
-    const patient = registrationKey ? patients.get(registrationKey) : undefined;
+    const patient = await patients.find(registrationNumber);
 
     if (!patient) {
       // 응답에는 원본을 담아 호출자가 어떤 행이 안 붙었는지 볼 수 있게 하되,
@@ -217,7 +225,6 @@ async function processStorageFile(supabase: SupabaseClient<Database>, fullPath: 
       );
       errors.push({
         patientId: patient.id,
-        name: patient.name,
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -232,21 +239,71 @@ async function processStorageFile(supabase: SupabaseClient<Database>, fullPath: 
   };
 }
 
-async function listActivePatientsByRegistration(supabase: SupabaseClient<Database>) {
-  const { data, error } = await supabase
-    .from('patients')
-    .select('id, registration_number, name, created_by, room_bed, patient_type, status')
-    .eq('status', 'active');
+const UNDEFINED_COLUMN = '42703';
+const OPTIONAL_REGISTRATION_COLUMNS = ['registration_hmac', 'registration_number'];
 
-  if (error) throw new Error(`Patient lookup failed: ${error.message}`);
+async function loadPatientDirectory(supabase: SupabaseClient<Database>): Promise<PatientDirectory> {
+  return buildPatientDirectory(
+    await listActivePatientRows(supabase),
+    decodeLookupKey(process.env.PATIENT_LOOKUP_KEY)
+  );
+}
 
-  const patients = new Map<string, PatientRow>();
-  for (const patient of (data ?? []) as PatientRow[]) {
-    const key = normalizeRegistrationNumber(patient.registration_number);
-    if (!key) continue;
-    patients.set(key, patient);
+export function buildPatientDirectory(
+  rows: PatientRow[],
+  lookupKey: Uint8Array | null
+): PatientDirectory {
+  if (!lookupKey && rows.some((row) => row.registration_hmac)) {
+    console.warn('[lab-import] PATIENT_LOOKUP_KEY is not configured; encrypted patients cannot be matched.');
   }
-  return patients;
+
+  const byLookup = new Map<string, PatientRow>();
+  const byPlaintext = new Map<string, PatientRow>();
+  for (const row of rows) {
+    if (row.registration_hmac) byLookup.set(row.registration_hmac, row);
+    // 매칭 규칙(앞자리 0 무시)은 `lib/registrationNumber`에 한 곳에만 정의돼 있다.
+    const plaintextKey = normalizeRegistrationNumber(row.registration_number);
+    if (plaintextKey) byPlaintext.set(plaintextKey, row);
+  }
+
+  return {
+    async find(registrationNumber) {
+      const plaintextKey = normalizeRegistrationNumber(registrationNumber);
+      if (!plaintextKey) return undefined;
+      if (lookupKey) {
+        const match = byLookup.get(await computeRegistrationLookup(lookupKey, registrationNumber));
+        if (match) return match;
+      }
+      return byPlaintext.get(plaintextKey);
+    },
+  };
+}
+
+/**
+ * 평문 등록번호 칸은 2단계 마이그레이션(202610190002)에서 사라지고,
+ * 조회키 칸은 1단계(202610190001) 전에는 없다. 없는 칸은 빼고 다시 읽는다.
+ */
+async function listActivePatientRows(supabase: SupabaseClient<Database>): Promise<PatientRow[]> {
+  let columns = ['id', 'created_by', 'status', 'registration_hmac', 'registration_number'];
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data, error } = await supabase
+      .from('patients')
+      .select(columns.join(', '))
+      .eq('status', 'active')
+      .is('deleted_at', null);
+
+    if (!error) return (data ?? []) as unknown as PatientRow[];
+    const missing =
+      error.code === UNDEFINED_COLUMN
+        ? error.message.match(/column\s+(?:\w+\.)?"?([a-z0-9_]+)"?\s+does not exist/i)?.[1]
+        : undefined;
+    if (!missing || !OPTIONAL_REGISTRATION_COLUMNS.includes(missing)) {
+      throw new Error(`Patient lookup failed: ${error.message}`);
+    }
+    columns = columns.filter((column) => column !== missing);
+  }
+  throw new Error('Patient lookup failed: no usable registration column.');
 }
 
 async function savePatientLabGroups(

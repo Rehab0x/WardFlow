@@ -54,7 +54,9 @@ describe('evaluateAlertRules — lab thresholds', () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ patientId: 'p1', severity: 'critical' });
     expect(events[0]?.title).toContain('Na 128');
-    expect(events[0]?.message).toContain('302-1');
+    // 환자 이름은 DB에 저장되는 알림 문구에 넣지 않는다 (TODO 2.19)
+    expect(events[0]?.title).not.toContain('김환자');
+    expect(events[0]?.message).not.toContain('김환자');
   });
 
   it('stays quiet when the value is within range', () => {

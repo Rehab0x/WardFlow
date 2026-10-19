@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User } from '@/types/user';
+import { lockIdentityKeys } from '@/lib/patientIdentityKeyring';
 import {
   approveProfile,
   getCurrentProfile,
@@ -106,6 +107,8 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       logout: () => {
+        // 이 탭에 열어 둔 환자정보 키도 닫는다. "이 기기 기억"으로 남긴 키는 그대로 둔다.
+        lockIdentityKeys({ forget: false });
         signOut().catch(() => {
           // Local state is still cleared even if the remote sign-out request fails.
         });

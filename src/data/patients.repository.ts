@@ -1,8 +1,22 @@
 import { supabase } from '@/lib/supabase';
 import type { Tables } from '@/types/supabase';
 import type { Patient, PatientCreateInput, PatientUpdateInput } from '@/domain/patient';
-import { fromPatientRow, toPatientInsert, toPatientUpdate } from '@/mappers/patient.mapper';
+import {
+  fromPatientRow,
+  toPatientIdentity,
+  toPatientInsert,
+  toPatientUpdate,
+} from '@/mappers/patient.mapper';
 import { fromDateOnly, fromNullableDateOnly } from '@/mappers/date';
+import {
+  identitySelectColumns,
+  markPlaintextIdentityColumnMissing,
+  openPatientIdentities,
+  openPatientIdentity,
+  sealPatientIdentity,
+  type PatientIdentityColumns,
+} from './patientIdentity';
+import type { PatientIdentity } from '@/lib/patientIdentityCrypto';
 
 /**
  * 마이그레이션으로 나중에 붙은 컬럼들(지시오더 202609210001, 영양 202609210002).
@@ -39,6 +53,7 @@ async function withMissingColumnFallback<T>(
     if (result.error?.code !== UNDEFINED_COLUMN) return result as QueryResult<T>;
 
     const missing = missingColumnFrom(result.error);
+    if (missing) markPlaintextIdentityColumnMissing(missing);
     const reduced = missing ? current.replace(new RegExp(`\\s*\\b${missing}\\b,`), '') : current;
     // 줄일 수 없으면 더 돌려봐야 같은 오류다.
     if (reduced === current) return result as QueryResult<T>;
@@ -48,11 +63,8 @@ async function withMissingColumnFallback<T>(
   return run(current) as Promise<QueryResult<T>>;
 }
 
-const patientColumns = `
-  id,
-  registration_number,
-  name,
-  birth_date,
+/** 식별정보 칸은 모드에 따라 달라서(`identitySelectColumns`) 조회할 때 붙인다 */
+const patientBaseColumns = `
   sex,
   room_bed,
   admission_date,
@@ -85,19 +97,13 @@ const patientColumns = `
   deleted_at
 `;
 
-const activePatientBriefingColumns = `
-  id,
-  name,
+const activePatientBriefingBaseColumns = `
   room_bed,
   patient_type,
   status
 `;
 
-const patientShellColumns = `
-  id,
-  registration_number,
-  name,
-  birth_date,
+const patientShellBaseColumns = `
   sex,
   room_bed,
   admission_date,
@@ -114,6 +120,11 @@ const patientShellColumns = `
   updated_at,
   deleted_at
 `;
+
+/** `id`를 맨 앞에 두는 이유: 폴백이 지우는 칸은 뒤에 쉼표가 있어야 한다(`withMissingColumnFallback`) */
+function withIdentityColumns(baseColumns: string) {
+  return `id, ${identitySelectColumns()} ${baseColumns}`;
+}
 
 export type ActivePatientBriefingRow = {
   id: string;
@@ -145,8 +156,15 @@ export type PatientShellRow = Pick<
   | 'updatedAt'
 >;
 
+type PatientRow = Tables<'patients'>;
+
+async function fromPatientRows(rows: PatientRow[]): Promise<Patient[]> {
+  const opened = await openPatientIdentities(rows);
+  return opened.map(({ row, identity }) => fromPatientRow(row, identity));
+}
+
 export async function listPatients(): Promise<Patient[]> {
-  const { data, error } = await withMissingColumnFallback<Tables<'patients'>[]>(
+  const { data, error } = await withMissingColumnFallback<PatientRow[]>(
     (columns) =>
       supabase
         .from('patients')
@@ -154,27 +172,52 @@ export async function listPatients(): Promise<Patient[]> {
         .is('deleted_at', null)
         .order('status', { ascending: true })
         .order('room_bed', { ascending: true }),
-    patientColumns
+    withIdentityColumns(patientBaseColumns)
   );
 
   if (error) throw error;
-  return (data ?? []).map(fromPatientRow);
+  return fromPatientRows(data ?? []);
 }
 
+type PatientShellDbRow = PatientIdentityColumns &
+  Pick<
+    PatientRow,
+    | 'id'
+    | 'sex'
+    | 'room_bed'
+    | 'admission_date'
+    | 'discharge_date'
+    | 'attending_physician'
+    | 'patient_type'
+    | 'status'
+    | 'created_by'
+    | 'attention'
+    | 'tags'
+    | 'chief_complaint'
+    | 'onset'
+    | 'created_at'
+    | 'updated_at'
+  >;
+
 export async function listPatientShellRows(): Promise<PatientShellRow[]> {
-  const { data, error } = await supabase
-    .from('patients')
-    .select(patientShellColumns)
-    .is('deleted_at', null)
-    .order('status', { ascending: true })
-    .order('room_bed', { ascending: true });
+  const { data, error } = await withMissingColumnFallback<PatientShellDbRow[]>(
+    (columns) =>
+      supabase
+        .from('patients')
+        .select(columns)
+        .is('deleted_at', null)
+        .order('status', { ascending: true })
+        .order('room_bed', { ascending: true }),
+    withIdentityColumns(patientShellBaseColumns)
+  );
 
   if (error) throw error;
-  return data.map((row) => ({
+  const opened = await openPatientIdentities(data ?? []);
+  return opened.map(({ row, identity }) => ({
     id: row.id,
-    registrationNumber: row.registration_number,
-    name: row.name,
-    birthDate: fromDateOnly(row.birth_date),
+    registrationNumber: identity.registrationNumber,
+    name: identity.name,
+    birthDate: fromDateOnly(identity.birthDate),
     sex: row.sex,
     roomBed: row.room_bed,
     admissionDate: fromDateOnly(row.admission_date),
@@ -192,26 +235,11 @@ export async function listPatientShellRows(): Promise<PatientShellRow[]> {
   }));
 }
 
+type ActivePatientBriefingDbRow = PatientIdentityColumns &
+  Pick<PatientRow, 'id' | 'room_bed' | 'patient_type' | 'status'>;
+
 export async function listActivePatientBriefingRows(): Promise<ActivePatientBriefingRow[]> {
-  const { data, error } = await supabase
-    .from('patients')
-    .select(activePatientBriefingColumns)
-    .eq('status', 'active')
-    .is('deleted_at', null)
-    .order('room_bed', { ascending: true });
-
-  if (error) throw error;
-  return data.map((row) => ({
-    id: row.id,
-    name: row.name,
-    roomBed: row.room_bed,
-    patientType: row.patient_type,
-    status: row.status,
-  }));
-}
-
-export async function listActivePatients(): Promise<Patient[]> {
-  const { data, error } = await withMissingColumnFallback<Tables<'patients'>[]>(
+  const { data, error } = await withMissingColumnFallback<ActivePatientBriefingDbRow[]>(
     (columns) =>
       supabase
         .from('patients')
@@ -219,22 +247,45 @@ export async function listActivePatients(): Promise<Patient[]> {
         .eq('status', 'active')
         .is('deleted_at', null)
         .order('room_bed', { ascending: true }),
-    patientColumns
+    withIdentityColumns(activePatientBriefingBaseColumns)
   );
 
   if (error) throw error;
-  return (data ?? []).map(fromPatientRow);
+  const opened = await openPatientIdentities(data ?? []);
+  return opened.map(({ row, identity }) => ({
+    id: row.id,
+    name: identity.name,
+    roomBed: row.room_bed,
+    patientType: row.patient_type,
+    status: row.status,
+  }));
+}
+
+export async function listActivePatients(): Promise<Patient[]> {
+  const { data, error } = await withMissingColumnFallback<PatientRow[]>(
+    (columns) =>
+      supabase
+        .from('patients')
+        .select(columns)
+        .eq('status', 'active')
+        .is('deleted_at', null)
+        .order('room_bed', { ascending: true }),
+    withIdentityColumns(patientBaseColumns)
+  );
+
+  if (error) throw error;
+  return fromPatientRows(data ?? []);
 }
 
 export async function getPatient(id: string): Promise<Patient | null> {
-  const { data, error } = await withMissingColumnFallback<Tables<'patients'>>(
+  const { data, error } = await withMissingColumnFallback<PatientRow>(
     (columns) =>
       supabase.from('patients').select(columns).eq('id', id).is('deleted_at', null).maybeSingle(),
-    patientColumns
+    withIdentityColumns(patientBaseColumns)
   );
 
   if (error) throw error;
-  return data ? fromPatientRow(data) : null;
+  return data ? fromPatientRow(data, await openPatientIdentity(data.id, data)) : null;
 }
 
 export async function createPatient(input: PatientCreateInput): Promise<Patient> {
@@ -263,6 +314,7 @@ export async function createPatient(input: PatientCreateInput): Promise<Patient>
   const patientId = crypto.randomUUID();
   const insertPayload = {
     ...toPatientInsert({ ...input, createdBy: authData.user.id }),
+    ...(await sealPatientIdentity(patientId, toPatientIdentity(input))),
     id: patientId,
   };
 
@@ -276,25 +328,91 @@ export async function createPatient(input: PatientCreateInput): Promise<Patient>
 }
 
 export async function updatePatient(id: string, input: PatientUpdateInput): Promise<Patient> {
-  const { data, error } = await withMissingColumnFallback<Tables<'patients'>>(
+  const identityColumns = await sealUpdatedIdentity(id, input);
+  const { data, error } = await withMissingColumnFallback<PatientRow>(
     (columns) =>
       supabase
         .from('patients')
-        .update(toPatientUpdate(input))
+        .update({ ...toPatientUpdate(input), ...identityColumns })
         .eq('id', id)
         .select(columns)
         .single(),
-    patientColumns
+    withIdentityColumns(patientBaseColumns)
   );
 
   if (error) throw error;
   if (!data) throw new Error('환자 정보를 저장했지만 다시 불러오지 못했습니다.');
-  return fromPatientRow(data);
+  return fromPatientRow(data, await openPatientIdentity(data.id, data));
+}
+
+/**
+ * 이름·등록번호·생년월일은 한 암호문으로 묶여 있어 하나만 바꿔도 셋을 다시 암호화해야 한다.
+ * 바뀌지 않은 값은 현재 행에서 읽어 채운다.
+ */
+async function sealUpdatedIdentity(
+  id: string,
+  input: PatientUpdateInput
+): Promise<PatientIdentityColumns> {
+  const { name, registrationNumber, birthDate } = input;
+  if (name === undefined && registrationNumber === undefined && birthDate === undefined) return {};
+
+  const complete = name !== undefined && registrationNumber !== undefined && birthDate !== undefined;
+  const current = complete ? null : await getPatient(id);
+  if (!complete && !current) throw new Error('환자 정보를 찾지 못했습니다.');
+
+  return sealPatientIdentity(
+    id,
+    toPatientIdentity({
+      name: name ?? current?.name ?? '',
+      registrationNumber: registrationNumber ?? current?.registrationNumber ?? '',
+      birthDate: birthDate ?? current?.birthDate ?? new Date(),
+    })
+  );
 }
 
 export async function deletePatient(id: string): Promise<void> {
   const { error } = await supabase.from('patients').delete().eq('id', id);
 
+  if (error) throw error;
+}
+
+// ─────────────────────────────────────────────
+// 평문 → 암호문 옮기기 (TODO 2.19)
+// ─────────────────────────────────────────────
+
+export interface PlaintextIdentityRow {
+  id: string;
+  identity: PatientIdentity;
+}
+
+/**
+ * 아직 암호화하지 않은 환자. 삭제(보관)된 행도 포함한다 — 2단계 마이그레이션이 모든 행을 확인한다.
+ * 평문 칸이 이미 지워졌으면(2단계 적용 후) 옮길 것이 없다.
+ */
+export async function listPatientsWithPlaintextIdentity(): Promise<PlaintextIdentityRow[]> {
+  const { data, error } = await supabase
+    .from('patients')
+    .select('id, registration_number, name, birth_date')
+    .is('identity_ciphertext', null);
+
+  if (error) {
+    if (error.code === UNDEFINED_COLUMN) return [];
+    throw error;
+  }
+  return Promise.all(
+    data.map(async (row) => ({ id: row.id, identity: await openPatientIdentity(row.id, row) }))
+  );
+}
+
+/** 암호문을 쓰면서 같은 요청으로 평문 칸을 비운다 — 둘 중 하나만 반영되는 순간이 없다 */
+export async function replacePlaintextIdentity(id: string, identity: PatientIdentity): Promise<void> {
+  const sealed = await sealPatientIdentity(id, identity);
+  if (!sealed.identity_ciphertext) throw new Error('암호화 키가 없어 환자정보를 옮길 수 없습니다.');
+
+  const { error } = await supabase
+    .from('patients')
+    .update({ ...sealed, name: null, registration_number: null, birth_date: null })
+    .eq('id', id);
   if (error) throw error;
 }
 

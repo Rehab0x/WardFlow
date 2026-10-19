@@ -1,13 +1,18 @@
 import type { Inserts, Tables, Updates } from '@/types/supabase';
 import type { Patient, PatientCreateInput, PatientUpdateInput } from '@/domain/patient';
+import type { PatientIdentity } from '@/lib/patientIdentityCrypto';
 import { fromDateOnly, fromNullableDateOnly, toDateOnly, toNullableDateOnly } from './date';
 
-export function fromPatientRow(row: Tables<'patients'>): Patient {
+/**
+ * 이름·등록번호·생년월일은 행에 평문으로 없다 — 리포지토리가 복호화해 `identity`로 넘긴다
+ * (`data/patientIdentity`).
+ */
+export function fromPatientRow(row: Tables<'patients'>, identity: PatientIdentity): Patient {
   return {
     id: row.id,
-    registrationNumber: row.registration_number,
-    name: row.name,
-    birthDate: fromDateOnly(row.birth_date),
+    registrationNumber: identity.registrationNumber,
+    name: identity.name,
+    birthDate: fromDateOnly(identity.birthDate),
     sex: row.sex,
     roomBed: row.room_bed,
     admissionDate: fromDateOnly(row.admission_date),
@@ -41,11 +46,9 @@ export function fromPatientRow(row: Tables<'patients'>): Patient {
   };
 }
 
+/** 식별정보 칸은 리포지토리가 `sealPatientIdentity`로 따로 채운다 */
 export function toPatientInsert(input: PatientCreateInput): Inserts<'patients'> {
   return {
-    registration_number: input.registrationNumber,
-    name: input.name,
-    birth_date: toDateOnly(input.birthDate),
     sex: input.sex,
     room_bed: input.roomBed,
     admission_date: toDateOnly(input.admissionDate),
@@ -82,11 +85,9 @@ export function toPatientInsert(input: PatientCreateInput): Inserts<'patients'> 
   };
 }
 
+/** 식별정보 칸은 리포지토리가 `sealPatientIdentity`로 따로 채운다 */
 export function toPatientUpdate(input: PatientUpdateInput): Updates<'patients'> {
   return {
-    registration_number: input.registrationNumber,
-    name: input.name,
-    birth_date: input.birthDate ? toDateOnly(input.birthDate) : undefined,
     sex: input.sex,
     room_bed: input.roomBed,
     admission_date: input.admissionDate ? toDateOnly(input.admissionDate) : undefined,
@@ -121,3 +122,13 @@ export function toPatientUpdate(input: PatientUpdateInput): Updates<'patients'> 
   };
 }
 
+
+export function toPatientIdentity(
+  input: Pick<Patient, 'name' | 'registrationNumber' | 'birthDate'>
+): PatientIdentity {
+  return {
+    name: input.name,
+    registrationNumber: input.registrationNumber,
+    birthDate: toDateOnly(input.birthDate),
+  };
+}

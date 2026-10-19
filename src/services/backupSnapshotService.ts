@@ -7,6 +7,7 @@ import {
 } from '@/data/backupSnapshots.repository';
 import { supabase } from '@/lib/supabase';
 import type { Database, Json } from '@/types/supabase';
+import { getIdentityKeyMode } from '@/lib/patientIdentityKeyring';
 
 type SnapshotKind = BackupSnapshotSummary['kind'];
 type SnapshotTable = keyof Database['public']['Tables'];
@@ -74,11 +75,19 @@ export class BackupSnapshotError extends Error {
 
 const snapshotAppVersion = 'wardflow-v2';
 
-const patientSnapshotColumns = `
-  id,
-  registration_number,
-  name,
-  birth_date,
+/**
+ * 식별정보 칸은 암호화 여부에 따라 다르다 (TODO 2.19).
+ * 암호화 모드의 스냅샷에는 암호문만 들어간다 — 열려면 같은 환자정보 키가 필요하다.
+ */
+function patientSnapshotColumns() {
+  const identity =
+    getIdentityKeyMode() === 'legacy'
+      ? 'registration_number, name, birth_date,'
+      : 'identity_ciphertext, registration_hmac,';
+  return `id, ${identity} ${patientSnapshotBaseColumns}`;
+}
+
+const patientSnapshotBaseColumns = `
   sex,
   room_bed,
   admission_date,
@@ -428,7 +437,7 @@ async function collectSnapshotPayload(): Promise<SnapshotPayload> {
     labCategories,
     userSettings,
   ] = await Promise.all([
-    selectSnapshotRows('patients', patientSnapshotColumns, 'created_at'),
+    selectSnapshotRows('patients', patientSnapshotColumns(), 'created_at'),
     selectSnapshotRows('notes', noteSnapshotColumns, 'created_at'),
     selectSnapshotRows('schedules', scheduleSnapshotColumns, 'created_at'),
     selectSnapshotRows('medications', medicationSnapshotColumns, 'created_at'),

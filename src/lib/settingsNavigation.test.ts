@@ -38,6 +38,7 @@ describe('settingsNavigation', () => {
       'lab-import',
       'ai',
       'backup',
+      'identity',
     ]);
     expect(SETTINGS_GROUPS).toEqual(['계정', '업무', 'Lab', '시스템']);
   });

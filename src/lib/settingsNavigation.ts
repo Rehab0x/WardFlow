@@ -7,7 +7,8 @@ export type SettingsSectionId =
   | 'lab-ref'
   | 'lab-import'
   | 'ai'
-  | 'backup';
+  | 'backup'
+  | 'identity';
 
 export type SettingsSectionGroup = '계정' | '업무' | 'Lab' | '시스템';
 export type SettingsSectionIconKey =
@@ -38,6 +39,7 @@ export const KNOWN_SETTINGS_SECTIONS: SettingsSectionId[] = [
   'lab-import',
   'ai',
   'backup',
+  'identity',
 ];
 
 export const DEFAULT_SETTINGS_SECTION: SettingsSectionId = 'charting';
@@ -70,5 +72,6 @@ export function buildSettingsSections(input: { isAdmin: boolean }): SettingsSect
     { id: 'lab-import', label: 'Lab Import', icon: 'flask', group: 'Lab' },
     { id: 'ai', label: 'AI 설정', icon: 'bot', group: '시스템' },
     { id: 'backup', label: '백업 스냅샷', icon: 'hardDrive', group: '시스템' },
+    { id: 'identity', label: '환자정보 암호화', icon: 'shield', group: '시스템' },
   ];
 }
