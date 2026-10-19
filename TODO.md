@@ -468,6 +468,16 @@ AI 음성 질의 → 알림 고도화 → 간호사 대화 SOAP 분리 → 근�
 - [x] 테스트 4건 — `StandingOrdersSection.test.tsx`
 - [ ] **사용자 액션**: 마이그레이션 적용 필요. 적용 전에는 지시오더 저장만 실패한다(나머지는 정상)
 
+### 2.20 Claude 모델 목록 갱신 (5.5 세대) `@Coder-Logic` — ✅ **완료 (2026-10-19)**
+
+> **배경 (사용자)**: Claude API를 써 보려는데 목록이 예전 모델이다. Opus 5.5 / Sonnet 5.5 / Haiku 5.5 반영.
+
+- [x] 목록 교체 — `claude-sonnet-5-5`(기본) / `claude-haiku-5-5` / `claude-opus-5-5`. 예전 모델을 저장해 둔 브라우저는 2.10의 은퇴 모델 방어로 기본값으로 돌아간다
+- [x] 응답 파싱 — 5.5 세대는 thinking이 기본으로 켜져 있어 응답 첫 블록이 (빈) `thinking`일 수 있다.
+  `content[0].text`만 읽으면 **빈 답이 된다** → text 블록만 모아 읽는다. thinking도 출력 한도를 쓰므로 `max_tokens` 4096 → 16000
+- [x] 안전 분류기 거절(`stop_reason: refusal`) — Opus/Sonnet 5.5는 서버 측 대체 모델(`fallbacks: "default"`)로 자동 재시도, 그래도 거절이면 사용자 문구로 알림
+- [ ] 실사용 확인 — 설정 > AI 설정에서 연결 테스트
+
 ### 2.19 환자 식별정보 암호화 (DB 유출 대비) `@Architect` `@Coder-Logic` `@Coder-UI` — ✅ **완료 (2026-10-19)**
 
 > **배경 (사용자)**: DB에 환자 이름·등록번호가 평문으로 있어, DB가 털리면 환자가 식별된다.

@@ -58,12 +58,46 @@ export async function testConnection(): Promise<{ success: boolean; message: str
 
 // ─── Claude (Anthropic) ───
 
+/**
+ * 안전 분류기가 거절하면 같은 요청을 Anthropic이 고른 대체 모델로 서버에서 다시 돌린다.
+ * Opus/Sonnet 5.5만 지원한다 (Haiku 5.5는 서버 측 대체가 없다).
+ */
+const CLAUDE_SERVER_FALLBACK_MODELS = new Set(['claude-opus-5-5', 'claude-sonnet-5-5']);
+const CLAUDE_SERVER_FALLBACK_BETA = 'server-side-fallback-2026-07-01';
+
+interface ClaudeContentBlock {
+  type: string;
+  text?: string;
+}
+
+interface ClaudeMessageResponse {
+  model?: string;
+  stop_reason?: string;
+  content?: ClaudeContentBlock[];
+}
+
+/**
+ * 응답에서 답 글자만 꺼낸다.
+ * 5.5 세대는 thinking이 기본으로 켜져 있어 첫 블록이 (빈) `thinking`일 수 있고,
+ * 대체 모델로 넘어가면 `fallback` 블록이 끼어든다 — text 블록만 모은다.
+ */
+export function readClaudeText(data: ClaudeMessageResponse): string {
+  if (data.stop_reason === 'refusal') {
+    throw new Error('Claude가 이 요청에 답하지 않았습니다(안전 정책). 질문을 바꿔 다시 시도해주세요.');
+  }
+  return (data.content ?? [])
+    .filter((block) => block.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text)
+    .join('');
+}
+
 async function callClaude(
   apiKey: string,
   model: string,
   systemPrompt: string,
   userMessage: string,
 ): Promise<AIResponse> {
+  const useServerFallback = CLAUDE_SERVER_FALLBACK_MODELS.has(model);
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -71,12 +105,15 @@ async function callClaude(
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true',
+      ...(useServerFallback ? { 'anthropic-beta': CLAUDE_SERVER_FALLBACK_BETA } : {}),
     },
     body: JSON.stringify({
       model,
-      max_tokens: 4096,
+      // thinking도 이 한도 안에서 쓰므로 넉넉히 둔다 — 모자라면 답이 중간에 잘린다
+      max_tokens: 16000,
       system: systemPrompt,
       messages: [{ role: 'user', content: userMessage }],
+      ...(useServerFallback ? { fallbacks: 'default' } : {}),
     }),
   });
 
@@ -85,10 +122,11 @@ async function callClaude(
     throw new Error(`Claude API 오류 (${response.status}): ${((err as Record<string, Record<string, unknown>>)?.error as Record<string, unknown>)?.message || response.statusText}`);
   }
 
-  const data = await response.json();
+  const data = (await response.json()) as ClaudeMessageResponse;
   return {
-    content: data.content?.[0]?.text || '',
-    model,
+    content: readClaudeText(data),
+    // 대체 모델이 답했으면 그 모델 이름이 온다
+    model: data.model || model,
     provider: 'claude',
   };
 }
