@@ -1,6 +1,6 @@
 # WardFlow Rebuild Handoff
 
-Last updated: 2026-09-21
+Last updated: 2026-10-19
 
 > ⚠️ 이 문서는 시간순 누적 로그입니다. **가장 최신 상태는 맨 아래 "Current 2026-09-21 Checkpoint"를 먼저 읽으세요.**
 > 중간 섹션에는 Dexie 이중 백엔드/`/v2` 프리뷰 등 이후 제거된 내용이 남아 있습니다.
@@ -625,3 +625,14 @@ STEP 1로 건수를 먼저 확인하고, 2-A(전체) 또는 2-B(사용자 한정
 - `npm run type-check` / `npm run lint`(에러 0, 경고 15) / `npm run build` 통과
 - `npx vitest run` — 58 files / **427 tests** 통과 (직전 392 → +35)
 - 프로덕션 배포 확인: https://ward-flow.vercel.app — 커밋별로 번들 해시 교체 확인
+
+## Current 2026-10-19 Checkpoint
+
+- **환자 식별정보 암호화 완료 (TODO 2.19)** — `patients`에는 `identity_ciphertext`(AES-GCM)와 `registration_hmac`만 있다.
+  평문 이름·등록번호·생년월일 컬럼은 마이그레이션 `202610190002`로 삭제됨
+  - 로그인 후 `PatientIdentityGate`가 금고(`patient_identity_vaults`)를 확인하고 잠금 해제를 요구한다
+  - 암복호화는 `src/data/patientIdentity.ts`에서만. 키는 브라우저(session/localStorage)에만 있다
+  - 서버 Lab import는 Vercel `PATIENT_LOOKUP_KEY`(설정 > 환자정보 암호화에서 복사)로 매칭
+- **Claude 5.5 세대 (TODO 2.20)** — 모델 목록 교체, text 블록만 읽기, Opus/Sonnet 5.5 서버 측 fallback
+- 마이그레이션 대기 없음. 테스트 452건 통과, lint 에러 0
+- 개발 기기 이전: `git clone` → `npm install` → `vercel link` → `vercel env pull .env.local` (옮길 파일 없음)
