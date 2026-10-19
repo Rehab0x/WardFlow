@@ -11,9 +11,14 @@
 --
 -- 참고: Supabase 자체 백업(PITR/일일 백업)에는 보존 기간 동안 이전 평문이 남는다.
 
+-- 삭제(deleted_at)된 환자는 RLS 때문에 앱이 읽을 수도 고칠 수도 없어 암호화되지 않는다.
+-- 앱에서 다시 볼 방법도 없는 행이므로 검사에서 빼고, 아래에서 평문 칸이 지워질 때 식별정보도 함께 사라진다.
+-- (진료 기록 행 자체는 남는다)
 do $$
 begin
-  if exists (select 1 from public.patients where identity_ciphertext is null) then
+  if exists (
+    select 1 from public.patients where identity_ciphertext is null and deleted_at is null
+  ) then
     raise exception
       'patients 중 암호화되지 않은 행이 있습니다. 앱에서 잠금을 해제해 암호화를 마친 뒤 다시 실행하세요.';
   end if;

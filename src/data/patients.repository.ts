@@ -409,11 +409,14 @@ export async function replacePlaintextIdentity(id: string, identity: PatientIden
   const sealed = await sealPatientIdentity(id, identity);
   if (!sealed.identity_ciphertext) throw new Error('암호화 키가 없어 환자정보를 옮길 수 없습니다.');
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('patients')
     .update({ ...sealed, name: null, registration_number: null, birth_date: null })
-    .eq('id', id);
+    .eq('id', id)
+    .select('id');
   if (error) throw error;
+  // RLS에 막힌 update는 오류 없이 0행으로 끝난다 — 옮겨지지 않았는데 끝났다고 하면 안 된다
+  if (!data?.length) throw new Error('환자정보를 암호화하지 못했습니다. 이 환자의 수정 권한을 확인해주세요.');
 }
 
 /** 테스트 전용 — 마이그레이션 미적용 폴백은 실제 DB 없이 검증한다. */
