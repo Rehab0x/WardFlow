@@ -24,17 +24,12 @@ export function PatientIdentityGate({ children }: { children: ReactNode }) {
 
   if (state.phase === 'ready') return <>{children}</>;
 
-  if (state.phase === 'checking' || state.phase === 'migrating') {
-    const progress = state.phase === 'migrating' && state.progress.total > 0 ? state.progress : null;
+  if (state.phase === 'checking') {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="text-center">
           <div className="mb-4 inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent" />
-          <p className="text-muted-foreground">
-            {progress
-              ? `기존 환자정보 암호화 중... (${progress.done}/${progress.total})`
-              : '로딩 중...'}
-          </p>
+          <p className="text-muted-foreground">로딩 중...</p>
         </div>
       </div>
     );

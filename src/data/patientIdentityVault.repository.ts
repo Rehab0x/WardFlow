@@ -10,12 +10,8 @@ export interface PatientIdentityVault {
   keyCheck: string;
 }
 
-/**
- * - `missing-table`: 마이그레이션(202610190001) 전 — 앱은 예전처럼 평문으로 동작한다
- * - `none`: 테이블은 있지만 아직 암호를 설정하지 않음
- */
+/** `none`: 아직 암호를 설정하지 않음 (첫 로그인) */
 export type PatientIdentityVaultLookup =
-  | { status: 'missing-table' }
   | { status: 'none' }
   | { status: 'ready'; vault: PatientIdentityVault };
 
@@ -28,9 +24,6 @@ const vaultColumns = `
   key_check
 `;
 
-/** Postgres 42P01 / PostgREST PGRST205 — 테이블이 없음 */
-const MISSING_TABLE_CODES = new Set(['42P01', 'PGRST205']);
-
 export async function getPatientIdentityVault(ownerId: string): Promise<PatientIdentityVaultLookup> {
   const { data, error } = await supabase
     .from('patient_identity_vaults')
@@ -38,10 +31,7 @@ export async function getPatientIdentityVault(ownerId: string): Promise<PatientI
     .eq('owner_id', ownerId)
     .maybeSingle();
 
-  if (error) {
-    if (error.code && MISSING_TABLE_CODES.has(error.code)) return { status: 'missing-table' };
-    throw error;
-  }
+  if (error) throw error;
   return data ? { status: 'ready', vault: fromVaultRow(data) } : { status: 'none' };
 }
 

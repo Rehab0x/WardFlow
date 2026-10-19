@@ -5,10 +5,6 @@ import {
   type PatientIdentityVault,
 } from '@/data/patientIdentityVault.repository';
 import {
-  listPatientsWithPlaintextIdentity,
-  replacePlaintextIdentity,
-} from '@/data/patients.repository';
-import {
   deriveIdentityKeys,
   generateMasterSecret,
   generateRecoveryCode,
@@ -31,7 +27,6 @@ import {
   lockIdentityKeys,
   type IdentityKeyMode,
   restoreIdentityKeys,
-  setLegacyIdentityMode,
   unlockIdentityKeys,
 } from '@/lib/patientIdentityKeyring';
 import { computeRegistrationLookup, encodeLookupKey } from '@/lib/registrationLookup';
@@ -41,15 +36,12 @@ import { computeRegistrationLookup, encodeLookupKey } from '@/lib/registrationLo
  *
  * 1. `prepareIdentityKeys` — 로그인 직후. 금고 상태를 보고, 이 기기에 저장된 키가 있으면 바로 연다
  * 2. 금고가 없으면 `setUpIdentityVault`(첫 설정), 있으면 `unlockIdentityVault`(암호문구 또는 복구 코드)
- * 3. 열리면 `encryptRemainingPlaintextPatients` — 아직 평문인 환자를 옮긴다
  */
 
 export const MIN_PASSPHRASE_LENGTH = 8;
 const KEY_CHECK_INPUT = 'wardflow-key-check';
 
 export type IdentityPreparation =
-  /** 마이그레이션 전 — 평문 모드로 그대로 쓴다 */
-  | 'legacy'
   /** 금고 없음 — 첫 설정 화면 */
   | 'setup'
   /** 금고 있음, 키 없음 — 잠금 해제 화면 */
@@ -58,11 +50,6 @@ export type IdentityPreparation =
 
 export async function prepareIdentityKeys(userId: string): Promise<IdentityPreparation> {
   const lookup = await getPatientIdentityVault(userId);
-  if (lookup.status === 'missing-table') {
-    setLegacyIdentityMode(true);
-    return 'legacy';
-  }
-  setLegacyIdentityMode(false);
   if (lookup.status === 'none') return 'setup';
 
   if (getIdentityKeys() && (await matchesVault(lookup.vault))) return 'unlocked';
@@ -147,29 +134,6 @@ export async function changeIdentityPassphrase(
       IDENTITY_KDF_ITERATIONS
     ),
   });
-}
-
-export interface PlaintextMigrationProgress {
-  done: number;
-  total: number;
-}
-
-/**
- * 아직 평문인 환자를 암호문으로 옮긴다. 한 명씩 옮기므로 중간에 끊겨도 다음에 이어서 하면 된다.
- * @returns 옮긴 환자 수
- */
-export async function encryptRemainingPlaintextPatients(
-  onProgress?: (progress: PlaintextMigrationProgress) => void
-): Promise<number> {
-  const rows = await listPatientsWithPlaintextIdentity();
-  onProgress?.({ done: 0, total: rows.length });
-  let done = 0;
-  for (const row of rows) {
-    await replacePlaintextIdentity(row.id, row.identity);
-    done++;
-    onProgress?.({ done, total: rows.length });
-  }
-  return done;
 }
 
 /** Vercel `PATIENT_LOOKUP_KEY`에 넣을 값 — 서버 Lab import가 등록번호로 환자를 찾을 때 쓴다 */

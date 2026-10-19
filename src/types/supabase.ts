@@ -42,14 +42,10 @@ export interface Database {
       patients: {
         Row: {
           id: string;
-          /** 평문 식별정보 — 202610190002 마이그레이션에서 삭제된다. 암호화된 행은 null */
-          registration_number?: string | null;
-          name?: string | null;
-          birth_date?: string | null;
-          /** 202610190001 마이그레이션으로 추가. 이름·등록번호·생년월일 암호문 */
-          identity_ciphertext?: string | null;
+          /** 이름·등록번호·생년월일 암호문 (TODO 2.19, 평문 칸은 202610190002에서 삭제) */
+          identity_ciphertext: string | null;
           /** 등록번호 HMAC 조회키 (hex) */
-          registration_hmac?: string | null;
+          registration_hmac: string | null;
           sex: 'M' | 'F';
           room_bed: string;
           admission_date: string;
@@ -86,9 +82,6 @@ export interface Database {
         };
         Insert: {
           id?: string;
-          registration_number?: string | null;
-          name?: string | null;
-          birth_date?: string | null;
           identity_ciphertext?: string | null;
           registration_hmac?: string | null;
           sex: 'M' | 'F';

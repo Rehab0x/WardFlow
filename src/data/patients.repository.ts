@@ -9,14 +9,12 @@ import {
 } from '@/mappers/patient.mapper';
 import { fromDateOnly, fromNullableDateOnly } from '@/mappers/date';
 import {
-  identitySelectColumns,
-  markPlaintextIdentityColumnMissing,
+  IDENTITY_SELECT_COLUMNS,
   openPatientIdentities,
   openPatientIdentity,
   sealPatientIdentity,
   type PatientIdentityColumns,
 } from './patientIdentity';
-import type { PatientIdentity } from '@/lib/patientIdentityCrypto';
 
 /**
  * 마이그레이션으로 나중에 붙은 컬럼들(지시오더 202609210001, 영양 202609210002).
@@ -53,7 +51,6 @@ async function withMissingColumnFallback<T>(
     if (result.error?.code !== UNDEFINED_COLUMN) return result as QueryResult<T>;
 
     const missing = missingColumnFrom(result.error);
-    if (missing) markPlaintextIdentityColumnMissing(missing);
     const reduced = missing ? current.replace(new RegExp(`\\s*\\b${missing}\\b,`), '') : current;
     // 줄일 수 없으면 더 돌려봐야 같은 오류다.
     if (reduced === current) return result as QueryResult<T>;
@@ -63,7 +60,6 @@ async function withMissingColumnFallback<T>(
   return run(current) as Promise<QueryResult<T>>;
 }
 
-/** 식별정보 칸은 모드에 따라 달라서(`identitySelectColumns`) 조회할 때 붙인다 */
 const patientBaseColumns = `
   sex,
   room_bed,
@@ -121,9 +117,9 @@ const patientShellBaseColumns = `
   deleted_at
 `;
 
-/** `id`를 맨 앞에 두는 이유: 폴백이 지우는 칸은 뒤에 쉼표가 있어야 한다(`withMissingColumnFallback`) */
+/** 이름·등록번호·생년월일은 암호문 칸 하나로만 온다 (`data/patientIdentity`) */
 function withIdentityColumns(baseColumns: string) {
-  return `id, ${identitySelectColumns()} ${baseColumns}`;
+  return `id, ${IDENTITY_SELECT_COLUMNS}, ${baseColumns}`;
 }
 
 export type ActivePatientBriefingRow = {
@@ -374,49 +370,6 @@ export async function deletePatient(id: string): Promise<void> {
   const { error } = await supabase.from('patients').delete().eq('id', id);
 
   if (error) throw error;
-}
-
-// ─────────────────────────────────────────────
-// 평문 → 암호문 옮기기 (TODO 2.19)
-// ─────────────────────────────────────────────
-
-export interface PlaintextIdentityRow {
-  id: string;
-  identity: PatientIdentity;
-}
-
-/**
- * 아직 암호화하지 않은 환자. 삭제(보관)된 행도 포함한다 — 2단계 마이그레이션이 모든 행을 확인한다.
- * 평문 칸이 이미 지워졌으면(2단계 적용 후) 옮길 것이 없다.
- */
-export async function listPatientsWithPlaintextIdentity(): Promise<PlaintextIdentityRow[]> {
-  const { data, error } = await supabase
-    .from('patients')
-    .select('id, registration_number, name, birth_date')
-    .is('identity_ciphertext', null);
-
-  if (error) {
-    if (error.code === UNDEFINED_COLUMN) return [];
-    throw error;
-  }
-  return Promise.all(
-    data.map(async (row) => ({ id: row.id, identity: await openPatientIdentity(row.id, row) }))
-  );
-}
-
-/** 암호문을 쓰면서 같은 요청으로 평문 칸을 비운다 — 둘 중 하나만 반영되는 순간이 없다 */
-export async function replacePlaintextIdentity(id: string, identity: PatientIdentity): Promise<void> {
-  const sealed = await sealPatientIdentity(id, identity);
-  if (!sealed.identity_ciphertext) throw new Error('암호화 키가 없어 환자정보를 옮길 수 없습니다.');
-
-  const { data, error } = await supabase
-    .from('patients')
-    .update({ ...sealed, name: null, registration_number: null, birth_date: null })
-    .eq('id', id)
-    .select('id');
-  if (error) throw error;
-  // RLS에 막힌 update는 오류 없이 0행으로 끝난다 — 옮겨지지 않았는데 끝났다고 하면 안 된다
-  if (!data?.length) throw new Error('환자정보를 암호화하지 못했습니다. 이 환자의 수정 권한을 확인해주세요.');
 }
 
 /** 테스트 전용 — 마이그레이션 미적용 폴백은 실제 DB 없이 검증한다. */

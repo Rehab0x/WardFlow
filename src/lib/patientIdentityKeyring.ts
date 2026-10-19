@@ -13,29 +13,20 @@ import {
  *   (여러 사람이 쓰는 병원 PC에서는 고르지 않도록 화면에서 안내한다)
  * - 저장소 키에 사용자 ID를 넣어, 같은 브라우저에서 다른 계정으로 로그인해도 섞이지 않게 한다
  *
- * 모드
- * - `legacy`: DB에 금고 테이블이 아직 없음(마이그레이션 전). 예전처럼 평문으로 읽고 쓴다
- * - `locked`: 금고는 있는데 키가 없음. 환자 데이터를 읽고 쓰면 안 된다
- * - `unlocked`: 키 있음
+ * 키가 없으면(`locked`) 환자 데이터를 읽고 쓰면 안 된다.
  */
-export type IdentityKeyMode = 'legacy' | 'locked' | 'unlocked';
+export type IdentityKeyMode = 'locked' | 'unlocked';
 
 const STORAGE_PREFIX = 'wardflow.patientIdentityKey.';
 
-let legacy = false;
 let current: { userId: string; keys: PatientIdentityKeys } | null = null;
 
 export function getIdentityKeyMode(): IdentityKeyMode {
-  if (current) return 'unlocked';
-  return legacy ? 'legacy' : 'locked';
+  return current ? 'unlocked' : 'locked';
 }
 
 export function getIdentityKeys(): PatientIdentityKeys | null {
   return current?.keys ?? null;
-}
-
-export function setLegacyIdentityMode(value: boolean) {
-  legacy = value;
 }
 
 export async function unlockIdentityKeys(
@@ -45,7 +36,6 @@ export async function unlockIdentityKeys(
 ): Promise<void> {
   const keys = await deriveIdentityKeys(masterSecret);
   current = { userId, keys };
-  legacy = false;
 
   const encoded = toBase64(masterSecret);
   safeStorage(() => sessionStorage.setItem(storageKey(userId), encoded));
@@ -109,6 +99,5 @@ function safeStorage<T>(run: () => T): T | null {
 
 /** 테스트 전용 */
 export function __resetIdentityKeyringForTests() {
-  legacy = false;
   current = null;
 }
