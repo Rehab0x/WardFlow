@@ -191,6 +191,8 @@ export default function AppPage() {
     handleSaveImportantNotes,
     handleAddNote,
     handleAddNoteForPatient,
+    handleAddAntibioticForPatient,
+    handleAddScheduleForPatient,
     handleRemoveNote,
     handleAddAntibiotic,
     handleAddMedication,
@@ -279,6 +281,15 @@ export default function AppPage() {
       await handleAddNoteForPatient(patientId, content);
     },
     [handleAddNoteForPatient]
+  );
+
+  const quickEntryWriters = useMemo(
+    () => ({
+      addNote: handleAddNoteForPatient,
+      addAntibiotic: handleAddAntibioticForPatient,
+      addSchedule: handleAddScheduleForPatient,
+    }),
+    [handleAddNoteForPatient, handleAddAntibioticForPatient, handleAddScheduleForPatient]
   );
 
   const handleLabImportComplete = useCallback(
@@ -400,6 +411,7 @@ export default function AppPage() {
           searchQuery={searchQuery}
           searchResults={searchResults}
           onOpenPatient={openPatient}
+          quickEntryWriters={quickEntryWriters}
         />
       )}
 

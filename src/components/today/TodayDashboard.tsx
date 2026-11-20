@@ -11,7 +11,9 @@ import { useAlertStore } from '@/stores/useAlertStore';
 import { SEVERITY_LABEL } from '@/services/alertEngine';
 import { AlertSection } from './AlertSection';
 import { TodayDomainSections } from './TodayDomainSections';
+import { QuickEntryPanel } from './QuickEntryPanel';
 import { TodayMetrics } from './TodayMetrics';
+import type { QuickEntryWriters } from '@/hooks/useQuickEntry';
 import { TodayTaskList } from './TodayTaskList';
 import {
   buildTaskFilterOptions,
@@ -30,6 +32,8 @@ interface TodayDashboardProps {
   searchQuery?: string;
   isLoading?: boolean;
   onOpenPatient?: (patientId: string, tab?: string) => void;
+  /** 있으면 상단에 빠른 입력(텍스트 → SOAP·항생제) 패널을 보여준다 */
+  quickEntryWriters?: QuickEntryWriters;
 }
 
 export function TodayDashboard({
@@ -40,6 +44,7 @@ export function TodayDashboard({
   searchQuery,
   isLoading = false,
   onOpenPatient,
+  quickEntryWriters,
 }: TodayDashboardProps) {
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all');
   const [taskSort, setTaskSort] = useState<TaskSort>('priority');
@@ -140,6 +145,8 @@ export function TodayDashboard({
           </DataSection>
         </div>
       )}
+
+      {quickEntryWriters && <QuickEntryPanel writers={quickEntryWriters} />}
 
       <TodayMetrics
         summary={data.patientSummary}

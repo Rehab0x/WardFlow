@@ -146,6 +146,50 @@ export function useClinicalWriters({
     }, '메모를 저장하지 못했습니다.');
   };
 
+  /**
+   * 빠른 입력(Today)용 — 선택된 환자와 무관하게 특정 환자에게 항생제를 등록한다.
+   * 용량·용법은 입력받지 않으므로 비워 둔다. 종료일이 있으면 D-day 계산에 쓰인다.
+   */
+  const handleAddAntibioticForPatient = async (
+    patientId: string,
+    input: { drugName: string; startDate: Date; endDate?: Date }
+  ) => {
+    await runWrite(async () => {
+      await addMedication({
+        patientId,
+        category: 'antibiotic',
+        drugName: input.drugName,
+        drugBaseName: input.drugName,
+        singleDose: 0,
+        schedule: '',
+        startDate: input.startDate,
+        endDate: input.endDate,
+        isAntibiotic: true,
+        isActive: true,
+      });
+      markLocalBriefingUpdated();
+      queueBriefingRefresh();
+    }, '항생제를 저장하지 못했습니다.');
+  };
+
+  /** 빠른 입력용 — 특정 환자에게 일정(항생제 종료 확인 등)을 등록한다. */
+  const handleAddScheduleForPatient = async (
+    patientId: string,
+    input: { title: string; date: Date }
+  ) => {
+    await runWrite(async () => {
+      await addSchedule({
+        patientId,
+        title: input.title,
+        scheduledDate: input.date,
+        category: 'other',
+        isCompleted: false,
+      });
+      markLocalBriefingUpdated();
+      queueBriefingRefresh();
+    }, '일정을 저장하지 못했습니다.');
+  };
+
   const handleRemoveNote = async (noteId: string) => {
     await runWrite(async () => {
       await deleteNote(noteId);
@@ -408,6 +452,8 @@ export function useClinicalWriters({
       handleSaveImportantNotes,
       handleAddNote,
       handleAddNoteForPatient,
+      handleAddAntibioticForPatient,
+      handleAddScheduleForPatient,
       handleRemoveNote,
       handleAddAntibiotic,
       handleAddMedication,
