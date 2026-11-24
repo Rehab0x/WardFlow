@@ -10,7 +10,8 @@
  * AI 출력은 신뢰하지 않고 `normalizeQuickEntryDraft()`에서 검증한다.
  */
 import { matchRosterName } from '@/lib/koreanName';
-import { calculateAntibioticEndDate, MAX_ANTIBIOTIC_DAYS } from '@/utils/antibioticCourse';
+import { calculateAntibioticEndDate, calendarDaysBetween, MAX_ANTIBIOTIC_DAYS } from '@/utils/antibioticCourse';
+import { lookupAntibioticName } from '@/services/antibioticNames';
 import { callAI, parseVoiceQueryJson, type NameMatchKind } from '@/services/aiService';
 
 export interface QuickEntryBlock {
@@ -32,12 +33,20 @@ export interface QuickEntryAntibiotic {
   frequency: string;
 }
 
+export interface QuickEntryReminder {
+  /** 알림에 보일 문구 (예: "F/U", "검사 예정") */
+  title: string;
+  /** 오늘로부터 며칠 뒤인지 (1~365) */
+  daysFromNow: number;
+}
+
 export interface QuickEntryDraft {
   subjective: string;
   objective: string;
   assessment: string;
   plan: string;
   antibiotics: QuickEntryAntibiotic[];
+  reminders: QuickEntryReminder[];
 }
 
 export interface QuickEntryPatientContext {
@@ -86,15 +95,19 @@ const DRAFT_SYSTEM_PROMPT = `당신은 입원환자 담당 의사의 경과기�
    차트 Problem List에 이미 있는 문제는 그 표기를 그대로 쓰고, 근거 없는 진단은 넣지 마세요.
 5. plan은 의사가 적은 P를 그대로 정리합니다. "알림설정" 같은 앱 조작 문구는 plan에서 뺍니다.
 6. antibiotics에는 P에 적힌 **항생제만** 넣습니다. 일반 약(예: 진통제, 항경련제)은 넣지 마세요.
-   - drugName: 적힌 약 이름 그대로
+   - drugName: 적힌 약 이름 **그대로** (약칭·한글이어도 바꾸지 마세요)
+   - genericName: 그 약의 표준 일반명(영어). **확실할 때만** 쓰고, 조금이라도 불확실하면 빈 문자열
    - dosage: "4V", "2g"처럼 적힌 하루 용량 그대로, 없으면 빈 문자열
    - frequency: "#4"처럼 적힌 횟수 그대로(# 포함), 없으면 빈 문자열
    - days: "7일"처럼 일수가 적혀 있으면 숫자, 없으면 null
    - 예) P에 "Tazocin 4V#4 7일" → {"drugName": "Tazocin", "dosage": "4V", "frequency": "#4", "days": 7}
-7. 한국어로 쓰되 약어·검사명은 영어 그대로 둡니다. 마크다운을 쓰지 마세요.
+7. reminders에는 P에 "일주일 뒤 F/U", "10일 뒤 검사 예정"처럼 **며칠 뒤에 다시 확인할 일**이 적혀 있을 때만 넣습니다.
+   - title: 할 일 문구만 (예: "F/U", "검사 예정"), daysFromNow: 오늘로부터 며칠 뒤인지 정수 (일주일=7, 2주=14, 한 달=30)
+   - 항생제 투여 일수("7일")는 reminders가 아닙니다. 적히지 않은 알림을 만들지 마세요.
+8. 한국어로 쓰되 약어·검사명은 영어 그대로 둡니다. 마크다운을 쓰지 마세요.
 
 출력: 아래 JSON 객체 **하나만** 출력하세요. 설명이나 코드펜스를 붙이지 마세요.
-{"subjective": string, "objective": string, "assessment": string, "plan": string, "antibiotics": [{"drugName": string, "dosage": string, "frequency": string, "days": number | null}]}`;
+{"subjective": string, "objective": string, "assessment": string, "plan": string, "antibiotics": [{"drugName": string, "genericName": string, "dosage": string, "frequency": string, "days": number | null}], "reminders": [{"title": string, "daysFromNow": number}]}`;
 
 export async function draftQuickEntry(
   block: Pick<QuickEntryBlock, 'objective' | 'plan'>,
@@ -148,14 +161,91 @@ export function normalizeQuickEntryDraft(
         // 의사가 적은 원문에서 코드가 읽은 값이 있으면 그것을 우선한다 (AI가 틀려도 원문은 정확하다).
         const parsed = extractAntibioticRegimen(fallback.plan, drugName);
         return {
-          drugName,
+          // 내장 별칭표(결정적) → AI가 확실하다고 한 일반명 → 적힌 그대로 순서로 쓴다.
+          drugName: lookupAntibioticName(drugName) ?? (readText(item.genericName) || drugName),
           days: parsed.days ?? llm.days,
           dosage: parsed.dosage || llm.dosage,
           frequency: parsed.frequency || llm.frequency,
         };
       })
       .filter((item): item is QuickEntryAntibiotic => item !== null),
+    reminders: mergeReminders(
+      extractReminders(fallback.plan, new Date()),
+      Array.isArray(source.reminders) ? source.reminders : []
+    ),
   };
+}
+
+const MAX_REMINDER_DAYS = 365;
+
+function mergeReminders(parsed: QuickEntryReminder[], fromAi: unknown[]): QuickEntryReminder[] {
+  const merged = [...parsed];
+  for (const entry of fromAi) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const item = entry as Record<string, unknown>;
+    const title = readText(item.title);
+    const days = Number(item.daysFromNow);
+    if (!title || !Number.isInteger(days) || days < 1 || days > MAX_REMINDER_DAYS) continue;
+    // 코드가 이미 읽은 것과 같은 날짜면 같은 알림으로 보고 AI 쪽은 버린다.
+    if (merged.some((existing) => existing.daysFromNow === days)) continue;
+    merged.push({ title, daysFromNow: days });
+  }
+  return merged;
+}
+
+const WORD_NUMBERS: Record<string, number> = { 일: 1, 이: 2, 삼: 3, 사: 4, 한: 1, 두: 2, 세: 3 };
+
+/**
+ * P 줄에서 "일주일 뒤 F/U", "10일 후 검사 예정", "2주 뒤 외래", "내일 Lab" 같은 알림을 읽는다.
+ * 쉼표·줄바꿈·세미콜론으로 나눈 조각마다 시간 표현 하나를 찾고, 나머지를 알림 문구로 쓴다.
+ * 항생제 일수("Tazocin 7일")는 "뒤/후"가 없으므로 읽지 않는다.
+ */
+export function extractReminders(plan: string, today: Date): QuickEntryReminder[] {
+  const reminders: QuickEntryReminder[] = [];
+  // 1: 내일/모레 · 2: 일/이/삼/사 + 주일 · 3: 한/두/세 + 달 · 4,5: 숫자 + 단위 (모두 뒤/후 필요)
+  const offset =
+    /(내일|모레)|(?:(일|이|삼|사)\s*주일|(한|두|세)\s*달|(\d{1,3})\s*(주일|주|일|개월|달))\s*(?:뒤|후)(?:에)?/;
+  const base = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+  for (const segment of plan.split(/[,;\n]/)) {
+    const found = offset.exec(segment);
+    if (!found) continue;
+
+    let target: Date;
+    if (found[1]) target = shift(base, found[1] === '내일' ? 1 : 2);
+    else if (found[2]) target = shift(base, WORD_NUMBERS[found[2]]! * 7);
+    else if (found[3]) target = addMonths(base, WORD_NUMBERS[found[3]]!);
+    else {
+      const count = Number(found[4]);
+      const unit = found[5];
+      target =
+        unit === '일'
+          ? shift(base, count)
+          : unit === '주' || unit === '주일'
+            ? shift(base, count * 7)
+            : addMonths(base, count);
+    }
+
+    const daysFromNow = calendarDaysBetween(base, target);
+    const title = (segment.slice(0, found.index) + segment.slice(found.index + found[0].length))
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!title || daysFromNow < 1 || daysFromNow > MAX_REMINDER_DAYS) continue;
+    reminders.push({ title, daysFromNow });
+  }
+  return reminders;
+}
+
+function shift(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function addMonths(date: Date, months: number): Date {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
 }
 
 export interface AntibioticRegimen {

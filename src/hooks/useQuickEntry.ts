@@ -22,6 +22,12 @@ export interface QuickEntryAntibioticDraft {
   frequency: string;
 }
 
+export interface QuickEntryReminderDraft {
+  title: string;
+  /** YYYY-MM-DD — 이 날 Today에 알림으로 뜬다 */
+  date: string;
+}
+
 /** 검토 화면에서 고칠 수 있는 한 환자분 */
 export interface QuickEntryItem {
   key: string;
@@ -35,13 +41,15 @@ export interface QuickEntryItem {
   assessment: string;
   plan: string;
   antibiotics: QuickEntryAntibioticDraft[];
-  /** 이미 저장한 단계('note', 'abx:0') — 재시도 때 중복 저장을 막는다. */
+  reminders: QuickEntryReminderDraft[];
+  /** 이미 저장한 단계('note', 'abx:0', 'rem:0') — 재시도 때 중복 저장을 막는다. */
   done: string[];
   error?: string;
 }
 
 export interface QuickEntryWriters {
   addNote: (patientId: string, content: string) => Promise<void>;
+  addReminder: (patientId: string, title: string, dateKey: string) => Promise<void>;
   addAntibiotic: (
     patientId: string,
     input: { drugName: string; dosage?: string; frequency?: string; startDate: Date; endDate?: Date }
@@ -126,6 +134,12 @@ export function useQuickEntry() {
             );
           }
 
+          for (const [index, reminder] of item.reminders.entries()) {
+            const title = reminder.title.trim();
+            if (!title || !reminder.date) continue;
+            await step(`rem:${index}`, () => writers.addReminder(patientId, title, reminder.date));
+          }
+
           updateItem(item.key, { done: [...done], error: failure });
           if (!failure) completed++;
         }
@@ -164,6 +178,7 @@ async function buildItem(
       assessment: '',
       plan: block.plan,
       antibiotics: [],
+      reminders: [],
     };
   }
 
@@ -180,6 +195,10 @@ async function buildItem(
     return {
       ...base,
       ...draft,
+      reminders: draft.reminders.map((item) => ({
+        title: item.title,
+        date: formatDateInput(addDaysFromToday(item.daysFromNow)),
+      })),
       antibiotics: draft.antibiotics.map((item) => ({
         drugName: item.drugName,
         days: item.days ? String(item.days) : '',
@@ -196,9 +215,16 @@ async function buildItem(
       assessment: '',
       plan: block.plan,
       antibiotics: [],
+      reminders: [],
       error: caught instanceof Error ? caught.message : String(caught),
     };
   }
+}
+
+function addDaysFromToday(days: number): Date {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date;
 }
 
 /** 최근 두 검사일의 수치를 `날짜: 항목 값 단위(H/L), ...` 한 줄씩으로 만든다. */

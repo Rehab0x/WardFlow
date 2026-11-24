@@ -192,6 +192,7 @@ export default function AppPage() {
     handleAddNote,
     handleAddNoteForPatient,
     handleAddAntibioticForPatient,
+    handleAddReminderForPatient,
     handleRemoveNote,
     handleAddAntibiotic,
     handleUpdateAntibiotic,
@@ -287,8 +288,9 @@ export default function AppPage() {
     () => ({
       addNote: handleAddNoteForPatient,
       addAntibiotic: handleAddAntibioticForPatient,
+      addReminder: handleAddReminderForPatient,
     }),
-    [handleAddNoteForPatient, handleAddAntibioticForPatient]
+    [handleAddNoteForPatient, handleAddAntibioticForPatient, handleAddReminderForPatient]
   );
 
   const handleLabImportComplete = useCallback(

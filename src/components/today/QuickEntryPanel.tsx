@@ -8,7 +8,7 @@ import { formatDateInput } from '../clinical/dateLabels';
 
 const PLACEHOLDER = `홍길동
 Fever, K 2.7, CRP 15.0
-Tazocin 7일, 알림설정, 케이콘틴 3T#3
+Tazocin 4V#4 7일, 일주일 뒤 F/U, 케이콘틴 3T#3
 
 (빈 줄로 환자를 구분합니다. 1줄=이름, 2줄=O, 3줄=P)`;
 
@@ -133,6 +133,37 @@ export function QuickEntryPanel({ writers }: { writers: QuickEntryWriters }) {
                     </div>
                   );
                 })}
+                {item.reminders.map((reminder, index) => (
+                  <div key={`rem-${index}`} className="mt-1 flex flex-wrap items-center gap-2 text-[12px]">
+                    <span className="text-zinc-500">알림</span>
+                    <input
+                      value={reminder.title}
+                      onChange={(e) => quick.updateItem(item.key, {
+                        reminders: item.reminders.map((r, i) => i === index ? { ...r, title: e.target.value } : r),
+                      })}
+                      className={`${fieldClass} !w-40`}
+                      aria-label="알림 문구"
+                    />
+                    <input
+                      type="date"
+                      value={reminder.date}
+                      onChange={(e) => quick.updateItem(item.key, {
+                        reminders: item.reminders.map((r, i) => i === index ? { ...r, date: e.target.value } : r),
+                      })}
+                      className={`${fieldClass} !w-36`}
+                      aria-label="알림 날짜"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => quick.updateItem(item.key, {
+                        reminders: item.reminders.filter((_, i) => i !== index),
+                      })}
+                      className="text-[11px] text-zinc-400 hover:text-red-600"
+                    >
+                      제외
+                    </button>
+                  </div>
+                ))}
                 {item.error && <p className="mt-1 text-[11px] text-red-600">{item.error}</p>}
               </div>
             );

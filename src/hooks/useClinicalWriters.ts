@@ -148,6 +148,15 @@ export function useClinicalWriters({
     }, '메모를 저장하지 못했습니다.');
   };
 
+  /** 빠른 입력용 — 특정 환자에게 알림(reminder 메모)을 등록한다. 알림일에 Today에 뜬다. */
+  const handleAddReminderForPatient = async (patientId: string, title: string, dateKey: string) => {
+    await runWrite(async () => {
+      await addNote({ patientId, content: title, type: 'reminder', alertDate: dateKey });
+      markLocalBriefingUpdated();
+      queueBriefingRefresh();
+    }, '알림을 저장하지 못했습니다.');
+  };
+
   /**
    * 빠른 입력(Today)용 — 선택된 환자와 무관하게 특정 환자에게 항생제를 등록한다.
    * 용량·횟수는 빠른 입력 P 줄에서 읽은 값(없으면 빈칸). 종료일이 있으면 Today 종료 알림에 쓰인다.
@@ -477,6 +486,7 @@ export function useClinicalWriters({
       handleAddNote,
       handleAddNoteForPatient,
       handleAddAntibioticForPatient,
+      handleAddReminderForPatient,
       handleRemoveNote,
       handleAddAntibiotic,
       handleUpdateAntibiotic,

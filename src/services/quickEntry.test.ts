@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   calculateAntibioticEndDate,
   extractAntibioticRegimen,
+  extractReminders,
   formatQuickEntryNote,
   normalizeQuickEntryDraft,
   parseQuickEntryBlocks,
@@ -77,9 +78,9 @@ describe('normalizeQuickEntryDraft', () => {
       fallback
     );
     expect(draft.antibiotics.map(({ drugName, days }) => ({ drugName, days }))).toEqual([
-      { drugName: 'Tazocin', days: 7 },
+      { drugName: 'Piperacillin/Tazobactam', days: 7 },
       { drugName: 'Cefazolin', days: null },
-      { drugName: 'Vanco', days: 3 },
+      { drugName: 'Vancomycin', days: 3 },
       { drugName: 'X', days: null },
     ]);
   });
@@ -164,7 +165,9 @@ describe('extractAntibioticRegimen — P 줄에서 약·용량·횟수·일수 �
       { antibiotics: [{ drugName: 'Tazocin', dosage: '9V', frequency: '#1', days: 3 }] },
       { objective: '', plan: 'Tazocin 4V#4 7일' }
     );
-    expect(draft.antibiotics).toEqual([{ drugName: 'Tazocin', dosage: '4V', frequency: '#4', days: 7 }]);
+    expect(draft.antibiotics).toEqual([
+      { drugName: 'Piperacillin/Tazobactam', dosage: '4V', frequency: '#4', days: 7 },
+    ]);
   });
 
   it('원문에 없으면 AI 값을 쓴다', () => {
@@ -173,5 +176,99 @@ describe('extractAntibioticRegimen — P 줄에서 약·용량·횟수·일수 �
       { objective: '', plan: '' }
     );
     expect(draft.antibiotics[0]).toMatchObject({ dosage: '4V', frequency: '#4', days: 7 });
+  });
+});
+
+describe('extractReminders — P 줄의 "N일 뒤 ○○"', () => {
+  const today = new Date(2026, 10, 24); // 2026-11-24
+  const ymd = (days: number) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() + days);
+    return d;
+  };
+
+  it('일주일 뒤 F/U → 7일 뒤 "F/U"', () => {
+    expect(extractReminders('Tazocin 4V#4 7일, 일주일 뒤 F/U, 케이콘틴 3T#3', today)).toEqual([
+      { title: 'F/U', daysFromNow: 7 },
+    ]);
+  });
+
+  it('10일 뒤 검사 예정 → 10일 뒤 "검사 예정"', () => {
+    expect(extractReminders('10일 뒤 검사 예정', today)).toEqual([{ title: '검사 예정', daysFromNow: 10 }]);
+  });
+
+  it('여러 표현: 2주 뒤 / 내일 / 한 달 뒤', () => {
+    const result = extractReminders('2주 뒤 외래\n내일 Lab 재검, 한 달 뒤 CT', today);
+    expect(result).toEqual([
+      { title: '외래', daysFromNow: 14 },
+      { title: 'Lab 재검', daysFromNow: 1 },
+      { title: 'CT', daysFromNow: 30 },
+    ]);
+  });
+
+  it('F/U를 앞에 써도 읽는다 ("F/U 3일 후")', () => {
+    expect(extractReminders('F/U 3일 후', today)).toEqual([{ title: 'F/U', daysFromNow: 3 }]);
+  });
+
+  it('항생제 일수("Tazocin 7일")는 알림이 아니다', () => {
+    expect(extractReminders('Tazocin 7일, 알림설정', today)).toEqual([]);
+  });
+
+  it('문구가 없거나 범위 밖이면 무시', () => {
+    expect(extractReminders('일주일 뒤', today)).toEqual([]);
+    expect(extractReminders('999일 뒤 F/U', today)).toEqual([]);
+  });
+
+  it('날짜 확인용: 7일 뒤는 12-01', () => {
+    expect(ymd(7).getMonth()).toBe(11);
+    expect(ymd(7).getDate()).toBe(1);
+  });
+});
+
+describe('normalizeQuickEntryDraft — 알림과 약 이름', () => {
+  it('원문에서 읽은 알림과 같은 날짜의 AI 알림은 중복으로 버린다', () => {
+    const draft = normalizeQuickEntryDraft(
+      { reminders: [{ title: '외래 방문', daysFromNow: 7 }, { title: 'CT', daysFromNow: 20 }] },
+      { objective: '', plan: '일주일 뒤 F/U' }
+    );
+    expect(draft.reminders).toEqual([
+      { title: 'F/U', daysFromNow: 7 },
+      { title: 'CT', daysFromNow: 20 },
+    ]);
+  });
+
+  it('AI 알림의 날짜가 범위 밖이면 버린다', () => {
+    const draft = normalizeQuickEntryDraft(
+      { reminders: [{ title: 'x', daysFromNow: 0 }, { title: 'y', daysFromNow: 400 }, { title: '', daysFromNow: 3 }] },
+      { objective: '', plan: '' }
+    );
+    expect(draft.reminders).toEqual([]);
+  });
+
+  it('항생제 이름은 별칭표 → AI 일반명 → 원문 순으로 정한다', () => {
+    const draft = normalizeQuickEntryDraft(
+      {
+        antibiotics: [
+          { drugName: '타조신', genericName: 'Wrong' },
+          { drugName: 'Foo', genericName: 'Foomycin' },
+          { drugName: 'Bar', genericName: '' },
+        ],
+      },
+      { objective: '', plan: '' }
+    );
+    expect(draft.antibiotics.map((a) => a.drugName)).toEqual(['Piperacillin/Tazobactam', 'Foomycin', 'Bar']);
+  });
+
+  it('이름이 바뀌어도 원문에서 용량·횟수·일수를 읽는다', () => {
+    const draft = normalizeQuickEntryDraft(
+      { antibiotics: [{ drugName: '타조신', genericName: '' }] },
+      { objective: '', plan: '타조신 4V#4 7일' }
+    );
+    expect(draft.antibiotics[0]).toEqual({
+      drugName: 'Piperacillin/Tazobactam',
+      dosage: '4V',
+      frequency: '#4',
+      days: 7,
+    });
   });
 });

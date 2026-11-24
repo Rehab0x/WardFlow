@@ -4,6 +4,7 @@ import { DataSection } from '@/components/clinical/DataSection';
 import { AiActionPanel } from '@/components/ai/AiActionPanel';
 import { generateSOAP } from '@/services/aiService';
 import { Input, RemoveButton, SaveButton } from '../controls';
+import { NoteRow } from '../NoteRow';
 import type { PatientWorkspaceProps, WorkspaceTabBaseProps } from '../types';
 import {
   buildSoapContext,
@@ -195,10 +196,10 @@ export function NotesTab({ patient, data, onAddNote, onRemoveNote, onDirtyChange
                 </span>
               </div>
               {group.notes.map((item) => (
-                <ClinicalRow
+                <NoteRow
                   key={item.id}
                   prefix={item.type === 'reminder' ? '알림' : '경과'}
-                  title={item.content}
+                  content={item.content}
                   tone={item.type === 'reminder' ? 'warning' : 'default'}
                   action={
                     onRemoveNote ? (
