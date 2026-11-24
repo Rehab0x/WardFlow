@@ -4,7 +4,7 @@ import { DataSection } from '@/components/clinical/DataSection';
 import { AiActionPanel } from '@/components/ai/AiActionPanel';
 import { generateSOAP } from '@/services/aiService';
 import { Input, RemoveButton, SaveButton } from '../controls';
-import { NoteRow } from '../NoteRow';
+import { NoteRow } from '@/components/clinical/NoteRow';
 import type { PatientWorkspaceProps, WorkspaceTabBaseProps } from '../types';
 import {
   buildSoapContext,

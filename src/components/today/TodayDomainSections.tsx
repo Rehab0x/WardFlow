@@ -1,9 +1,10 @@
-import { Bell, CalendarDays, ClipboardList, FlaskConical, Pill } from 'lucide-react';
+import { Bell, CalendarDays, FlaskConical, Pill } from 'lucide-react';
 import { useMemo } from 'react';
 import { ClinicalRow } from '../clinical/ClinicalRow';
 import { DataSection } from '../clinical/DataSection';
 import type { BriefingData } from '@/services/briefingService';
 import { compareRoom, compareTime, sortByRoom } from './todayTasks';
+import { TodayNotesSection } from './TodayNotesSection';
 
 interface TodayDomainSectionsProps {
   data: BriefingData;
@@ -43,7 +44,6 @@ export function TodayDomainSections({ data, onOpenPatient }: TodayDomainSections
       ),
     [data.todaySchedules]
   );
-  const sortedProgressNotes = useMemo(() => sortByRoom(data.progressNotes), [data.progressNotes]);
 
   return (
     <>
@@ -121,21 +121,7 @@ export function TodayDomainSections({ data, onOpenPatient }: TodayDomainSections
         </DataSection>
       </div>
 
-      {data.progressNotes.length > 0 && (
-        <div className="mt-2">
-          <DataSection icon={ClipboardList} title="오늘 메모" count={data.progressNotes.length}>
-            {sortedProgressNotes.map((item) => (
-              <ClinicalRow
-                key={item.noteId}
-                prefix={item.roomBed}
-                title={item.patientName}
-                detail={item.content}
-                onClick={() => onOpenPatient?.(item.patientId, 'notes')}
-              />
-            ))}
-          </DataSection>
-        </div>
-      )}
+      <TodayNotesSection data={data} onOpenPatient={onOpenPatient} />
     </>
   );
 }
