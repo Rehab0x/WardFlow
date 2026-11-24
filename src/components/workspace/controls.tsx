@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 export function Input({
   value,
@@ -82,6 +82,21 @@ export function RemoveButton({ onClick }: { onClick: () => void | Promise<void> 
   );
 }
 
+export function EditButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      className="rounded-md border border-zinc-200 px-1.5 py-0.5 text-[10.5px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+    >
+      수정
+    </button>
+  );
+}
+
 export function CategoryToggle({
   value,
   onChange,
@@ -107,9 +122,23 @@ export function CategoryToggle({
   );
 }
 
-export function CollapsiblePanel({ title, children }: { title: string; children: ReactNode }) {
+export function CollapsiblePanel({
+  title,
+  children,
+  openSignal = 0,
+}: {
+  title: string;
+  children: ReactNode;
+  /** 값이 바뀌면 패널을 연다 (예: 수정 버튼을 눌렀을 때 폼이 보이도록) */
+  openSignal?: number;
+}) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (openSignal > 0 && ref.current) ref.current.open = true;
+  }, [openSignal]);
+
   return (
-    <details className="rounded-md border border-zinc-200 bg-white">
+    <details ref={ref} className="rounded-md border border-zinc-200 bg-white">
       <summary className="cursor-pointer select-none px-3 py-2 text-[12px] font-medium text-zinc-700 hover:bg-zinc-50">
         {title}
       </summary>

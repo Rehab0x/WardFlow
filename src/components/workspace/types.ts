@@ -55,6 +55,8 @@ export interface AntibioticDraft {
   dosage: string;
   frequency: string;
   startDate: string;
+  /** 투여 일수(입력칸 그대로). 종료일 = 시작일 + 일수 − 1 */
+  days: string;
 }
 
 export interface MedicationDraft {
@@ -121,6 +123,7 @@ export interface PatientWorkspaceProps {
   ) => void | Promise<void>;
   onRemoveNote?: (noteId: string, type: 'progress' | 'reminder') => void | Promise<void>;
   onAddAntibiotic?: (draft: AntibioticDraft) => void | Promise<void>;
+  onUpdateAntibiotic?: (medicationId: string, draft: AntibioticDraft) => void | Promise<void>;
   onAddMedication?: (draft: MedicationDraft) => void | Promise<void>;
   onSaveParsedMedications?: (
     category: 'hospital' | 'personal',

@@ -92,7 +92,7 @@ export function applyOptimisticAntibiotic(
   setBriefingData: Dispatch<SetStateAction<BriefingData>>,
   patient: Patient,
   medicationId: string,
-  draft: { drugName: string; dosage: string; frequency: string; startDate: Date }
+  draft: { drugName: string; dosage: string; frequency: string; startDate: Date; endDate?: Date }
 ) {
   const dDay = daysBetweenCalendarDates(draft.startDate, new Date());
   setBriefingData((current) => ({
@@ -110,6 +110,7 @@ export function applyOptimisticAntibiotic(
         dDay,
         isLongTerm: dDay >= 14,
         startDate: draft.startDate,
+        endDate: draft.endDate,
       },
       'medicationId'
     ),

@@ -3,12 +3,12 @@ import { formatDateInput } from '@/components/clinical/dateLabels';
 import { listLabsByPatient } from '@/data/labs.repository';
 import type { LabResult } from '@/domain/lab';
 import {
-  calculateAntibioticEndDate,
   draftQuickEntry,
   formatQuickEntryNote,
   parseQuickEntryBlocks,
   type QuickEntryBlock,
 } from '@/services/quickEntry';
+import { calculateAntibioticEndDate, readAntibioticDays } from '@/utils/antibioticCourse';
 import { useAIStore } from '@/stores/useAIStore';
 import { usePatientStore } from '@/stores/usePatientStore';
 
@@ -18,6 +18,8 @@ export interface QuickEntryAntibioticDraft {
   drugName: string;
   /** 입력칸 그대로(문자열). 비우면 종료일 없이 등록한다. */
   days: string;
+  dosage: string;
+  frequency: string;
 }
 
 /** 검토 화면에서 고칠 수 있는 한 환자분 */
@@ -33,7 +35,7 @@ export interface QuickEntryItem {
   assessment: string;
   plan: string;
   antibiotics: QuickEntryAntibioticDraft[];
-  /** 이미 저장한 단계('note', 'abx:0', 'sched:0') — 재시도 때 중복 저장을 막는다. */
+  /** 이미 저장한 단계('note', 'abx:0') — 재시도 때 중복 저장을 막는다. */
   done: string[];
   error?: string;
 }
@@ -42,15 +44,8 @@ export interface QuickEntryWriters {
   addNote: (patientId: string, content: string) => Promise<void>;
   addAntibiotic: (
     patientId: string,
-    input: { drugName: string; startDate: Date; endDate?: Date }
+    input: { drugName: string; dosage?: string; frequency?: string; startDate: Date; endDate?: Date }
   ) => Promise<void>;
-  addSchedule: (patientId: string, input: { title: string; date: Date }) => Promise<void>;
-}
-
-/** 입력칸의 일수 문자열을 1~60 정수로 읽는다. 아니면 null. */
-export function readDays(text: string): number | null {
-  const value = Number(text.trim());
-  return Number.isInteger(value) && value >= 1 && value <= 60 ? value : null;
 }
 
 export function useQuickEntry() {
@@ -118,16 +113,17 @@ export function useQuickEntry() {
           for (const [index, antibiotic] of item.antibiotics.entries()) {
             const drugName = antibiotic.drugName.trim();
             if (!drugName) continue;
-            const days = readDays(antibiotic.days);
+            const days = readAntibioticDays(antibiotic.days);
             const endDate = days ? calculateAntibioticEndDate(startDate, days) : undefined;
             await step(`abx:${index}`, () =>
-              writers.addAntibiotic(patientId, { drugName, startDate, endDate })
+              writers.addAntibiotic(patientId, {
+                drugName,
+                dosage: antibiotic.dosage.trim(),
+                frequency: antibiotic.frequency.trim(),
+                startDate,
+                endDate,
+              })
             );
-            if (endDate) {
-              await step(`sched:${index}`, () =>
-                writers.addSchedule(patientId, { title: `${drugName} 종료 확인`, date: endDate })
-              );
-            }
           }
 
           updateItem(item.key, { done: [...done], error: failure });
@@ -187,6 +183,8 @@ async function buildItem(
       antibiotics: draft.antibiotics.map((item) => ({
         drugName: item.drugName,
         days: item.days ? String(item.days) : '',
+        dosage: item.dosage,
+        frequency: item.frequency,
       })),
     };
   } catch (caught) {

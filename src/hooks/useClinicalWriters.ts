@@ -18,6 +18,7 @@ import { useMedicationStore } from '@/stores/useMedicationStore';
 import { useNoteStore } from '@/stores/useNoteStore';
 import { usePatientStore } from '@/stores/usePatientStore';
 import { useScheduleStore } from '@/stores/useScheduleStore';
+import { calculateAntibioticEndDate, readAntibioticDays } from '@/utils/antibioticCourse';
 import { isValidClinicalDateInput } from '@/features/app/patientDraft';
 import {
   applyOptimisticAntibiotic,
@@ -56,7 +57,8 @@ export function useClinicalWriters({
   const { updatePatient } = usePatientStore();
   const { addNote, deleteNote } = useNoteStore();
   const { addSchedule, deleteSchedule } = useScheduleStore();
-  const { fetchMedicationsByPatient, addMedication, deleteMedication } = useMedicationStore();
+  const { fetchMedicationsByPatient, addMedication, updateMedication, deleteMedication } =
+    useMedicationStore();
   const { fetchLabsByPatient, addLabResult, deleteLabResult, updateLabItemValue } = useLabStore();
 
   const handleChartingSave = async (draft: ChartingDraft) => {
@@ -148,11 +150,11 @@ export function useClinicalWriters({
 
   /**
    * 빠른 입력(Today)용 — 선택된 환자와 무관하게 특정 환자에게 항생제를 등록한다.
-   * 용량·용법은 입력받지 않으므로 비워 둔다. 종료일이 있으면 D-day 계산에 쓰인다.
+   * 용량·횟수는 빠른 입력 P 줄에서 읽은 값(없으면 빈칸). 종료일이 있으면 Today 종료 알림에 쓰인다.
    */
   const handleAddAntibioticForPatient = async (
     patientId: string,
-    input: { drugName: string; startDate: Date; endDate?: Date }
+    input: { drugName: string; dosage?: string; frequency?: string; startDate: Date; endDate?: Date }
   ) => {
     await runWrite(async () => {
       await addMedication({
@@ -161,7 +163,9 @@ export function useClinicalWriters({
         drugName: input.drugName,
         drugBaseName: input.drugName,
         singleDose: 0,
-        schedule: '',
+        schedule: input.frequency ?? '',
+        dosage: input.dosage || undefined,
+        frequency: input.frequency || undefined,
         startDate: input.startDate,
         endDate: input.endDate,
         isAntibiotic: true,
@@ -170,24 +174,6 @@ export function useClinicalWriters({
       markLocalBriefingUpdated();
       queueBriefingRefresh();
     }, '항생제를 저장하지 못했습니다.');
-  };
-
-  /** 빠른 입력용 — 특정 환자에게 일정(항생제 종료 확인 등)을 등록한다. */
-  const handleAddScheduleForPatient = async (
-    patientId: string,
-    input: { title: string; date: Date }
-  ) => {
-    await runWrite(async () => {
-      await addSchedule({
-        patientId,
-        title: input.title,
-        scheduledDate: input.date,
-        category: 'other',
-        isCompleted: false,
-      });
-      markLocalBriefingUpdated();
-      queueBriefingRefresh();
-    }, '일정을 저장하지 못했습니다.');
   };
 
   const handleRemoveNote = async (noteId: string) => {
@@ -199,13 +185,21 @@ export function useClinicalWriters({
     }, '메모를 삭제하지 못했습니다.');
   };
 
+  /** 입력칸 값을 검증해 시작일·종료일(시작일 + 일수 − 1)로 바꾼다. */
+  const readAntibioticCourse = (draft: AntibioticDraft) => {
+    const startDate = parseDateInput(draft.startDate);
+    if (!startDate || !isValidClinicalDateInput(draft.startDate)) {
+      throw new Error('시작일은 1900년부터 오늘 사이로 입력해주세요.');
+    }
+    const days = readAntibioticDays(draft.days);
+    if (!days) throw new Error('투여 일수는 1~60 사이 숫자로 입력해주세요.');
+    return { startDate, endDate: calculateAntibioticEndDate(startDate, days) };
+  };
+
   const handleAddAntibiotic = async (draft: AntibioticDraft) => {
     if (!selectedPatient) return;
     await runWrite(async () => {
-      const startDate = parseDateInput(draft.startDate);
-      if (!startDate || !isValidClinicalDateInput(draft.startDate)) {
-        throw new Error('시작일은 1900년부터 오늘 사이로 입력해주세요.');
-      }
+      const { startDate, endDate } = readAntibioticCourse(draft);
       const drugName = draft.drugName.trim();
       const dosage = draft.dosage.trim();
       const frequency = draft.frequency.trim();
@@ -219,6 +213,7 @@ export function useClinicalWriters({
         dosage,
         frequency,
         startDate,
+        endDate,
         isAntibiotic: true,
         isActive: true,
       });
@@ -227,10 +222,39 @@ export function useClinicalWriters({
         dosage,
         frequency,
         startDate,
+        endDate,
       });
       markLocalBriefingUpdated();
       queueBriefingRefresh();
     }, '항생제를 저장하지 못했습니다.');
+  };
+
+  const handleUpdateAntibiotic = async (medicationId: string, draft: AntibioticDraft) => {
+    if (!selectedPatient) return;
+    await runWrite(async () => {
+      const { startDate, endDate } = readAntibioticCourse(draft);
+      const drugName = draft.drugName.trim();
+      const dosage = draft.dosage.trim();
+      const frequency = draft.frequency.trim();
+      await updateMedication(medicationId, {
+        drugName,
+        drugBaseName: drugName,
+        schedule: frequency,
+        dosage,
+        frequency,
+        startDate,
+        endDate,
+      });
+      applyOptimisticAntibiotic(setBriefingData, selectedPatient, medicationId, {
+        drugName,
+        dosage,
+        frequency,
+        startDate,
+        endDate,
+      });
+      markLocalBriefingUpdated();
+      queueBriefingRefresh();
+    }, '항생제를 수정하지 못했습니다.');
   };
 
   const handleAddMedication = async (draft: MedicationDraft) => {
@@ -453,9 +477,9 @@ export function useClinicalWriters({
       handleAddNote,
       handleAddNoteForPatient,
       handleAddAntibioticForPatient,
-      handleAddScheduleForPatient,
       handleRemoveNote,
       handleAddAntibiotic,
+      handleUpdateAntibiotic,
       handleAddMedication,
       handleSaveParsedMedications,
       handleRemoveAntibiotic,

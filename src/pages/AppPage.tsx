@@ -192,9 +192,9 @@ export default function AppPage() {
     handleAddNote,
     handleAddNoteForPatient,
     handleAddAntibioticForPatient,
-    handleAddScheduleForPatient,
     handleRemoveNote,
     handleAddAntibiotic,
+    handleUpdateAntibiotic,
     handleAddMedication,
     handleSaveParsedMedications,
     handleRemoveAntibiotic,
@@ -287,9 +287,8 @@ export default function AppPage() {
     () => ({
       addNote: handleAddNoteForPatient,
       addAntibiotic: handleAddAntibioticForPatient,
-      addSchedule: handleAddScheduleForPatient,
     }),
-    [handleAddNoteForPatient, handleAddAntibioticForPatient, handleAddScheduleForPatient]
+    [handleAddNoteForPatient, handleAddAntibioticForPatient]
   );
 
   const handleLabImportComplete = useCallback(
@@ -374,6 +373,7 @@ export default function AppPage() {
           onAddNote={handleAddNote}
           onRemoveNote={handleRemoveNote}
           onAddAntibiotic={handleAddAntibiotic}
+          onUpdateAntibiotic={handleUpdateAntibiotic}
           onAddMedication={handleAddMedication}
           onSaveParsedMedications={handleSaveParsedMedications}
           onRemoveAntibiotic={handleRemoveAntibiotic}

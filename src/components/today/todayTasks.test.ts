@@ -133,3 +133,37 @@ describe('getTaskEmptyText', () => {
     expect(getTaskEmptyText('all')).toBe('오늘 확인할 항목 없음');
   });
 });
+
+describe('항생제 종료 알림 행', () => {
+  const antibiotic = (endDate?: Date) => ({
+    patientId: 'p1',
+    patientName: '김환자',
+    roomBed: '302',
+    medicationId: 'm1',
+    drugName: '타조신',
+    dDay: 5,
+    isLongTerm: false,
+    startDate: new Date(2026, 10, 15),
+    endDate,
+  });
+  const endRows = (endDay: number, todayDay: number) =>
+    buildTaskRows(
+      makeBriefingData({ antibiotics: [antibiotic(new Date(2026, 10, endDay))] }),
+      new Date(2026, 10, todayDay)
+    ).filter((row) => row.id.startsWith('antibiotic-end-'));
+
+  it('종료 1일 전과 종료일에만 행이 생기고 종료일이 더 위에 온다', () => {
+    const dayBefore = endRows(21, 20);
+    const endDay = endRows(21, 21);
+    expect(dayBefore).toHaveLength(1);
+    expect(dayBefore[0]!.kind).toBe('항생제 종료 1일 전');
+    expect(endDay[0]!.kind).toBe('항생제 종료일');
+    expect(endDay[0]!.priority).toBeLessThan(dayBefore[0]!.priority);
+    expect(endRows(21, 19)).toHaveLength(0);
+  });
+
+  it('종료일이 없으면 종료 알림 행이 없다', () => {
+    const rows = buildTaskRows(makeBriefingData({ antibiotics: [antibiotic()] }), new Date(2026, 10, 21));
+    expect(rows.filter((row) => row.id.startsWith('antibiotic-end-'))).toHaveLength(0);
+  });
+});

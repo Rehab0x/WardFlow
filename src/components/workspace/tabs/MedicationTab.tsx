@@ -5,7 +5,9 @@ import { AiActionPanel } from '@/components/ai/AiActionPanel';
 import { checkMedications } from '@/services/aiService';
 import type { Medication } from '@/types/medication';
 import { calculateAge } from '@/utils/dateUtils';
-import { CollapsiblePanel, RemoveButton } from '../controls';
+import { antibioticCourseDays } from '@/utils/antibioticCourse';
+import { formatDateInput } from '@/components/clinical/dateLabels';
+import { CollapsiblePanel, EditButton, RemoveButton } from '../controls';
 import { AntibioticForm } from '../forms/AntibioticForm';
 import { ManualMedicationForm } from '../forms/ManualMedicationForm';
 import { MedicationPasteForm } from '../forms/MedicationPasteForm';
@@ -16,6 +18,7 @@ import { buildLabLines, buildMedicationLines } from '../workspaceData';
 interface MedicationTabProps extends WorkspaceTabBaseProps {
   medications: Medication[];
   onAddAntibiotic?: PatientWorkspaceProps['onAddAntibiotic'];
+  onUpdateAntibiotic?: PatientWorkspaceProps['onUpdateAntibiotic'];
   onAddMedication?: PatientWorkspaceProps['onAddMedication'];
   onSaveParsedMedications?: PatientWorkspaceProps['onSaveParsedMedications'];
   onRemoveAntibiotic?: PatientWorkspaceProps['onRemoveAntibiotic'];
@@ -28,6 +31,7 @@ export function MedicationTab({
   data,
   medications,
   onAddAntibiotic,
+  onUpdateAntibiotic,
   onAddMedication,
   onSaveParsedMedications,
   onRemoveAntibiotic,
@@ -37,6 +41,8 @@ export function MedicationTab({
 }: MedicationTabProps) {
   const [antibioticDraft, setAntibioticDraft] = useState(emptyAntibioticDraft);
   const [medicationDraft, setMedicationDraft] = useState(emptyMedicationDraft);
+  const [editingAntibioticId, setEditingAntibioticId] = useState<string | null>(null);
+  const [formOpenSignal, setFormOpenSignal] = useState(0);
 
   const antibiotics = useMemo(
     () => data.antibiotics.filter((item) => item.patientId === patient.id),
@@ -56,12 +62,16 @@ export function MedicationTab({
   );
   const hasDraft = Boolean(antibioticDraft.drugName.trim() || medicationDraft.drugName.trim());
 
-  const resetAntibioticDraft = useCallback(() => setAntibioticDraft(emptyAntibioticDraft()), []);
+  const resetAntibioticDraft = useCallback(() => {
+    setAntibioticDraft(emptyAntibioticDraft());
+    setEditingAntibioticId(null);
+  }, []);
   const resetMedicationDraft = useCallback(() => setMedicationDraft(emptyMedicationDraft()), []);
 
   useEffect(() => {
     setAntibioticDraft(emptyAntibioticDraft());
     setMedicationDraft(emptyMedicationDraft());
+    setEditingAntibioticId(null);
   }, [patient.id]);
   useEffect(() => {
     void onLoadMedications?.(patient.id);
@@ -112,13 +122,39 @@ export function MedicationTab({
               key={item.medicationId}
               prefix={`D+${item.dDay}`}
               title={item.drugName}
-              detail={`${item.dosage ?? ''} ${item.frequency ?? ''}`.trim()}
+              detail={[
+                `${item.dosage ?? ''} ${item.frequency ?? ''}`.trim(),
+                item.endDate
+                  ? `${formatDateInput(item.startDate)} ~ ${formatDateInput(item.endDate)} (${antibioticCourseDays(item.startDate, item.endDate)}일)`
+                  : `${formatDateInput(item.startDate)} ~ 종료일 없음`,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
               tone={item.isLongTerm ? 'danger' : 'warning'}
               pill={item.isLongTerm ? '장기' : undefined}
               action={
-                onRemoveAntibiotic ? (
-                  <RemoveButton onClick={() => onRemoveAntibiotic(item.medicationId)} />
-                ) : undefined
+                <span className="flex items-center gap-1">
+                  {onUpdateAntibiotic && (
+                    <EditButton
+                      onClick={() => {
+                        setEditingAntibioticId(item.medicationId);
+                        setAntibioticDraft({
+                          drugName: item.drugName,
+                          dosage: item.dosage ?? '',
+                          frequency: item.frequency ?? '',
+                          startDate: formatDateInput(item.startDate),
+                          days: item.endDate
+                            ? String(antibioticCourseDays(item.startDate, item.endDate))
+                            : '',
+                        });
+                        setFormOpenSignal((value) => value + 1);
+                      }}
+                    />
+                  )}
+                  {onRemoveAntibiotic && (
+                    <RemoveButton onClick={() => onRemoveAntibiotic(item.medicationId)} />
+                  )}
+                </span>
               }
             />
           ))
@@ -147,12 +183,14 @@ export function MedicationTab({
         run={runMedicationCheck}
       />
 
-      <CollapsiblePanel title="약제 추가">
+      <CollapsiblePanel title="약제 추가" openSignal={formOpenSignal}>
         <div className="space-y-3">
           <AntibioticForm
             draft={antibioticDraft}
             setDraft={setAntibioticDraft}
             onAddAntibiotic={onAddAntibiotic}
+            onUpdateAntibiotic={onUpdateAntibiotic}
+            editingId={editingAntibioticId}
             onReset={resetAntibioticDraft}
           />
           <ManualMedicationForm

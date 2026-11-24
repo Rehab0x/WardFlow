@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { Zap } from 'lucide-react';
-import { useQuickEntry, readDays, type QuickEntryWriters } from '@/hooks/useQuickEntry';
+import { useQuickEntry, type QuickEntryWriters } from '@/hooks/useQuickEntry';
 import { useToast } from '@/hooks/use-toast';
 import { usePatientStore } from '@/stores/usePatientStore';
-import { calculateAntibioticEndDate } from '@/services/quickEntry';
+import { calculateAntibioticEndDate, readAntibioticDays } from '@/utils/antibioticCourse';
 import { formatDateInput } from '../clinical/dateLabels';
 
-const PLACEHOLDER = `신효임
+const PLACEHOLDER = `홍길동
 Fever, K 2.7, CRP 15.0
 Tazocin 7일, 알림설정, 케이콘틴 3T#3
 
@@ -77,7 +77,7 @@ export function QuickEntryPanel({ writers }: { writers: QuickEntryWriters }) {
                   </label>
                 ))}
                 {item.antibiotics.map((abx, index) => {
-                  const days = readDays(abx.days);
+                  const days = readAntibioticDays(abx.days);
                   return (
                     <div key={index} className="mt-1 flex flex-wrap items-center gap-2 text-[12px]">
                       <span className="text-zinc-500">항생제</span>
@@ -87,6 +87,24 @@ export function QuickEntryPanel({ writers }: { writers: QuickEntryWriters }) {
                           antibiotics: item.antibiotics.map((a, i) => i === index ? { ...a, drugName: e.target.value } : a),
                         })}
                         className={`${fieldClass} !w-36`}
+                      />
+                      <input
+                        value={abx.dosage}
+                        placeholder="용량"
+                        onChange={(e) => quick.updateItem(item.key, {
+                          antibiotics: item.antibiotics.map((a, i) => i === index ? { ...a, dosage: e.target.value } : a),
+                        })}
+                        className={`${fieldClass} !w-16`}
+                        aria-label="용량"
+                      />
+                      <input
+                        value={abx.frequency}
+                        placeholder="횟수"
+                        onChange={(e) => quick.updateItem(item.key, {
+                          antibiotics: item.antibiotics.map((a, i) => i === index ? { ...a, frequency: e.target.value } : a),
+                        })}
+                        className={`${fieldClass} !w-16`}
+                        aria-label="횟수"
                       />
                       <input
                         value={abx.days}
@@ -100,8 +118,8 @@ export function QuickEntryPanel({ writers }: { writers: QuickEntryWriters }) {
                       <span className="text-zinc-500">일 →</span>
                       <span className="text-zinc-700">
                         {days
-                          ? `종료 ${formatDateInput(calculateAntibioticEndDate(new Date(), days))} · 일정 등록`
-                          : '종료일 없음 (일정 미등록)'}
+                          ? `종료 ${formatDateInput(calculateAntibioticEndDate(new Date(), days))} · 종료 알림`
+                          : '종료일 없음 (알림 없음)'}
                       </span>
                       <button
                         type="button"

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculateAntibioticEndDate,
+  extractAntibioticRegimen,
   formatQuickEntryNote,
   normalizeQuickEntryDraft,
   parseQuickEntryBlocks,
@@ -8,16 +9,16 @@ import {
 import { buildRecentLabText } from '@/hooks/useQuickEntry';
 import type { LabResult } from '@/domain/lab';
 
-const roster = ['신효임', '이몽룡'];
+const roster = ['홍길동', '이몽룡'];
 
 describe('parseQuickEntryBlocks', () => {
   it('1줄=이름, 2줄=O, 3줄 이후=P로 읽는다', () => {
     const [block] = parseQuickEntryBlocks(
-      '신효임\nFever, K 2.7, CRP 15.0\nTazocin 7일, 알림설정, 케이콘틴 3T#3',
+      '홍길동\nFever, K 2.7, CRP 15.0\nTazocin 7일, 알림설정, 케이콘틴 3T#3',
       roster
     );
     expect(block).toMatchObject({
-      patientName: '신효임',
+      patientName: '홍길동',
       nameMatch: 'exact',
       objective: 'Fever, K 2.7, CRP 15.0',
       plan: 'Tazocin 7일, 알림설정, 케이콘틴 3T#3',
@@ -25,20 +26,20 @@ describe('parseQuickEntryBlocks', () => {
   });
 
   it('빈 줄로 여러 환자를 나눈다', () => {
-    const blocks = parseQuickEntryBlocks('신효임\nO1\nP1\n\n\n이몽룡\nO2\nP2\nP2-2', roster);
-    expect(blocks.map((b) => b.patientName)).toEqual(['신효임', '이몽룡']);
+    const blocks = parseQuickEntryBlocks('홍길동\nO1\nP1\n\n\n이몽룡\nO2\nP2\nP2-2', roster);
+    expect(blocks.map((b) => b.patientName)).toEqual(['홍길동', '이몽룡']);
     expect(blocks[1]!.plan).toBe('P2\nP2-2');
   });
 
   it('명단에 없는 이름은 환자를 지어내지 않고 null로 둔다', () => {
-    const [block] = parseQuickEntryBlocks('홍길동\nO\nP', roster);
+    const [block] = parseQuickEntryBlocks('김철수\nO\nP', roster);
     expect(block!.patientName).toBeNull();
     expect(block!.nameMatch).toBe('none');
-    expect(block!.heardName).toBe('홍길동');
+    expect(block!.heardName).toBe('김철수');
   });
 
   it('O/P 줄이 없어도 오류 없이 비워 둔다', () => {
-    const [block] = parseQuickEntryBlocks('신효임', roster);
+    const [block] = parseQuickEntryBlocks('홍길동', roster);
     expect(block).toMatchObject({ objective: '', plan: '' });
   });
 
@@ -75,7 +76,7 @@ describe('normalizeQuickEntryDraft', () => {
       },
       fallback
     );
-    expect(draft.antibiotics).toEqual([
+    expect(draft.antibiotics.map(({ drugName, days }) => ({ drugName, days }))).toEqual([
       { drugName: 'Tazocin', days: 7 },
       { drugName: 'Cefazolin', days: null },
       { drugName: 'Vanco', days: 3 },
@@ -117,5 +118,60 @@ describe('buildRecentLabText', () => {
       lab(19, 'CRP', '15.0', 'H'),
     ]);
     expect(text).toBe('2026-11-19: CRP 15.0(H)\n2026-11-18: K 2.7(L)');
+  });
+});
+
+describe('extractAntibioticRegimen — P 줄에서 약·용량·횟수·일수 읽기', () => {
+  it('"Tazocin 4V#4 7일" → 4V / #4 / 7일', () => {
+    expect(extractAntibioticRegimen('Tazocin 4V#4 7일', 'Tazocin')).toEqual({
+      dosage: '4V',
+      frequency: '#4',
+      days: 7,
+    });
+  });
+
+  it('쉼표·공백으로 나눠 적어도 읽는다', () => {
+    expect(extractAntibioticRegimen('타조신, 3V, #3, 7일', '타조신')).toEqual({
+      dosage: '3V',
+      frequency: '#3',
+      days: 7,
+    });
+  });
+
+  it('다른 약 앞에서 멈춘다 — 케이콘틴 3T#3을 항생제 값으로 읽지 않는다', () => {
+    expect(extractAntibioticRegimen('Tazocin 7일, 알림설정, 케이콘틴 3T#3', 'Tazocin')).toEqual({
+      dosage: '',
+      frequency: '',
+      days: 7,
+    });
+  });
+
+  it('용량 단위 대소문자·mg를 정리한다', () => {
+    expect(extractAntibioticRegimen('Cefazolin 2g #3', 'Cefazolin').dosage).toBe('2G');
+    expect(extractAntibioticRegimen('Vancomycin 500MG #2', 'Vancomycin').dosage).toBe('500mg');
+  });
+
+  it('약 이름이 P에 없으면 비워 둔다', () => {
+    expect(extractAntibioticRegimen('경과 관찰', 'Tazocin')).toEqual({ dosage: '', frequency: '', days: null });
+  });
+
+  it('일수가 범위 밖이면 무시', () => {
+    expect(extractAntibioticRegimen('Tazocin 4V#4 99일', 'Tazocin').days).toBeNull();
+  });
+
+  it('normalize는 원문에서 읽은 값을 AI 값보다 우선한다', () => {
+    const draft = normalizeQuickEntryDraft(
+      { antibiotics: [{ drugName: 'Tazocin', dosage: '9V', frequency: '#1', days: 3 }] },
+      { objective: '', plan: 'Tazocin 4V#4 7일' }
+    );
+    expect(draft.antibiotics).toEqual([{ drugName: 'Tazocin', dosage: '4V', frequency: '#4', days: 7 }]);
+  });
+
+  it('원문에 없으면 AI 값을 쓴다', () => {
+    const draft = normalizeQuickEntryDraft(
+      { antibiotics: [{ drugName: 'Tazocin', dosage: '4V', frequency: '#4', days: 7 }] },
+      { objective: '', plan: '' }
+    );
+    expect(draft.antibiotics[0]).toMatchObject({ dosage: '4V', frequency: '#4', days: 7 });
   });
 });

@@ -37,6 +37,7 @@ export function PatientWorkspace({
   onAddNote,
   onRemoveNote,
   onAddAntibiotic,
+  onUpdateAntibiotic,
   onAddMedication,
   onSaveParsedMedications,
   onRemoveAntibiotic,
@@ -158,6 +159,7 @@ export function PatientWorkspace({
               data={data}
               medications={medications}
               onAddAntibiotic={onAddAntibiotic}
+              onUpdateAntibiotic={onUpdateAntibiotic}
               onAddMedication={onAddMedication}
               onSaveParsedMedications={onSaveParsedMedications}
               onRemoveAntibiotic={onRemoveAntibiotic}

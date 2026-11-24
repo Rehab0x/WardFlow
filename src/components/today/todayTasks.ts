@@ -1,4 +1,5 @@
 import type { BriefingData } from '@/services/briefingService';
+import { getAntibioticEndNotice } from '@/utils/antibioticCourse';
 
 export type TaskFilter = 'all' | 'reminder' | 'schedule' | 'antibiotic' | 'lab';
 export type TaskSort = 'priority' | 'room';
@@ -23,7 +24,7 @@ export type TaskFilterOption = {
   count: number;
 };
 
-export function buildTaskRows(data: BriefingData): TaskRow[] {
+export function buildTaskRows(data: BriefingData, today: Date = new Date()): TaskRow[] {
   return [
     ...data.reminders.map((item): TaskRow => ({
       id: `reminder-${item.noteId}`,
@@ -66,6 +67,26 @@ export function buildTaskRows(data: BriefingData): TaskRow[] {
       priority: item.isLongTerm ? 20 : 50,
       tone: item.isLongTerm ? 'danger' : 'warning',
     })),
+    // 종료일에서 그때그때 계산한다 — 항생제를 수정해도 알림이 어긋나지 않는다.
+    ...data.antibiotics.flatMap((item): TaskRow[] => {
+      const notice = getAntibioticEndNotice(item.endDate, today);
+      if (!notice) return [];
+      return [
+        {
+          id: `antibiotic-end-${item.medicationId}`,
+          kindId: 'antibiotic',
+          patientId: item.patientId,
+          patientName: item.patientName,
+          roomBed: item.roomBed,
+          kind: notice.label,
+          detail: item.drugName,
+          meta: notice.kind === 'day-before' ? 'D-1' : notice.kind === 'end-day' ? 'D-day' : '지남',
+          tab: 'medications',
+          priority: notice.kind === 'day-before' ? 8 : 5,
+          tone: notice.kind === 'day-before' ? 'warning' : 'danger',
+        },
+      ];
+    }),
     ...data.recentLabs
       .filter((item) => item.abnormalCount > 0)
       .map((item): TaskRow => ({

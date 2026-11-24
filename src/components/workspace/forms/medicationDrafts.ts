@@ -21,6 +21,7 @@ export const emptyAntibioticDraft = (): AntibioticDraft => ({
   dosage: '',
   frequency: '',
   startDate: formatDateInput(new Date()),
+  days: '',
 });
 
 export const emptyMedicationDraft = (): MedicationDraft => ({
